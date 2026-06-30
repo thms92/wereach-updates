@@ -1,7 +1,8 @@
-streamlit>=1.28.0
+streamlit>=1.37.0
 playwright>=1.40.0
 pandas>=2.0.0
 plotly>=5.17.0
 openpyxl>=3.1.0
+xlsxwriter>=3.1.0
 cryptography>=41.0.0
 requests>=2.31.0
