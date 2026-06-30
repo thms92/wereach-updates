@@ -18,8 +18,8 @@ class LinkedInScraperV2Sync:
     Utilise asyncio.run() pour exécuter les méthodes async de manière synchrone
     """
 
-    def __init__(self, use_database: bool = True):
-        self.scraper = LinkedInScraperV2(use_database=use_database)
+    def __init__(self, use_database: bool = True, proxy: dict = None):
+        self.scraper = LinkedInScraperV2(use_database=use_database, proxy=proxy)
         self.errors = []
 
     def run_scraper(

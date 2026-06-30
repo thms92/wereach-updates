@@ -18,6 +18,8 @@ from cookie_utils import CookieManager
 from export_utils import ExportManager
 from queue_manager import QueueManager, JobStatus
 from logger import logger
+from utils.user_context import resolve_user_email, user_paths_for
+from utils.proxy_store import load_proxy
 
 
 # Configuration Streamlit
@@ -55,24 +57,31 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def current_user_email() -> str:
+    try:
+        headers = dict(st.context.headers)
+    except Exception:
+        headers = {}
+    return resolve_user_email(headers, os.getenv("DEV_USER_EMAIL"))
+
+
 # Initialisation
-if 'db' not in st.session_state:
-    st.session_state.db = DatabaseManager()
-
-if 'cookie_manager' not in st.session_state:
-    st.session_state.cookie_manager = CookieManager()
-
-if 'export_manager' not in st.session_state:
+_email = current_user_email()
+if st.session_state.get('user_email') != _email:
+    # Nouvel utilisateur (ou première visite) → (ré)initialiser tout le contexte
+    paths = user_paths_for(_email)
+    st.session_state.user_email = _email
+    st.session_state.user_paths = paths
+    st.session_state.db = DatabaseManager(db_file=str(paths.db_file))
+    st.session_state.cookie_manager = CookieManager(config_dir=str(paths.config_dir))
     st.session_state.export_manager = ExportManager()
-
-if 'queue_manager' not in st.session_state:
-    st.session_state.queue_manager = QueueManager()
-    st.session_state.queue_manager.charger()  # Charger la file précédente si elle existe
-
-# Cookie global (partagé entre tous les onglets)
-if 'global_cookie' not in st.session_state:
+    st.session_state.queue_manager = QueueManager(queue_file=str(paths.queue_file))
+    st.session_state.queue_manager.charger()
     cookie_saved = st.session_state.cookie_manager.load_cookie()
     st.session_state.global_cookie = cookie_saved or ""
+    st.session_state.user_proxy = load_proxy(
+        str(paths.proxy_file), str(paths.key_file)
+    )
 
 # Header
 st.markdown('<div class="main-header">💼 LinkedIn Scraper Pro</div>', unsafe_allow_html=True)
@@ -265,7 +274,7 @@ elif page == "🔍 Recherche":
                     st.error("❌ Sélectionnez exactement une école")
                 else:
                     with st.spinner("🚀 Scraping en cours..."):
-                        scraper = LinkedInScraperV2Sync(use_database=True)
+                        scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'))
 
                         progress_bar = st.progress(0)
                         status_text = st.empty()
@@ -394,7 +403,7 @@ elif page == "🔍 Recherche":
                 st.error("❌ Cookie manquant")
             else:
                 with st.spinner("🚀 Recherche en cours..."):
-                    scraper = LinkedInScraperV2Sync(use_database=True)
+                    scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'))
 
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -622,7 +631,8 @@ elif page == "🔍 Recherche":
                                 status_callback=lambda s: status_text.text(s),
                                 job_callback=lambda idx, j: job_info.text(
                                     f"{'🔄' if j.status == JobStatus.EN_COURS else '✅' if j.status == JobStatus.TERMINE else '❌'} {j.entreprise}"
-                                )
+                                ),
+                                proxy=st.session_state.get('user_proxy')
                             )
 
                         qm.sauvegarder()
@@ -721,7 +731,7 @@ elif page == "🔗 Scraping URLs":
             st.error("❌ Aucune URL LinkedIn valide")
         else:
             with st.spinner(f"🔄 Scraping de {nb_urls} profils en cours..."):
-                scraper = LinkedInScraperV2Sync(use_database=True)
+                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'))
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()

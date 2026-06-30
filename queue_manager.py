@@ -140,7 +140,8 @@ class QueueManager:
         self,
         progress_callback: Optional[Callable] = None,
         status_callback: Optional[Callable] = None,
-        job_callback: Optional[Callable] = None
+        job_callback: Optional[Callable] = None,
+        proxy: dict = None
     ) -> pd.DataFrame:
         """
         Lance l'exécution séquentielle de tous les jobs en attente.
@@ -210,7 +211,7 @@ class QueueManager:
                 status_callback(f"🏢 {job.entreprise} ({jobs_traites + 1}/{total_jobs})")
 
             # Créer un nouveau scraper pour chaque job
-            scraper = LinkedInScraperV2Sync(use_database=True)
+            scraper = LinkedInScraperV2Sync(use_database=True, proxy=proxy)
             job_start = datetime.now()
 
             try:
