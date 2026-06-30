@@ -10,9 +10,11 @@ from config import ScraperConfig
 class CookieManager:
     """Gestion sécurisée des cookies LinkedIn"""
 
-    def __init__(self):
-        self.key_file = os.path.join(ScraperConfig.CONFIG_DIR, "secret.key")
-        self.cookie_file = ScraperConfig.COOKIE_FILE
+    def __init__(self, config_dir: str = None):
+        cfg_dir = config_dir or ScraperConfig.CONFIG_DIR
+        os.makedirs(cfg_dir, exist_ok=True)
+        self.key_file = os.path.join(cfg_dir, "secret.key")
+        self.cookie_file = os.path.join(cfg_dir, "cookie.txt")
         self.key = self._get_or_create_key()
 
     def _get_or_create_key(self) -> bytes:
