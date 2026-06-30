@@ -18,8 +18,9 @@ from cookie_utils import CookieManager
 from export_utils import ExportManager
 from queue_manager import QueueManager, JobStatus
 from logger import logger
-from utils.user_context import resolve_user_email, user_paths_for
+from utils.user_context import resolve_user_email, user_paths_for, DEFAULT_DEV_EMAIL
 from utils.proxy_store import load_proxy, save_proxy
+from utils.app_auth import verify_user, auth_configured
 
 
 # Configuration Streamlit
@@ -57,16 +58,45 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def current_user_email() -> str:
+def current_user_email():
     try:
         headers = dict(st.context.headers)
     except Exception:
         headers = {}
-    return resolve_user_email(headers, os.getenv("DEV_USER_EMAIL"))
+    # 1) Identité via Cloudflare Access (en-tête), si un jour en place
+    email = resolve_user_email(headers, None)
+    if email and email != DEFAULT_DEV_EMAIL:
+        return email
+    # 2) Identité via le login applicatif
+    if st.session_state.get("auth_email"):
+        return st.session_state["auth_email"]
+    # 3) Dev local : seulement si AUCUN compte n'est configuré
+    if not auth_configured():
+        return os.getenv("DEV_USER_EMAIL") or DEFAULT_DEV_EMAIL
+    # 4) Sinon : non authentifié → écran de connexion
+    return None
 
 
 # Initialisation
 _email = current_user_email()
+
+# Écran de connexion (mode déployé : des comptes existent et aucune identité)
+if _email is None:
+    st.markdown('<div class="main-header">💼 LinkedIn Scraper Pro</div>', unsafe_allow_html=True)
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        st.subheader("🔒 Connexion")
+        with st.form("login_form"):
+            _em = st.text_input("Email")
+            _pw = st.text_input("Mot de passe", type="password")
+            if st.form_submit_button("Se connecter", use_container_width=True):
+                if verify_user(_em, _pw):
+                    st.session_state.auth_email = _em.strip().lower()
+                    st.rerun()
+                else:
+                    st.error("❌ Email ou mot de passe incorrect.")
+    st.stop()
+
 if st.session_state.get('user_email') != _email:
     # Nouvel utilisateur (ou première visite) → (ré)initialiser tout le contexte
     paths = user_paths_for(_email)
@@ -88,6 +118,12 @@ st.markdown('<div class="main-header">💼 LinkedIn Scraper Pro</div>', unsafe_a
 
 # Sidebar Navigation
 st.sidebar.title("🧭 Navigation")
+
+if st.session_state.get("auth_email"):
+    st.sidebar.caption(f"👤 {st.session_state['auth_email']}")
+    if st.sidebar.button("🚪 Déconnexion"):
+        del st.session_state["auth_email"]
+        st.rerun()
 
 page = st.sidebar.radio(
     "Choisir une page",
