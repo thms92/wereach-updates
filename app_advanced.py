@@ -940,8 +940,9 @@ elif page == "⚙️ Configuration":
 
     st.subheader("💾 Base de données")
 
-    if os.path.exists(ScraperConfig.DATABASE_FILE):
-        db_size = os.path.getsize(ScraperConfig.DATABASE_FILE) / 1024
+    _user_db = str(st.session_state.user_paths.db_file)
+    if os.path.exists(_user_db):
+        db_size = os.path.getsize(_user_db) / 1024
         st.success(f"✅ Base de données: {db_size:.2f} KB")
     else:
         st.warning("⚠️ Base de données non initialisée")
@@ -949,9 +950,9 @@ elif page == "⚙️ Configuration":
     if st.button("🗑️ Réinitialiser la base de données", type="secondary"):
         if st.checkbox("Je confirme vouloir supprimer toutes les données"):
             try:
-                if os.path.exists(ScraperConfig.DATABASE_FILE):
-                    os.remove(ScraperConfig.DATABASE_FILE)
-                st.session_state.db = DatabaseManager()
+                if os.path.exists(_user_db):
+                    os.remove(_user_db)
+                st.session_state.db = DatabaseManager(db_file=_user_db)
                 st.success("✅ Base de données réinitialisée")
             except Exception as e:
                 st.error(f"❌ Erreur: {e}")

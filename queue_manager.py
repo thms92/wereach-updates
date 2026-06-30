@@ -150,6 +150,7 @@ class QueueManager:
             progress_callback: Appelé avec (progression_globale: float) entre 0 et 1
             status_callback: Appelé avec (texte_statut: str)
             job_callback: Appelé avec (index_job: int, job: ScrapingJob) à chaque changement
+            proxy: Configuration proxy Playwright {server, username, password} (optionnel)
 
         Returns:
             DataFrame consolidé de tous les profils scrapés
