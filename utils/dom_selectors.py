@@ -394,6 +394,32 @@ class DOMSelectors:
                     }
                 }
 
+                // ── Entreprise depuis la ligne "Poste actuel : … chez X" ──
+                // Source la plus fiable : le headline ne contient pas toujours
+                // l'entreprise (et peut contenir des séparateurs trompeurs).
+                // On cherche l'élément dont le texte commence par
+                // "Poste actuel/précédent" (ou "Current/Previous") et on prend
+                // ce qui suit le dernier " chez " / " at ".
+                {
+                    const summaryEls = container.querySelectorAll('div, p, span');
+                    for (const el of summaryEls) {
+                        const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+                        if (!/^(Postes?\\s+(actuels?|pr[eé]c[eé]dents?)|Current|Previous)/i.test(text)) continue;
+                        const lower = text.toLowerCase();
+                        let idx = lower.lastIndexOf(' chez ');
+                        let sep = 6;
+                        if (idx === -1) { idx = lower.lastIndexOf(' at '); sep = 4; }
+                        if (idx === -1) continue;
+                        let comp = text.substring(idx + sep).trim();
+                        if (comp.includes(',')) comp = comp.split(',')[0].trim();
+                        comp = comp.split(/\\s+[|·•]\\s+/)[0].trim();
+                        if (comp && comp.length <= 80) {
+                            company = comp;
+                            break;
+                        }
+                    }
+                }
+
                 seenHrefs.add(cleanHref);
 
                 return {
