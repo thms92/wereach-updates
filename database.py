@@ -16,6 +16,10 @@ class DatabaseManager:
     def init_database(self):
         """Initialise la base de données avec les tables nécessaires"""
         try:
+            import os
+            parent = os.path.dirname(self.db_file)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
 

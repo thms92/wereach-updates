@@ -359,19 +359,50 @@ class LinkedInScraperV2:
             if not ok:
                 logger.warning(f"⚠️ Navigation recherche entreprise '{entreprise}' échouée")
                 return None
-            await asyncio.sleep(2.5)
-            urn_id = await page.evaluate(
+            await asyncio.sleep(3.5)
+            info = await page.evaluate(
                 r"""() => {
                     const html = document.documentElement.innerHTML;
-                    const m = html.match(/urn:li:fs[d]?_company:(\d+)/);
-                    return m ? m[1] : null;
+                    const patterns = [
+                        /urn:li:fsd_company:(\d+)/,
+                        /urn:li:fs_company:(\d+)/,
+                        /urn:li:company:(\d+)/,
+                        /fsd_company:(\d+)/,
+                        /\/company\/(\d+)/
+                    ];
+                    let urn = null;
+                    for (const re of patterns) { const m = html.match(re); if (m) { urn = m[1]; break; } }
+                    const idx = html.indexOf('/company/');
+                    return {
+                        urn: urn,
+                        htmlLength: html.length,
+                        snippet: idx >= 0 ? html.substring(idx, idx + 140) : '',
+                        noResults: /Aucun r.sultat|No results found/i.test(html),
+                    };
                 }"""
             )
+            urn_id = (info or {}).get("urn")
             if urn_id:
                 self._save_company_urn(entreprise, str(urn_id))
                 logger.info(f"🏢 URN entreprise '{entreprise}' résolu via navigation: {urn_id}")
                 return str(urn_id)
-            logger.warning(f"⚠️ Aucun URN trouvé dans la page entreprises pour '{entreprise}'")
+
+            # Aucun URN → dumper le HTML réel pour analyse + tracer des indices
+            logger.warning(
+                f"⚠️ Aucun URN trouvé pour '{entreprise}' "
+                f"(htmlLength={info.get('htmlLength')}, noResults={info.get('noResults')}, "
+                f"snippet={info.get('snippet')!r})"
+            )
+            try:
+                dbg = Path(__file__).parent / "logs"
+                dbg.mkdir(exist_ok=True)
+                (dbg / "company_search_dump.html").write_text(
+                    await page.content(), encoding="utf-8"
+                )
+                await page.screenshot(path=str(dbg / "company_search.png"))
+                logger.info(f"📄 HTML page entreprises dumpé dans {dbg}/company_search_dump.html")
+            except Exception as dump_err:
+                logger.warning(f"⚠️ Échec dump page entreprises: {dump_err}")
             return None
         except Exception as e:
             logger.warning(f"⚠️ Erreur résolution URN '{entreprise}' via navigation: {e}")
