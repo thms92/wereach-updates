@@ -301,7 +301,7 @@ class LinkedInScraperV2:
             )
 
             if not result.get("ok"):
-                logger.warning(f"⚠️ Typeahead URN '{entreprise}' échoué: {result}")
+                logger.warning(f"⚠️ Typeahead URN '{entreprise}' échoué: {result} (page: {page.url})")
                 return None
 
             data = result.get("data", {}) or {}
@@ -331,6 +331,50 @@ class LinkedInScraperV2:
 
         except Exception as e:
             logger.warning(f"⚠️ Erreur résolution URN '{entreprise}' via typeahead: {e}")
+            return None
+
+    async def _resoudre_company_urn_via_navigation(
+        self, entreprise: str, page: Page
+    ) -> Optional[str]:
+        """Résout l'URN d'une entreprise en NAVIGUANT vers la recherche
+        d'entreprises LinkedIn puis en lisant l'URN numérique dans le HTML.
+
+        Plus robuste que l'API typeahead (qui peut échouer avec "Failed to
+        fetch" selon l'environnement) : on réutilise la navigation normale
+        (page.goto), qui fonctionne déjà pour la recherche de personnes.
+        Le résultat est mis en cache (config/company_urns.json).
+        """
+        if not entreprise:
+            return None
+        cached = self._resoudre_company_urn(entreprise)
+        if cached:
+            return cached
+        try:
+            kw_q = urllib.parse.quote(entreprise)
+            search_url = (
+                "https://www.linkedin.com/search/results/companies/"
+                f"?keywords={kw_q}&origin=SWITCH_SEARCH_VERTICAL"
+            )
+            ok = await self.network_manager.safe_page_goto(page, search_url)
+            if not ok:
+                logger.warning(f"⚠️ Navigation recherche entreprise '{entreprise}' échouée")
+                return None
+            await asyncio.sleep(2.5)
+            urn_id = await page.evaluate(
+                r"""() => {
+                    const html = document.documentElement.innerHTML;
+                    const m = html.match(/urn:li:fs[d]?_company:(\d+)/);
+                    return m ? m[1] : null;
+                }"""
+            )
+            if urn_id:
+                self._save_company_urn(entreprise, str(urn_id))
+                logger.info(f"🏢 URN entreprise '{entreprise}' résolu via navigation: {urn_id}")
+                return str(urn_id)
+            logger.warning(f"⚠️ Aucun URN trouvé dans la page entreprises pour '{entreprise}'")
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur résolution URN '{entreprise}' via navigation: {e}")
             return None
 
     async def extraire_profils_page(self, page: Page) -> List[Dict]:
@@ -805,7 +849,14 @@ class LinkedInScraperV2:
                 if entreprise:
                     if status_callback:
                         status_callback(f"🏢 Résolution URN entreprise '{entreprise}'…")
-                    await self._resoudre_company_urn_via_typeahead(entreprise, page)
+                    urn = await self._resoudre_company_urn_via_typeahead(entreprise, page)
+                    if not urn:
+                        urn = await self._resoudre_company_urn_via_navigation(entreprise, page)
+                    if not urn:
+                        logger.warning(
+                            f"⚠️ URN entreprise '{entreprise}' non résolu (typeahead + navigation) "
+                            f"— repli sur recherche par mot-clé (résultats parfois vides)."
+                        )
 
                 # Construire l'URL de recherche
                 url_recherche = self.construire_url_recherche(keyword, entreprise, ecoles_ids, ile_de_france)
