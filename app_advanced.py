@@ -19,7 +19,7 @@ from export_utils import ExportManager
 from queue_manager import QueueManager, JobStatus
 from logger import logger
 from utils.user_context import resolve_user_email, user_paths_for
-from utils.proxy_store import load_proxy
+from utils.proxy_store import load_proxy, save_proxy
 
 
 # Configuration Streamlit
@@ -93,6 +93,24 @@ page = st.sidebar.radio(
     "Choisir une page",
     ["📊 Dashboard", "🔍 Recherche", "🔗 Scraping URLs", "📋 Templates", "💾 Historique", "⚙️ Configuration"]
 )
+
+with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
+    paths = st.session_state.user_paths
+    cur = st.session_state.get('user_proxy') or {}
+    server = st.text_input("Serveur (http://host:port)", value=cur.get("server", ""))
+    p_user = st.text_input("Login proxy", value=cur.get("username", ""))
+    p_pass = st.text_input("Mot de passe proxy", type="password",
+                           value=cur.get("password", ""))
+    if st.button("💾 Enregistrer mon proxy"):
+        if server.strip():
+            proxy = {"server": server.strip(),
+                     "username": p_user.strip(),
+                     "password": p_pass}
+            save_proxy(str(paths.proxy_file), str(paths.key_file), proxy)
+            st.session_state.user_proxy = proxy
+            st.success("Proxy enregistré ✅")
+        else:
+            st.warning("Indique au moins un serveur.")
 
 # ==============================================
 # PAGE 1: DASHBOARD
