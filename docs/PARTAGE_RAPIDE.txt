@@ -1,0 +1,84 @@
+🚀 PARTAGE RAPIDE - LinkedIn Scraper V2
+======================================
+
+Pour partager l'outil à quelqu'un avec un Mac :
+
+ÉTAPE 1 : Créer le Package
+---------------------------
+Dans Terminal :
+
+    cd "mon dossier de scrapping perso"
+    ./create_package.sh
+
+→ Cela crée un fichier ZIP avec tout le nécessaire
+
+
+ÉTAPE 2 : Envoyer le ZIP
+-------------------------
+Choisissez votre méthode préférée :
+
+• AirDrop (Mac à Mac)
+• Email
+• WeTransfer
+• Clé USB
+
+
+ÉTAPE 3 : Instructions pour l'Autre Personne
+---------------------------------------------
+Envoyez-lui ce message :
+
+"""
+Salut !
+
+Voici l'outil LinkedIn Scraper.
+
+INSTALLATION (5 minutes) :
+
+1. Décompresse le ZIP
+
+2. Ouvre Terminal et va dans le dossier :
+   cd ~/Downloads/LinkedIn-Scraper-V2
+
+3. Lance l'installation :
+   ./install_mac.sh
+
+4. Lance l'application :
+   ./launch_app.sh
+
+5. Récupère ton cookie LinkedIn :
+   - Va sur linkedin.com et connecte-toi
+   - Appuie sur Cmd+Option+I (DevTools)
+   - Application > Cookies > linkedin.com
+   - Copie la valeur de "li_at"
+   - Colle dans l'interface
+
+Le README.md dans le dossier contient toutes les infos !
+
+Limite : 20-30 invitations/jour max
+"""
+
+
+FICHIERS CRÉÉS POUR VOUS
+-------------------------
+✅ README.md - Guide complet
+✅ INSTALLATION_MAC.md - Installation Mac
+✅ GUIDE_PARTAGE.md - Guide détaillé de partage
+✅ requirements.txt - Dépendances Python
+✅ install_mac.sh - Script d'installation
+✅ launch_app.sh - Script de lancement
+✅ create_package.sh - Script de création du ZIP
+
+
+⚠️ IMPORTANT
+-------------
+Le script create_package.sh exclut automatiquement :
+• Votre cookie (.secure_cookie)
+• Votre base de données (linkedin_scraper.db)
+• Vos logs et screenshots
+
+→ Vos données restent privées !
+
+
+BESOIN D'AIDE ?
+---------------
+Consultez GUIDE_PARTAGE.md pour plus de détails

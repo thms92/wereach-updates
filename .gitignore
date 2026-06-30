@@ -1,0 +1,73 @@
+# Données sensibles
+config/cookie.txt
+config/secret.key
+*.env
+.env
+linkedin_cookies.json
+.streamlit/secrets.toml
+config/*.json
+data/
+logs/
+
+# Présentations / documents lourds
+*.pptx
+
+# Captures de debug (peuvent contenir des données de profils/session)
+debug_*.png
+diagnostic_*.png
+
+# Base de données
+*.db
+profiles.db
+
+# CSV de profils
+profils_scrapes.csv
+
+# Logs
+*.log
+scraper.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Exports temporaires
+exports/
+temp/
+*.xlsx
+*.csv
+!requirements.txt

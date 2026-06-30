@@ -1,0 +1,11 @@
+services:
+  scraper:
+    build: .
+    container_name: linkedin-scraper
+    ports:
+      - "8501:8501"          # L'app est accessible sur http://localhost:8501
+    volumes:
+      - .:/app               # Persiste les données (base, cookie, profils scrapés) sur la machine
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

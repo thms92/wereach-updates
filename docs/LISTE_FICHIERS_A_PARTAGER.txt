@@ -1,0 +1,64 @@
+📋 FICHIERS À PARTAGER POUR LINKEDIN SCRAPER V2
+================================================
+
+✅ FICHIERS OBLIGATOIRES (Code Python)
+--------------------------------------
+app_advanced.py
+scraper_v2.py
+scraper_v2_sync.py
+config.py
+database.py
+cookie_utils.py
+export_utils.py
+logger.py
+dom_selectors.py
+network_manager.py
+profile_extractor.py
+
+✅ FICHIERS OBLIGATOIRES (Configuration)
+----------------------------------------
+requirements.txt
+README.md
+INSTALLATION_MAC.md
+
+✅ FICHIERS OPTIONNELS (Scripts d'installation)
+-----------------------------------------------
+install_mac.sh
+launch_app.sh
+
+❌ FICHIERS À NE PAS PARTAGER (Données personnelles)
+----------------------------------------------------
+.secure_cookie           # Votre cookie LinkedIn
+linkedin_scraper.db      # Votre base de données
+scraper.log             # Vos logs
+debug_*.png             # Screenshots de debug
+*.xlsx                  # Exports Excel
+__pycache__/            # Cache Python
+
+📦 COMMENT PARTAGER
+-------------------
+
+Option 1 : ZIP
+--------------
+1. Créer un dossier "LinkedIn-Scraper-V2"
+2. Copier tous les fichiers OBLIGATOIRES dedans
+3. Créer un ZIP
+4. Envoyer par email, AirDrop, ou clé USB
+
+Option 2 : GitHub (si vous êtes à l'aise)
+-----------------------------------------
+1. Créer un repo GitHub PRIVÉ
+2. Ajouter tous les fichiers (sauf ceux à ne pas partager)
+3. Partager l'accès à la personne
+
+Option 3 : AirDrop (Mac uniquement)
+------------------------------------
+1. Sélectionner tous les fichiers obligatoires
+2. Clic droit > Partager > AirDrop
+3. Envoyer au Mac de la personne
+
+⚠️ IMPORTANT
+-------------
+- Ne partagez JAMAIS votre fichier .secure_cookie
+- Ne partagez JAMAIS votre base de données linkedin_scraper.db
+- Ces fichiers contiennent vos données personnelles LinkedIn
