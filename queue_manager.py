@@ -63,7 +63,8 @@ class QueueManager:
 
     QUEUE_FILE = "config/queue.json"
 
-    def __init__(self):
+    def __init__(self, queue_file: str = None):
+        self.queue_file = queue_file or self.QUEUE_FILE
         self.config = QueueConfig()
         self.jobs: List[ScrapingJob] = []
         self.is_running = False
@@ -360,19 +361,19 @@ class QueueManager:
             ]
         }
 
-        os.makedirs(os.path.dirname(self.QUEUE_FILE), exist_ok=True)
-        with open(self.QUEUE_FILE, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(self.queue_file), exist_ok=True)
+        with open(self.queue_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         logger.info(f"💾 File d'attente sauvegardée ({len(self.jobs)} jobs)")
 
     def charger(self):
         """Charge la file d'attente depuis le fichier JSON."""
-        if not os.path.exists(self.QUEUE_FILE):
+        if not os.path.exists(self.queue_file):
             return
 
         try:
-            with open(self.QUEUE_FILE, "r", encoding="utf-8") as f:
+            with open(self.queue_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             cfg = data.get("config", {})
