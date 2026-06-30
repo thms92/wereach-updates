@@ -1126,7 +1126,7 @@ class LinkedInScraperV2:
         if self.use_database and self.db:
             try:
                 import sqlite3
-                conn = sqlite3.connect(self.config.DATABASE_FILE)
+                conn = sqlite3.connect(self.db.db_file)
                 cursor = conn.cursor()
                 cursor.execute("SELECT url FROM profiles WHERE url IS NOT NULL AND url != ''")
                 urls.update(row[0] for row in cursor.fetchall())
