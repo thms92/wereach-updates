@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from typing import Optional
 from logger import logger
 from config import ScraperConfig
+from utils.crypto_key import get_or_create_fernet_key
 
 
 class CookieManager:
@@ -19,14 +20,7 @@ class CookieManager:
 
     def _get_or_create_key(self) -> bytes:
         """Récupère ou crée une clé de chiffrement"""
-        if os.path.exists(self.key_file):
-            with open(self.key_file, 'rb') as f:
-                return f.read()
-        else:
-            key = Fernet.generate_key()
-            with open(self.key_file, 'wb') as f:
-                f.write(key)
-            return key
+        return get_or_create_fernet_key(self.key_file)
 
     def encrypt_cookie(self, cookie: str) -> str:
         """Chiffre un cookie"""
@@ -55,6 +49,10 @@ class CookieManager:
             encrypted = self.encrypt_cookie(cookie)
             with open(self.cookie_file, 'w') as f:
                 f.write(encrypted)
+            try:
+                os.chmod(self.cookie_file, 0o600)
+            except OSError:
+                pass
             logger.info("Cookie sauvegardé avec succès")
             return True
         except Exception as e:
