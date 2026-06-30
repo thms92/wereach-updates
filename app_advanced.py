@@ -292,7 +292,7 @@ elif page == "🔍 Recherche":
                     st.error("❌ Sélectionnez exactement une école")
                 else:
                     with st.spinner("🚀 Scraping en cours..."):
-                        scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'))
+                        scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv))
 
                         progress_bar = st.progress(0)
                         status_text = st.empty()
@@ -421,7 +421,7 @@ elif page == "🔍 Recherche":
                 st.error("❌ Cookie manquant")
             else:
                 with st.spinner("🚀 Recherche en cours..."):
-                    scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'))
+                    scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv))
 
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -650,7 +650,9 @@ elif page == "🔍 Recherche":
                                 job_callback=lambda idx, j: job_info.text(
                                     f"{'🔄' if j.status == JobStatus.EN_COURS else '✅' if j.status == JobStatus.TERMINE else '❌'} {j.entreprise}"
                                 ),
-                                proxy=st.session_state.get('user_proxy')
+                                proxy=st.session_state.get('user_proxy'),
+                                db_file=str(st.session_state.user_paths.db_file),
+                                profiles_csv=str(st.session_state.user_paths.profiles_csv)
                             )
 
                         qm.sauvegarder()
@@ -749,7 +751,7 @@ elif page == "🔗 Scraping URLs":
             st.error("❌ Aucune URL LinkedIn valide")
         else:
             with st.spinner(f"🔄 Scraping de {nb_urls} profils en cours..."):
-                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'))
+                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv))
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()

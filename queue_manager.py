@@ -141,7 +141,9 @@ class QueueManager:
         progress_callback: Optional[Callable] = None,
         status_callback: Optional[Callable] = None,
         job_callback: Optional[Callable] = None,
-        proxy: dict = None
+        proxy: dict = None,
+        db_file: str = None,
+        profiles_csv: str = None
     ) -> pd.DataFrame:
         """
         Lance l'exécution séquentielle de tous les jobs en attente.
@@ -151,6 +153,8 @@ class QueueManager:
             status_callback: Appelé avec (texte_statut: str)
             job_callback: Appelé avec (index_job: int, job: ScrapingJob) à chaque changement
             proxy: Configuration proxy Playwright {server, username, password} (optionnel)
+            db_file: Chemin vers la base de données SQLite isolée par utilisateur (optionnel)
+            profiles_csv: Chemin vers le CSV des profils scrapés isolé par utilisateur (optionnel)
 
         Returns:
             DataFrame consolidé de tous les profils scrapés
@@ -212,7 +216,8 @@ class QueueManager:
                 status_callback(f"🏢 {job.entreprise} ({jobs_traites + 1}/{total_jobs})")
 
             # Créer un nouveau scraper pour chaque job
-            scraper = LinkedInScraperV2Sync(use_database=True, proxy=proxy)
+            scraper = LinkedInScraperV2Sync(use_database=True, proxy=proxy,
+                                             db_file=db_file, profiles_csv=profiles_csv)
             job_start = datetime.now()
 
             try:

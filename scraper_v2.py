@@ -36,9 +36,11 @@ class LinkedInScraperV2:
     Scraper LinkedIn V2 - Version améliorée avec async/await
     """
 
-    def __init__(self, use_database: bool = True, proxy: dict = None):
+    def __init__(self, use_database: bool = True, proxy: dict = None,
+                 db_file: str = None, profiles_csv: str = None):
         self._proxy = proxy
         self.config = ScraperConfig()
+        self.profil_file = profiles_csv or self.config.PROFIL_FILE
         self.errors = []
         self.use_database = use_database
 
@@ -57,7 +59,7 @@ class LinkedInScraperV2:
         if use_database:
             try:
                 from database import DatabaseManager
-                self.db = DatabaseManager()
+                self.db = DatabaseManager(db_file=db_file)
             except Exception as e:
                 logger.warning(f"Base de données non disponible: {e}")
                 self.use_database = False
@@ -1135,9 +1137,9 @@ class LinkedInScraperV2:
 
         # 2. Charger aussi depuis le CSV (compatibilité)
         import os, csv
-        if os.path.exists(self.config.PROFIL_FILE):
+        if os.path.exists(self.profil_file):
             try:
-                with open(self.config.PROFIL_FILE, "r", encoding="utf-8") as f:
+                with open(self.profil_file, "r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     csv_urls = set(row.get("URL du profil", "") for row in reader if row.get("URL du profil"))
                     urls.update(csv_urls)
@@ -1158,10 +1160,10 @@ class LinkedInScraperV2:
             champs = ["Nom", "Poste", "Entreprise", "École",
                       "URL du profil", "Date", "Invitation"]
 
-            existe = os.path.exists(self.config.PROFIL_FILE)
+            existe = os.path.exists(self.profil_file)
 
             try:
-                with open(self.config.PROFIL_FILE, "a", newline="", encoding="utf-8") as f:
+                with open(self.profil_file, "a", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=champs)
                     if not existe:
                         writer.writeheader()

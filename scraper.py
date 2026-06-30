@@ -19,6 +19,8 @@ class LinkedInScraper:
         if use_database:
             try:
                 from database import DatabaseManager
+                # Legacy scraper (unused/not imported elsewhere in the app) — not multi-tenant-safe:
+                # always writes to the global DatabaseManager() default, bypassing per-user isolation.
                 self.db = DatabaseManager()
             except Exception as e:
                 logger.warning(f"Base de données non disponible: {e}")
