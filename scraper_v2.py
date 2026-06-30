@@ -36,7 +36,8 @@ class LinkedInScraperV2:
     Scraper LinkedIn V2 - Version améliorée avec async/await
     """
 
-    def __init__(self, use_database: bool = True):
+    def __init__(self, use_database: bool = True, proxy: dict = None):
+        self._proxy = proxy
         self.config = ScraperConfig()
         self.errors = []
         self.use_database = use_database
@@ -63,6 +64,17 @@ class LinkedInScraperV2:
                 self.db = None
         else:
             self.db = None
+
+    def _context_kwargs(self, profile, viewport) -> dict:
+        kwargs = {
+            "viewport": viewport,
+            "user_agent": profile.user_agent,
+            "locale": profile.locale,
+            "timezone_id": profile.timezone,
+        }
+        if self._proxy:
+            kwargs["proxy"] = self._proxy
+        return kwargs
 
     def construire_url_recherche(self, keyword: str, entreprise: str, ecoles_ids: List[str], ile_de_france: bool = False) -> str:
         """
@@ -739,10 +751,7 @@ class LinkedInScraperV2:
 
                 # Créer le contexte avec le profil stealth complet
                 context = await browser.new_context(
-                    viewport=viewport,
-                    user_agent=profile.user_agent,
-                    locale=profile.locale,
-                    timezone_id=profile.timezone,
+                    **self._context_kwargs(profile, viewport)
                 )
 
                 # Appliquer les headers stealth (avec Sec-CH-UA)
@@ -1317,10 +1326,7 @@ class LinkedInScraperV2:
                     )
 
                 context = await browser.new_context(
-                    viewport=viewport,
-                    user_agent=profile.user_agent,
-                    locale=profile.locale,
-                    timezone_id=profile.timezone,
+                    **self._context_kwargs(profile, viewport)
                 )
 
                 # Headers stealth avec Sec-CH-UA
