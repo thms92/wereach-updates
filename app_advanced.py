@@ -127,7 +127,7 @@ if st.session_state.get("auth_email"):
 
 page = st.sidebar.radio(
     "Choisir une page",
-    ["📊 Dashboard", "🔍 Recherche", "🔗 Scraping URLs", "📋 Templates", "💾 Historique", "📜 Logs", "⚙️ Configuration"]
+    ["📊 Dashboard", "🔍 Recherche", "🎯 Chasse", "🔗 Scraping URLs", "📋 Templates", "💾 Historique", "📜 Logs", "⚙️ Configuration"]
 )
 
 with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
@@ -972,6 +972,99 @@ elif page == "💾 Historique":
 # ==============================================
 # PAGE 6: CONFIGURATION
 # ==============================================
+elif page == "🎯 Chasse":
+    import re as _re_chasse
+    st.header("🎯 Chasse — prospection ciblée")
+    st.caption("Importe une liste de profils, sélectionne les bonnes personnes, puis lance les invitations sur ta sélection.")
+
+    cookie_chasse = st.text_input(
+        "Cookie li_at", value=st.session_state.global_cookie, type="password", key="cookie_chasse"
+    )
+    if cookie_chasse and cookie_chasse != st.session_state.global_cookie:
+        if st.session_state.cookie_manager.validate_cookie_format(cookie_chasse):
+            st.session_state.cookie_manager.save_cookie(cookie_chasse)
+            st.session_state.global_cookie = cookie_chasse
+
+    st.subheader("1) Importer des prospects")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        urls_text = st.text_area(
+            "Coller des URLs de profils (une par ligne)", height=150,
+            placeholder="https://www.linkedin.com/in/...",
+        )
+    with col_b:
+        up = st.file_uploader("…ou importer un CSV (colonne 'URL')", type=["csv"])
+
+    urls = []
+    if urls_text.strip():
+        urls += _re_chasse.findall(r'https?://[^\s,;]*linkedin\.com/in/[^\s,;]+', urls_text)
+    if up is not None:
+        try:
+            df_up = pd.read_csv(up)
+            col = next((c for c in df_up.columns
+                        if c.lower() in ('url', 'url du profil', 'profil', 'lien')), None)
+            if col:
+                urls += [str(u) for u in df_up[col].dropna().tolist() if 'linkedin.com/in/' in str(u)]
+            else:
+                st.warning("Aucune colonne URL trouvée dans le CSV (attendu : 'URL').")
+        except Exception as e:
+            st.error(f"CSV illisible : {e}")
+    # Normaliser + dédupliquer
+    urls = list(dict.fromkeys(u.split('?')[0].rstrip('/') + '/' for u in urls))
+
+    if not urls:
+        st.info("Colle des URLs ou importe un CSV pour commencer.")
+    else:
+        st.success(f"{len(urls)} profil(s) chargé(s)")
+        st.subheader("2) Sélectionner")
+        base_df = pd.DataFrame({"Sélectionner": [True] * len(urls), "URL": urls})
+        edited = st.data_editor(
+            base_df, use_container_width=True, hide_index=True, key="chasse_editor",
+            column_config={"Sélectionner": st.column_config.CheckboxColumn("✓", default=True)},
+        )
+        selected = edited[edited["Sélectionner"]]["URL"].tolist()
+        st.caption(f"👉 {len(selected)} profil(s) sélectionné(s)")
+
+        st.subheader("3) Action")
+        inviter_chasse = st.checkbox("Envoyer une invitation à chaque profil sélectionné", value=True)
+        note_chasse = ""
+        if st.checkbox("Ajouter une note à l'invitation (⚠️ limité ~5/mois par LinkedIn)"):
+            note_chasse = st.text_area("Note (identique pour tous)", max_chars=280)
+
+        if st.button("🎯 Lancer sur la sélection", type="primary"):
+            if not st.session_state.global_cookie:
+                st.error("❌ Cookie manquant")
+            elif not selected:
+                st.warning("Aucun profil sélectionné.")
+            else:
+                with st.spinner(f"Traitement de {len(selected)} profil(s)…"):
+                    scraper = LinkedInScraperV2Sync(
+                        use_database=True, proxy=st.session_state.get('user_proxy'),
+                        db_file=str(st.session_state.user_paths.db_file),
+                        profiles_csv=str(st.session_state.user_paths.profiles_csv),
+                    )
+                    progress = st.progress(0)
+                    status = st.empty()
+                    df_res = scraper.run_url_scraper(
+                        cookie=st.session_state.global_cookie,
+                        urls=selected,
+                        inviter=inviter_chasse,
+                        message_invitation=note_chasse,
+                        progress_callback=lambda p: progress.progress(p),
+                        status_callback=lambda s: status.text(s),
+                    )
+                if df_res is not None and not df_res.empty:
+                    st.success(f"✅ {len(df_res)} profil(s) traité(s)")
+                    st.dataframe(df_res, use_container_width=True)
+                    excel = st.session_state.export_manager.export_to_excel(df_res.to_dict('records'))
+                    st.download_button(
+                        "📥 Télécharger Excel", data=excel,
+                        file_name=f"chasse_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                else:
+                    st.warning("Aucun résultat (profils inaccessibles, déjà en relation, ou cookie invalide).")
+
 elif page == "📜 Logs":
     st.header("📜 Logs du scraper")
     st.caption("Journal d'exécution en temps réel — pour voir où en est un scraping ou pourquoi il s'arrête.")

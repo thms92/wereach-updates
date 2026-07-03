@@ -1444,9 +1444,10 @@ class LinkedInScraperV2:
                     **self._context_kwargs(profile, viewport)
                 )
 
-                # Headers stealth avec Sec-CH-UA
-                stealth_headers = StealthProfileManager.get_stealth_headers(profile)
-                await context.set_extra_http_headers(stealth_headers)
+                # Headers stealth (Sec-CH-UA) — sauf si désactivé
+                if self._stealth:
+                    stealth_headers = StealthProfileManager.get_stealth_headers(profile)
+                    await context.set_extra_http_headers(stealth_headers)
 
                 await context.add_cookies([{
                     "name": "li_at",
@@ -1459,9 +1460,10 @@ class LinkedInScraperV2:
 
                 page = await context.new_page()
 
-                # Script stealth cohérent avec le profil
-                stealth_script = StealthProfileManager.get_stealth_init_script(profile)
-                await page.add_init_script(stealth_script)
+                # Script stealth cohérent avec le profil — sauf si désactivé
+                if self._stealth:
+                    stealth_script = StealthProfileManager.get_stealth_init_script(profile)
+                    await page.add_init_script(stealth_script)
 
                 # ═══ MONITORING HTTP ═══
                 self.human.attach_monitor(page)
@@ -1535,13 +1537,28 @@ class LinkedInScraperV2:
                                 False
                             )
 
-                            donnees.append({
+                            ligne = {
                                 'Nom': profile_data['nom'],
                                 'Poste': profile_data['poste'],
                                 'Entreprise': profile_data['entreprise'],
                                 'URL': url,
                                 'Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                            })
+                            }
+
+                            # Invitation si demandé (via la page profil déjà chargée)
+                            if inviter:
+                                try:
+                                    invited = await self.envoyer_invitation(
+                                        page, url, profile_data['nom'], message_invitation
+                                    )
+                                    ligne['Invitation'] = 'Oui' if invited else 'Non'
+                                    if invited:
+                                        self.human.daily_limits.increment_invitations()
+                                except Exception as _e:
+                                    logger.warning(f"  ⚠️ Invitation échouée: {_e}")
+                                    ligne['Invitation'] = 'Non'
+
+                            donnees.append(ligne)
                         else:
                             logger.warning(f"  ⚠️ Aucune donnée extraite")
                             self.errors.append(f"Pas de données: {url}")
