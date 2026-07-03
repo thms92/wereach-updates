@@ -536,41 +536,62 @@ class LinkedInScraperV2:
                 logger.warning(f"  ⚠️ Impossible d'extraire le vanityName de {profile_url}")
                 return False
 
-            logger.info(f"  🔍 Recherche du lien 'Se connecter' pour vanityName: {vanity_name}")
+            logger.info(f"  🔍 Recherche du bouton 'Se connecter' pour: {vanity_name}")
 
-            # STRATÉGIE: Chercher le lien <a href="/preload/search-custom-invite/?vanityName=X">
-            # qui contient le texte "Se connecter"
-            # Ce lien ouvre une modal SANS naviguer vers le profil
+            # STRATÉGIE 2026 : le bouton "Se connecter" est un <button> dans la
+            # carte de résultat (aria-label "Inviter <Nom> à se connecter"), et
+            # non plus le vieux lien /preload/search-custom-invite. S'il n'est
+            # pas visible directement, il est souvent dans le menu "Plus".
 
             try:
-                # Pause naturelle avant d'agir (simule la lecture du profil)
                 await self.human.reading_pause(text_length=80)
 
-                # Chercher le lien d'invitation pour ce profil
-                # Format: <a href="/preload/search-custom-invite/?vanityName=XXX">
-                connect_link_selector = f'a[href*="/preload/search-custom-invite/?vanityName={vanity_name}"]'
+                # Carte de résultat qui contient le lien vers CE profil
+                card = page.locator(f'li:has(a[href*="/in/{vanity_name}"])').first
+                if await card.count() == 0:
+                    card = page.locator(f'div:has(> a[href*="/in/{vanity_name}"])').first
+                if await card.count() == 0:
+                    card = page  # repli : toute la page
 
-                # Vérifier si le lien existe
-                connect_links = await page.locator(connect_link_selector).count()
+                # 1) Bouton "Se connecter" directement dans la carte
+                connect = card.locator(
+                    'button[aria-label*="nviter"][aria-label*="onnecter"], '
+                    'button:has-text("Se connecter")'
+                ).first
 
-                if connect_links == 0:
-                    logger.info(f"  ⏭️ Pas de bouton 'Se connecter' (déjà connecté, bouton 'Suivre' ou 'Message')")
-                    logger.info(f"  → Profil ignoré, passage au suivant")
+                if not (await connect.count() > 0 and await connect.is_visible()):
+                    # 2) Repli : ouvrir le menu "Plus" de la carte
+                    plus = card.locator(
+                        'button[aria-label*="Plus"], button:has-text("Plus")'
+                    ).first
+                    if await plus.count() > 0 and await plus.is_visible():
+                        logger.info("  ↳ Ouverture du menu 'Plus'…")
+                        await self.human.human_hover_and_click(page, plus)
+                        await self.human.human_delay(600, 200)
+                        connect = page.locator(
+                            'div[role="menu"] button:has-text("Se connecter"), '
+                            'div[role="menu"] [aria-label*="nviter"][aria-label*="onnecter"], '
+                            'button[aria-label*="nviter"][aria-label*="onnecter"]'
+                        ).first
+
+                if not (await connect.count() > 0 and await connect.is_visible()):
+                    logger.info("  ⏭️ Pas de bouton 'Se connecter' (déjà en relation / non invitable)")
+                    # Diagnostic : lister les boutons de la carte pour analyse
+                    try:
+                        btns = await card.locator('button').all_inner_texts()
+                        vus = [b.strip() for b in btns if b.strip()][:8]
+                        logger.info(f"  📋 Boutons présents dans la carte: {vus}")
+                    except Exception:
+                        pass
                     return False
 
-                logger.info(f"  ✓ Lien 'Se connecter' trouvé ({connect_links} occurrences)")
-
-                # Scroll naturel vers l'élément
-                connect_locator = page.locator(connect_link_selector).first
                 try:
-                    await self.human.scroll_to_element_naturally(page, connect_locator)
+                    await self.human.scroll_to_element_naturally(page, connect)
                 except Exception:
                     pass
 
-                # Clic humain avec survol de souris
-                await self.human.human_hover_and_click(page, connect_locator)
-
-                logger.info(f"  ✓ Clic effectué sur le lien 'Se connecter'")
+                await self.human.human_hover_and_click(page, connect)
+                logger.info("  ✓ Clic sur 'Se connecter'")
 
             except Exception as e:
                 logger.warning(f"  ⚠️ Erreur lors du clic sur 'Se connecter': {e}")
