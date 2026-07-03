@@ -546,43 +546,62 @@ class LinkedInScraperV2:
             try:
                 await self.human.reading_pause(text_length=80)
 
-                # Carte de résultat qui contient le lien vers CE profil
-                card = page.locator(f'li:has(a[href*="/in/{vanity_name}"])').first
-                if await card.count() == 0:
-                    card = page.locator(f'div:has(> a[href*="/in/{vanity_name}"])').first
-                if await card.count() == 0:
-                    card = page  # repli : toute la page
-
-                # 1) Bouton "Se connecter" directement dans la carte
-                connect = card.locator(
-                    'button[aria-label*="nviter"][aria-label*="onnecter"], '
-                    'button:has-text("Se connecter")'
+                # Carte de résultat (nouveau DOM LinkedIn : div[role="listitem"])
+                card = page.locator(
+                    f'div[role="listitem"]:has(a[href*="/in/{vanity_name}"])'
                 ).first
+                if await card.count() == 0:
+                    card = page.locator(f'*:has(> a[href*="/in/{vanity_name}"])').first
 
-                if not (await connect.count() > 0 and await connect.is_visible()):
-                    # 2) Repli : ouvrir le menu "Plus" de la carte
+                # Les boutons d'action sont HYDRATÉS à l'affichage : amener la
+                # carte dans le viewport et laisser le temps au rendu JS.
+                try:
+                    await card.scroll_into_view_if_needed(timeout=4000)
+                except Exception:
+                    pass
+                await self.human.human_delay(1800, 400)
+
+                async def _trouver_connect():
+                    c = card.locator(
+                        'button[aria-label*="nviter"][aria-label*="onnecter"], '
+                        'button:has-text("Se connecter")'
+                    ).first
+                    if await c.count() > 0 and await c.is_visible():
+                        return c
+                    # Repli : menu "Plus"
                     plus = card.locator(
                         'button[aria-label*="Plus"], button:has-text("Plus")'
                     ).first
                     if await plus.count() > 0 and await plus.is_visible():
                         logger.info("  ↳ Ouverture du menu 'Plus'…")
                         await self.human.human_hover_and_click(page, plus)
-                        await self.human.human_delay(600, 200)
-                        connect = page.locator(
+                        await self.human.human_delay(700, 200)
+                        c = page.locator(
                             'div[role="menu"] button:has-text("Se connecter"), '
-                            'div[role="menu"] [aria-label*="nviter"][aria-label*="onnecter"], '
-                            'button[aria-label*="nviter"][aria-label*="onnecter"]'
+                            'div[role="menu"] [aria-label*="nviter"][aria-label*="onnecter"]'
                         ).first
+                        if await c.count() > 0 and await c.is_visible():
+                            return c
+                    return None
 
-                if not (await connect.count() > 0 and await connect.is_visible()):
-                    logger.info("  ⏭️ Pas de bouton 'Se connecter' (déjà en relation / non invitable)")
-                    # Diagnostic : lister les boutons de la carte pour analyse
+                connect = await _trouver_connect()
+
+                if connect is None:
+                    logger.info("  ⏭️ Bouton 'Se connecter' introuvable (DOM d'action non rendu ?)")
+                    # Diagnostic : dumper le VRAI HTML de la carte (post-scroll)
                     try:
-                        btns = await card.locator('button').all_inner_texts()
-                        vus = [b.strip() for b in btns if b.strip()][:8]
-                        logger.info(f"  📋 Boutons présents dans la carte: {vus}")
-                    except Exception:
-                        pass
+                        from pathlib import Path
+                        dbg = Path(__file__).parent / "logs"
+                        dbg.mkdir(exist_ok=True)
+                        html = await card.evaluate("el => el.outerHTML")
+                        (dbg / "invite_card_dump.html").write_text(html[:8000], encoding="utf-8")
+                        nb_btn = await card.locator("button").count()
+                        logger.info(
+                            f"  📋 Carte dumpée → logs/invite_card_dump.html "
+                            f"({nb_btn} bouton(s) dans la carte)"
+                        )
+                    except Exception as _e:
+                        logger.info(f"  (dump carte échoué: {_e})")
                     return False
 
                 try:
