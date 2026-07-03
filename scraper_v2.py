@@ -546,61 +546,53 @@ class LinkedInScraperV2:
             try:
                 await self.human.reading_pause(text_length=80)
 
-                # PLAN B : inviter depuis la PAGE PROFIL.
-                # Les résultats de recherche ne rendent plus les boutons d'action
-                # au bot (emplacement vide dans le DOM headless). La page profil
-                # expose "Se connecter" (section principale ou menu "Plus").
-                clean_url = profile_url.split('?')[0].rstrip('/') + '/'
-                await self.network_manager.safe_page_goto(page, clean_url)
-                await self.human.human_delay(2000, 500)
+                # Le bouton "Se connecter" est un <a> (pas un <button>) dans la
+                # carte de résultat : href "/preload/search-custom-invite",
+                # componentkey *ConnectButton*, aria-label "Inviter <Nom> à
+                # rejoindre votre réseau". Il s'hydrate à l'affichage de la carte.
+                card = page.locator(
+                    f'div[role="listitem"]:has(a[href*="/in/{vanity_name}"])'
+                ).first
+                if await card.count() == 0:
+                    card = page.locator(f'*:has(> a[href*="/in/{vanity_name}"])').first
 
-                async def _profil_connect():
-                    # 1) "Se connecter" visible dans la section principale
-                    c = page.locator(
-                        'main button[aria-label*="nviter"][aria-label*="onnecter"], '
-                        'main button:has-text("Se connecter")'
-                    ).first
-                    if await c.count() > 0 and await c.is_visible():
-                        return c
-                    # 2) Sinon, via le menu "Plus"
-                    plus = page.locator(
-                        'main button[aria-label*="Plus"], main button:has-text("Plus")'
-                    ).first
-                    if await plus.count() > 0 and await plus.is_visible():
-                        logger.info("  ↳ Ouverture du menu 'Plus' du profil…")
-                        await self.human.human_hover_and_click(page, plus)
-                        await self.human.human_delay(800, 200)
-                        c = page.locator(
-                            'div[role="menu"] [aria-label*="nviter"][aria-label*="onnecter"], '
-                            'div[role="menu"] div:has-text("Se connecter"), '
-                            'div[aria-label*="nviter"][aria-label*="onnecter"]'
-                        ).first
-                        if await c.count() > 0 and await c.is_visible():
-                            return c
-                    return None
+                # Amener la carte dans le viewport pour déclencher l'hydratation
+                try:
+                    await card.scroll_into_view_if_needed(timeout=4000)
+                except Exception:
+                    pass
+                await self.human.human_delay(1500, 400)
 
-                connect = await _profil_connect()
+                connect = card.locator(
+                    'a[href*="/preload/search-custom-invite"], '
+                    'a[componentkey*="ConnectButton"], '
+                    'a[aria-label^="Inviter"]'
+                ).first
+                try:
+                    await connect.wait_for(state="visible", timeout=5000)
+                except Exception:
+                    pass
 
-                if connect is None:
-                    logger.info("  ⏭️ 'Se connecter' introuvable sur la page profil (déjà en relation / non invitable ?)")
-                    # Diagnostic : dumper le haut de la page profil + lister ses boutons
+                if await connect.count() == 0:
+                    logger.info("  ⏭️ Pas de 'Se connecter' (déjà en relation / invitation déjà en attente)")
                     try:
                         from pathlib import Path
                         dbg = Path(__file__).parent / "logs"
                         dbg.mkdir(exist_ok=True)
-                        main_loc = page.locator("main").first
-                        html = (await main_loc.evaluate("el => el.outerHTML")) if await main_loc.count() else (await page.content())
-                        (dbg / "invite_profile_dump.html").write_text(html[:12000], encoding="utf-8")
-                        btns = await page.locator("main button").all_inner_texts()
-                        vus = [b.strip() for b in btns if b.strip()][:12]
-                        logger.info(f"  📋 Boutons de la page profil: {vus}")
-                        logger.info("  📄 Page profil dumpée → logs/invite_profile_dump.html")
-                    except Exception as _e:
-                        logger.info(f"  (dump profil échoué: {_e})")
+                        html = await card.evaluate("el => el.outerHTML")
+                        (dbg / "invite_card_dump.html").write_text(html[:9000], encoding="utf-8")
+                        logger.info("  📄 Carte dumpée → logs/invite_card_dump.html")
+                    except Exception:
+                        pass
                     return False
 
+                try:
+                    await self.human.scroll_to_element_naturally(page, connect)
+                except Exception:
+                    pass
+
                 await self.human.human_hover_and_click(page, connect)
-                logger.info("  ✓ Clic sur 'Se connecter' (page profil)")
+                logger.info("  ✓ Clic sur 'Se connecter'")
 
             except Exception as e:
                 logger.warning(f"  ⚠️ Erreur lors du clic sur 'Se connecter': {e}")
