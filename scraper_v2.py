@@ -14,6 +14,7 @@ Améliorations principales :
 
 import asyncio
 import json
+import os
 import re
 import urllib.parse
 from datetime import datetime
@@ -39,6 +40,11 @@ class LinkedInScraperV2:
     def __init__(self, use_database: bool = True, proxy: dict = None,
                  db_file: str = None, profiles_csv: str = None):
         self._proxy = proxy
+        # Camouflage (spoof UA + navigator + en-têtes Sec-CH-UA). Sur du vrai
+        # Chrome, ce spoofing rend la session incohérente → LinkedIn sert sa
+        # version allégée sans JavaScript (pas de bouton "Se connecter").
+        # SCRAPER_STEALTH=false pour l'utiliser tel quel (vrai Chrome).
+        self._stealth = os.getenv("SCRAPER_STEALTH", "true").strip().lower() not in ("false", "0", "no")
         self.config = ScraperConfig()
         self.profil_file = profiles_csv or self.config.PROFIL_FILE
         self.errors = []
@@ -70,10 +76,11 @@ class LinkedInScraperV2:
     def _context_kwargs(self, profile, viewport) -> dict:
         kwargs = {
             "viewport": viewport,
-            "user_agent": profile.user_agent,
             "locale": profile.locale,
             "timezone_id": profile.timezone,
         }
+        if self._stealth:
+            kwargs["user_agent"] = profile.user_agent
         if self._proxy:
             kwargs["proxy"] = self._proxy
         return kwargs
@@ -853,9 +860,10 @@ class LinkedInScraperV2:
                     **self._context_kwargs(profile, viewport)
                 )
 
-                # Appliquer les headers stealth (avec Sec-CH-UA)
-                stealth_headers = StealthProfileManager.get_stealth_headers(profile)
-                await context.set_extra_http_headers(stealth_headers)
+                # Appliquer les headers stealth (avec Sec-CH-UA) — sauf si désactivé
+                if self._stealth:
+                    stealth_headers = StealthProfileManager.get_stealth_headers(profile)
+                    await context.set_extra_http_headers(stealth_headers)
 
                 # Appliquer le cookie
                 await context.add_cookies([{
@@ -869,9 +877,10 @@ class LinkedInScraperV2:
 
                 page = await context.new_page()
 
-                # Injecter les scripts stealth cohérents avec le profil
-                stealth_script = StealthProfileManager.get_stealth_init_script(profile)
-                await page.add_init_script(stealth_script)
+                # Injecter les scripts stealth cohérents avec le profil — sauf si désactivé
+                if self._stealth:
+                    stealth_script = StealthProfileManager.get_stealth_init_script(profile)
+                    await page.add_init_script(stealth_script)
 
                 # ═══ MONITORING HTTP ═══
                 self.human.attach_monitor(page)
