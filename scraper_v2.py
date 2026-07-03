@@ -746,6 +746,86 @@ class LinkedInScraperV2:
                 pass
             return False
 
+    async def envoyer_message(
+        self, page: Page, profile_url: str, profile_name: str, message: str
+    ) -> bool:
+        """Envoie un message direct à un profil (relation de 1er degré).
+
+        Ouvre la page profil, clique "Message", saisit le texte et envoie.
+        Ne fonctionne que si la personne est une relation (a accepté).
+        """
+        if not message.strip():
+            return False
+        try:
+            logger.info(f"💬 Message à : {profile_name}")
+            clean_url = profile_url.split('?')[0].rstrip('/') + '/'
+            await self.network_manager.safe_page_goto(page, clean_url)
+            await self.human.human_delay(2000, 500)
+
+            btn = page.locator(
+                'main button[aria-label^="Message"], main a[aria-label^="Message"], '
+                'main button:has-text("Message"), main a:has-text("Message")'
+            ).first
+            if not (await btn.count() > 0 and await btn.is_visible()):
+                logger.info("  ⏭️ Pas de bouton 'Message' (pas une relation de 1er degré ?)")
+                try:
+                    from pathlib import Path
+                    dbg = Path(__file__).parent / "logs"; dbg.mkdir(exist_ok=True)
+                    main_loc = page.locator("main").first
+                    html = (await main_loc.evaluate("el => el.outerHTML")) if await main_loc.count() else (await page.content())
+                    (dbg / "message_profile_dump.html").write_text(html[:12000], encoding="utf-8")
+                    logger.info("  📄 Page profil dumpée → logs/message_profile_dump.html")
+                except Exception:
+                    pass
+                return False
+
+            await self.human.human_hover_and_click(page, btn)
+            await self.human.human_delay(1500, 400)
+
+            box = page.locator(
+                'div[contenteditable="true"][role="textbox"], '
+                'div.msg-form__contenteditable[contenteditable="true"], '
+                'div[contenteditable="true"]'
+            ).first
+            try:
+                await box.wait_for(state="visible", timeout=6000)
+            except Exception:
+                pass
+            if await box.count() == 0:
+                logger.info("  ⏭️ Zone de saisie du message introuvable")
+                try:
+                    from pathlib import Path
+                    dbg = Path(__file__).parent / "logs"; dbg.mkdir(exist_ok=True)
+                    (dbg / "message_compose_dump.html").write_text((await page.content())[:14000], encoding="utf-8")
+                    logger.info("  📄 Compose dumpé → logs/message_compose_dump.html")
+                except Exception:
+                    pass
+                return False
+
+            await box.click()
+            await self.human.human_type(page, box, message)
+            await self.human.human_delay(900, 250)
+
+            send = page.locator(
+                'button.msg-form__send-button, '
+                'button[type="submit"]:has-text("Envoyer"), '
+                'button:has-text("Envoyer")'
+            ).first
+            if await send.count() > 0 and await send.is_visible():
+                await self.human.human_hover_and_click(page, send)
+                logger.info(f"  ✅ Message envoyé à {profile_name}")
+                await self.human.human_delay(1200, 300)
+                return True
+            # Repli : touche Entrée
+            await box.press("Enter")
+            logger.info(f"  ✅ Message envoyé (Entrée) à {profile_name}")
+            await self.human.human_delay(1000, 250)
+            return True
+
+        except Exception as e:
+            logger.warning(f"  ⚠️ Erreur message {profile_name}: {e}")
+            return False
+
     async def run_scraper_async(
         self,
         cookie: str,
@@ -1388,6 +1468,7 @@ class LinkedInScraperV2:
         urls: List[str],
         inviter: bool = False,
         message_invitation: str = "",
+        message_direct: str = "",
         progress_callback: Optional[Callable] = None,
         status_callback: Optional[Callable] = None
     ) -> pd.DataFrame:
@@ -1557,6 +1638,17 @@ class LinkedInScraperV2:
                                 except Exception as _e:
                                     logger.warning(f"  ⚠️ Invitation échouée: {_e}")
                                     ligne['Invitation'] = 'Non'
+
+                            # Message direct si demandé (relation de 1er degré)
+                            if message_direct.strip():
+                                try:
+                                    sent = await self.envoyer_message(
+                                        page, url, profile_data['nom'], message_direct
+                                    )
+                                    ligne['Message'] = 'Oui' if sent else 'Non'
+                                except Exception as _e:
+                                    logger.warning(f"  ⚠️ Message échoué: {_e}")
+                                    ligne['Message'] = 'Non'
 
                             donnees.append(ligne)
                         else:

@@ -99,11 +99,13 @@ class LinkedInScraperV2Sync:
         urls: List[str],
         inviter: bool = False,
         message_invitation: str = "",
+        message_direct: str = "",
         progress_callback: Optional[Callable] = None,
         status_callback: Optional[Callable] = None
     ) -> pd.DataFrame:
         """
         Scrape des profils LinkedIn à partir d'une liste d'URLs (mode synchrone).
+        Peut aussi inviter (inviter=True) et/ou envoyer un message (message_direct).
         """
         try:
             logger.info(f"🔗 Lancement scraping URLs ({len(urls)} profils)")
@@ -114,6 +116,7 @@ class LinkedInScraperV2Sync:
                     urls=urls,
                     inviter=inviter,
                     message_invitation=message_invitation,
+                    message_direct=message_direct,
                     progress_callback=progress_callback,
                     status_callback=status_callback
                 )

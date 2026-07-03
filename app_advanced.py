@@ -1025,17 +1025,25 @@ elif page == "🎯 Chasse":
         selected = edited[edited["Sélectionner"]]["URL"].tolist()
         st.caption(f"👉 {len(selected)} profil(s) sélectionné(s)")
 
-        st.subheader("3) Action")
-        inviter_chasse = st.checkbox("Envoyer une invitation à chaque profil sélectionné", value=True)
+        st.subheader("3) Action sur la sélection")
+        action = st.radio("Que faire ?", ["📨 Inviter", "💬 Envoyer un message"], horizontal=True)
         note_chasse = ""
-        if st.checkbox("Ajouter une note à l'invitation (⚠️ limité ~5/mois par LinkedIn)"):
-            note_chasse = st.text_area("Note (identique pour tous)", max_chars=280)
+        msg_chasse = ""
+        if action == "📨 Inviter":
+            if st.checkbox("Ajouter une note à l'invitation (⚠️ limité ~5/mois par LinkedIn)"):
+                note_chasse = st.text_area("Note (identique pour tous)", max_chars=280)
+        else:
+            st.info("💡 Le message ne marche que pour tes **relations de 1er degré** (personnes qui ont accepté ton invitation).")
+            msg_chasse = st.text_area("Message (identique pour tous)", max_chars=1000,
+                                      placeholder="Bonjour, ravi d'être en contact !")
 
         if st.button("🎯 Lancer sur la sélection", type="primary"):
             if not st.session_state.global_cookie:
                 st.error("❌ Cookie manquant")
             elif not selected:
                 st.warning("Aucun profil sélectionné.")
+            elif action == "💬 Envoyer un message" and not msg_chasse.strip():
+                st.warning("Écris un message avant de lancer.")
             else:
                 with st.spinner(f"Traitement de {len(selected)} profil(s)…"):
                     scraper = LinkedInScraperV2Sync(
@@ -1048,8 +1056,9 @@ elif page == "🎯 Chasse":
                     df_res = scraper.run_url_scraper(
                         cookie=st.session_state.global_cookie,
                         urls=selected,
-                        inviter=inviter_chasse,
+                        inviter=(action == "📨 Inviter"),
                         message_invitation=note_chasse,
+                        message_direct=(msg_chasse if action == "💬 Envoyer un message" else ""),
                         progress_callback=lambda p: progress.progress(p),
                         status_callback=lambda s: status.text(s),
                     )
