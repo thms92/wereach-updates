@@ -220,6 +220,16 @@ class DOMSelectors:
                 if (name.includes('·')) name = name.split('·')[0].trim();
                 if (name.includes('•')) name = name.split('•')[0].trim();
                 name = name.split('\\n')[0].trim();
+                // Dédupliquer un nom répété ("Hugo Proust Hugo Proust" → "Hugo Proust")
+                {
+                    const toks = name.split(/\\s+/).filter(Boolean);
+                    if (toks.length >= 2 && toks.length % 2 === 0) {
+                        const half = toks.length / 2;
+                        const a = toks.slice(0, half).join(' ');
+                        const b = toks.slice(half).join(' ');
+                        if (a && a.toLowerCase() === b.toLowerCase()) name = a;
+                    }
+                }
                 if (name.length > 80) name = name.substring(0, 80).trim();
 
                 if (!name || name.length < 2) return null;
@@ -411,9 +421,11 @@ class DOMSelectors:
                         if (idx === -1) { idx = lower.lastIndexOf(' at '); sep = 4; }
                         if (idx === -1) continue;
                         let comp = text.substring(idx + sep).trim();
-                        if (comp.includes(',')) comp = comp.split(',')[0].trim();
-                        comp = comp.split(/\\s+[|·•]\\s+/)[0].trim();
-                        if (comp && comp.length <= 80) {
+                        // Le vrai nom d'entreprise vient en premier : couper au
+                        // premier séparateur (tiret espacé, deux-points, |, •, virgule).
+                        comp = comp.split(/\\s+[-–—:|·•]\\s+|,/)[0].trim();
+                        if (comp.length > 60) comp = comp.substring(0, 60).trim();
+                        if (comp) {
                             company = comp;
                             break;
                         }

@@ -536,32 +536,14 @@ class HumanBehavior:
             # Simuler la lecture du feed (scroll naturel)
             await self.browse_page_naturally(page)
 
-            # Pause de "lecture" du feed (3-8 secondes)
-            await asyncio.sleep(random.uniform(3, 8))
+            # Pause de "lecture" du feed (2-4 secondes)
+            await asyncio.sleep(random.uniform(2, 4))
 
-            # Parfois, visiter les notifications (30% de chance)
-            if random.random() < 0.30:
-                logger.info("🔔 Warm-up: visite des notifications...")
-                try:
-                    await page.goto("https://www.linkedin.com/notifications/",
-                                    wait_until="domcontentloaded", timeout=15000)
-                    await asyncio.sleep(random.uniform(2, 5))
-                    await self.human_scroll_down(page, total_px=random.randint(100, 300))
-                except Exception:
-                    pass
-
-            # Parfois, visiter la messagerie (20% de chance)
-            if random.random() < 0.20:
-                logger.info("💬 Warm-up: visite de la messagerie...")
-                try:
-                    await page.goto("https://www.linkedin.com/messaging/",
-                                    wait_until="domcontentloaded", timeout=15000)
-                    await asyncio.sleep(random.uniform(1.5, 4))
-                except Exception:
-                    pass
+            # Warm-up réduit au feed uniquement : plus de visite
+            # notifications/messagerie (plus rapide, suffisant en vrai Chrome).
 
             # Pause finale avant de passer à la recherche
-            await asyncio.sleep(random.uniform(1, 3))
+            await asyncio.sleep(random.uniform(1, 2))
 
             logger.info("✅ Warm-up terminé — session naturelle établie")
             return True
