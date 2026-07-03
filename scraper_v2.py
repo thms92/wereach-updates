@@ -1422,12 +1422,12 @@ class LinkedInScraperV2:
                 try:
                     browser = await p.chromium.launch(
                         channel="chrome",
-                        headless=True,  # Mode headless pour serveur sans display
+                        headless=self.config.HEADLESS,
                         args=launch_args
                     )
                 except Exception:
                     browser = await p.chromium.launch(
-                        headless=True,
+                        headless=self.config.HEADLESS,
                         args=launch_args
                     )
 

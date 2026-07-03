@@ -40,7 +40,10 @@ class ScraperConfig:
     MAX_PROFILES_PER_RUN: int = 200
     MAX_INVITATIONS_PER_DAY: int = 50
     MAX_RETRY_ATTEMPTS: int = 3
-    HEADLESS: bool = True
+    # Headless pilotable par variable d'env : SCRAPER_HEADLESS=false lance un
+    # navigateur VISIBLE (headed). LinkedIn masque certains boutons d'action
+    # (ex. "Se connecter") aux sessions headless détectées.
+    HEADLESS: bool = os.getenv("SCRAPER_HEADLESS", "true").strip().lower() not in ("false", "0", "no")
 
     SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.gmail.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
