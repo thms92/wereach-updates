@@ -451,6 +451,7 @@ class DOMSelectors:
             // ═══════════════════════════════════════════════════
             function findIsolatedCard(profileLink) {
                 const candidates = [
+                    profileLink.closest('div[role="listitem"]'),
                     profileLink.closest('[data-chameleon-result-urn]'),
                     profileLink.closest('li.reusable-search__result-container'),
                     profileLink.closest('div.entity-result'),
