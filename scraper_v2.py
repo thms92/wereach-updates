@@ -553,42 +553,74 @@ class LinkedInScraperV2:
             try:
                 await self.human.reading_pause(text_length=80)
 
-                # Le bouton "Se connecter" est un <a> (pas un <button>) dans la
-                # carte de résultat : href "/preload/search-custom-invite",
-                # componentkey *ConnectButton*, aria-label "Inviter <Nom> à
-                # rejoindre votre réseau". Il s'hydrate à l'affichage de la carte.
-                card = page.locator(
-                    f'div[role="listitem"]:has(a[href*="/in/{vanity_name}"])'
-                ).first
-                if await card.count() == 0:
-                    card = page.locator(f'*:has(> a[href*="/in/{vanity_name}"])').first
+                connect = None
+                on_search = '/search/results/' in page.url
 
-                # Amener la carte dans le viewport pour déclencher l'hydratation
-                try:
-                    await card.scroll_into_view_if_needed(timeout=4000)
-                except Exception:
-                    pass
-                await self.human.human_delay(1500, 400)
+                if on_search:
+                    # ── Contexte RECHERCHE : bouton = <a> dans la carte de résultat
+                    # (href /preload/search-custom-invite, aria-label "Inviter …").
+                    card = page.locator(
+                        f'div[role="listitem"]:has(a[href*="/in/{vanity_name}"])'
+                    ).first
+                    if await card.count() == 0:
+                        card = page.locator(f'*:has(> a[href*="/in/{vanity_name}"])').first
+                    try:
+                        await card.scroll_into_view_if_needed(timeout=4000)
+                    except Exception:
+                        pass
+                    await self.human.human_delay(1500, 400)
+                    c = card.locator(
+                        'a[href*="/preload/search-custom-invite"], '
+                        'a[componentkey*="ConnectButton"], '
+                        'a[aria-label^="Inviter"]'
+                    ).first
+                    try:
+                        await c.wait_for(state="visible", timeout=5000)
+                    except Exception:
+                        pass
+                    if await c.count() > 0:
+                        connect = c
+                else:
+                    # ── Contexte PAGE PROFIL : aller sur le profil, puis trouver
+                    # "Se connecter" (section principale, sinon menu "Plus").
+                    clean_url = profile_url.split('?')[0].rstrip('/') + '/'
+                    if vanity_name not in page.url:
+                        await self.network_manager.safe_page_goto(page, clean_url)
+                        await self.human.human_delay(2000, 500)
+                    c = page.locator(
+                        'main button[aria-label*="nviter"][aria-label*="onnecter"], '
+                        'main button[aria-label^="Inviter"], '
+                        'main button:has-text("Se connecter")'
+                    ).first
+                    if not (await c.count() > 0 and await c.is_visible()):
+                        plus = page.locator(
+                            'main button[aria-label*="Plus"], main button:has-text("Plus")'
+                        ).first
+                        if await plus.count() > 0 and await plus.is_visible():
+                            logger.info("  ↳ Ouverture du menu 'Plus' du profil…")
+                            await self.human.human_hover_and_click(page, plus)
+                            await self.human.human_delay(800, 200)
+                            c = page.locator(
+                                'div[role="menu"] [aria-label*="nviter"][aria-label*="onnecter"], '
+                                'div[role="menu"] div:has-text("Se connecter"), '
+                                'div[aria-label*="nviter"][aria-label*="onnecter"]'
+                            ).first
+                    if await c.count() > 0 and await c.is_visible():
+                        connect = c
 
-                connect = card.locator(
-                    'a[href*="/preload/search-custom-invite"], '
-                    'a[componentkey*="ConnectButton"], '
-                    'a[aria-label^="Inviter"]'
-                ).first
-                try:
-                    await connect.wait_for(state="visible", timeout=5000)
-                except Exception:
-                    pass
-
-                if await connect.count() == 0:
-                    logger.info("  ⏭️ Pas de 'Se connecter' (déjà en relation / invitation déjà en attente)")
+                if connect is None:
+                    logger.info("  ⏭️ 'Se connecter' introuvable (déjà en relation / en attente / non invitable)")
                     try:
                         from pathlib import Path
                         dbg = Path(__file__).parent / "logs"
                         dbg.mkdir(exist_ok=True)
-                        html = await card.evaluate("el => el.outerHTML")
-                        (dbg / "invite_card_dump.html").write_text(html[:9000], encoding="utf-8")
-                        logger.info("  📄 Carte dumpée → logs/invite_card_dump.html")
+                        if on_search:
+                            scope = page.locator(f'div[role="listitem"]:has(a[href*="/in/{vanity_name}"])').first
+                        else:
+                            scope = page.locator("main").first
+                        html = (await scope.evaluate("el => el.outerHTML")) if await scope.count() else (await page.content())
+                        (dbg / "invite_card_dump.html").write_text(html[:10000], encoding="utf-8")
+                        logger.info("  📄 Dump → logs/invite_card_dump.html")
                     except Exception:
                         pass
                     return False
@@ -1589,71 +1621,55 @@ class LinkedInScraperV2:
                         # Extraire les données du profil
                         profile_data = await self.extraire_profil_depuis_page(page)
                         profile_data['url'] = url
+                        nom = profile_data.get('nom') or nom_affiche
 
-                        if profile_data['nom']:
+                        if profile_data.get('nom'):
                             logger.info(f"  ✅ {profile_data['nom']} | {profile_data['poste']} | {profile_data['entreprise']}")
-
-                            # Sauvegarder en DB
                             if self.use_database and self.db:
                                 try:
                                     self.db.ajouter_profil(
-                                        nom=profile_data['nom'],
-                                        poste=profile_data['poste'],
-                                        entreprise=profile_data['entreprise'],
-                                        ecole='',
-                                        url=url,
-                                        localisation='',
-                                        nb_connexions=''
+                                        nom=profile_data['nom'], poste=profile_data['poste'],
+                                        entreprise=profile_data['entreprise'], ecole='',
+                                        url=url, localisation='', nb_connexions=''
                                     )
                                 except Exception as e:
                                     logger.error(f"  Erreur DB: {e}")
-
-                            # Sauvegarder en CSV
                             self._sauvegarder_profil(
-                                profile_data['nom'],
-                                profile_data['poste'],
-                                profile_data['entreprise'],
-                                '',  # pas d'école
-                                url,
-                                False
+                                profile_data['nom'], profile_data['poste'],
+                                profile_data['entreprise'], '', url, False
                             )
-
-                            ligne = {
-                                'Nom': profile_data['nom'],
-                                'Poste': profile_data['poste'],
-                                'Entreprise': profile_data['entreprise'],
-                                'URL': url,
-                                'Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                            }
-
-                            # Invitation si demandé (via la page profil déjà chargée)
-                            if inviter:
-                                try:
-                                    invited = await self.envoyer_invitation(
-                                        page, url, profile_data['nom'], message_invitation
-                                    )
-                                    ligne['Invitation'] = 'Oui' if invited else 'Non'
-                                    if invited:
-                                        self.human.daily_limits.increment_invitations()
-                                except Exception as _e:
-                                    logger.warning(f"  ⚠️ Invitation échouée: {_e}")
-                                    ligne['Invitation'] = 'Non'
-
-                            # Message direct si demandé (relation de 1er degré)
-                            if message_direct.strip():
-                                try:
-                                    sent = await self.envoyer_message(
-                                        page, url, profile_data['nom'], message_direct
-                                    )
-                                    ligne['Message'] = 'Oui' if sent else 'Non'
-                                except Exception as _e:
-                                    logger.warning(f"  ⚠️ Message échoué: {_e}")
-                                    ligne['Message'] = 'Non'
-
-                            donnees.append(ligne)
                         else:
-                            logger.warning(f"  ⚠️ Aucune donnée extraite")
-                            self.errors.append(f"Pas de données: {url}")
+                            logger.warning("  ⚠️ Données profil non extraites (invitation/message tentés quand même)")
+
+                        ligne = {
+                            'Nom': nom,
+                            'Poste': profile_data.get('poste', ''),
+                            'Entreprise': profile_data.get('entreprise', ''),
+                            'URL': url,
+                            'Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                        }
+
+                        # Invitation — INDÉPENDANTE de l'extraction du profil
+                        if inviter:
+                            try:
+                                invited = await self.envoyer_invitation(page, url, nom, message_invitation)
+                                ligne['Invitation'] = 'Oui' if invited else 'Non'
+                                if invited:
+                                    self.human.daily_limits.increment_invitations()
+                            except Exception as _e:
+                                logger.warning(f"  ⚠️ Invitation échouée: {_e}")
+                                ligne['Invitation'] = 'Non'
+
+                        # Message direct — INDÉPENDANT de l'extraction du profil
+                        if message_direct.strip():
+                            try:
+                                sent = await self.envoyer_message(page, url, nom, message_direct)
+                                ligne['Message'] = 'Oui' if sent else 'Non'
+                            except Exception as _e:
+                                logger.warning(f"  ⚠️ Message échoué: {_e}")
+                                ligne['Message'] = 'Non'
+
+                        donnees.append(ligne)
 
                     except Exception as e:
                         logger.error(f"  ❌ Erreur: {e}")
