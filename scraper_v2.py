@@ -569,6 +569,17 @@ class LinkedInScraperV2:
                     except Exception:
                         pass
                     await self.human.human_delay(1500, 400)
+
+                    # SÉCURITÉ : ne jamais recliquer une invitation déjà envoyée
+                    # ("En attente" → un clic ouvrirait "Retirer l'invitation").
+                    pending = card.locator(
+                        'button[aria-label*="En attente"], button:has-text("En attente"), '
+                        'a[aria-label*="Retirer"], [componentkey*="withdraw"]'
+                    ).first
+                    if await pending.count() > 0:
+                        logger.info("  ⏭️ Invitation déjà en attente — profil suivant")
+                        return False
+
                     c = card.locator(
                         'a[href*="/preload/search-custom-invite"], '
                         'a[componentkey*="ConnectButton"], '

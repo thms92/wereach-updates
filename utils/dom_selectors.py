@@ -450,8 +450,12 @@ class DOMSelectors:
             // ce lien et un seul lien /in/
             // ═══════════════════════════════════════════════════
             function findIsolatedCard(profileLink) {
+                // Nouveau DOM : la carte de résultat est un div[role="listitem"].
+                // On la renvoie telle quelle même si elle contient un 2e lien
+                // /in/ (ex. "X est une relation que vous avez en commun").
+                const lst = profileLink.closest('div[role="listitem"]');
+                if (lst) return lst;
                 const candidates = [
-                    profileLink.closest('div[role="listitem"]'),
                     profileLink.closest('[data-chameleon-result-urn]'),
                     profileLink.closest('li.reusable-search__result-container'),
                     profileLink.closest('div.entity-result'),
@@ -497,6 +501,18 @@ class DOMSelectors:
                     // de la card, pas un lien image dupliqué)
                     const linkText = profileLink.textContent?.trim() || '';
                     if (linkText.length < 2) continue;
+
+                    // Ignorer un lien SECONDAIRE d'une carte (ex. "X est une
+                    // relation en commun") : on ne garde que le profil principal,
+                    // càd le 1er lien /in/ de la carte listitem.
+                    const _lst = profileLink.closest('div[role="listitem"]');
+                    if (_lst) {
+                        const _first = _lst.querySelector('a[href*="/in/"]');
+                        if (_first) {
+                            const _firstHref = _first.href.split('?')[0].replace(/\\/+$/, '') + '/';
+                            if (_firstHref !== cleanHref) continue;
+                        }
+                    }
 
                     const card = findIsolatedCard(profileLink);
                     // ── FALLBACK ULTIME : si aucun closest() ne match,
