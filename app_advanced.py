@@ -21,42 +21,19 @@ from logger import logger
 from utils.user_context import resolve_user_email, user_paths_for, DEFAULT_DEV_EMAIL
 from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_user, auth_configured
+from wefiit_theme import inject_theme
 
 
 # Configuration Streamlit
 st.set_page_config(
-    page_title="LinkedIn Scraper Pro",
+    page_title="WeFiiT Reach",
     page_icon="💼",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-
-# CSS personnalisé
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #0077B5;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-    }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 5px;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Thème WeFiiT Reach (accent #172982, off-white, arrondis, aéré)
+inject_theme()
 
 def current_user_email():
     try:
@@ -82,7 +59,7 @@ _email = current_user_email()
 
 # Écran de connexion (mode déployé : des comptes existent et aucune identité)
 if _email is None:
-    st.markdown('<div class="main-header">💼 LinkedIn Scraper Pro</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">💼 WeFiiT Reach</div>', unsafe_allow_html=True)
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
         st.subheader("🔒 Connexion")
@@ -114,7 +91,7 @@ if st.session_state.get('user_email') != _email:
     )
 
 # Header
-st.markdown('<div class="main-header">💼 LinkedIn Scraper Pro</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">💼 WeFiiT Reach</div>', unsafe_allow_html=True)
 
 # Sidebar Navigation
 st.sidebar.title("🧭 Navigation")

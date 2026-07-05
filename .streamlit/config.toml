@@ -1,0 +1,14 @@
+[theme]
+base                     = "light"
+primaryColor             = "#172982"   # accent bleu — CTA, liens, focus, actif
+backgroundColor          = "#FBFBFA"   # off-white — fond principal
+secondaryBackgroundColor = "#FFFFFF"   # surfaces (sidebar, cards, inputs)
+textColor                = "#14181C"   # charcoal — texte
+font                     = "sans serif"
+
+[server]
+headless = true
+
+# Variante sombre : passer base="dark", primaryColor="#5B7CFA",
+# backgroundColor="#0D1013", secondaryBackgroundColor="#14181C",
+# textColor="#EAECEE"  (et appeler inject_theme(dark=True) dans l'app).
