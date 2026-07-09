@@ -8,4 +8,8 @@ services:
       - .:/app               # Persiste les données (base, cookie, profils scrapés) sur la machine
     environment:
       - PYTHONUNBUFFERED=1
+      - SCRAPER_HEADLESS=false   # Chrome visible (sous Xvfb) — requis LinkedIn
+      - SCRAPER_STEALTH=false    # pas de camouflage → app LinkedIn complète
+      - TZ=Europe/Paris
+    shm_size: "1gb"              # /dev/shm pour la stabilité de Chrome
     restart: unless-stopped
