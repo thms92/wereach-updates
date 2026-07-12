@@ -132,6 +132,40 @@ class LinkedInScraperV2Sync:
             self.errors.append(f"Erreur: {e}")
             return pd.DataFrame()
 
+    def verifier_acceptations(self, cookie, profils, max_check=30,
+                              progress_callback=None, status_callback=None):
+        """Version synchrone : détecte les invitations acceptées (1er degré)."""
+        try:
+            result = asyncio.run(
+                self.scraper.verifier_acceptations_async(
+                    cookie=cookie, profils=profils, max_check=max_check,
+                    progress_callback=progress_callback, status_callback=status_callback,
+                )
+            )
+            self.errors = self.scraper.errors.copy()
+            return result
+        except Exception as e:
+            logger.error(f"❌ Erreur vérification acceptations: {e}", exc_info=True)
+            self.errors.append(f"Erreur: {e}")
+            return []
+
+    def envoyer_messages(self, cookie, cibles, message, max_msg=20,
+                         progress_callback=None, status_callback=None):
+        """Version synchrone : envoie un message aux relations sélectionnées."""
+        try:
+            result = asyncio.run(
+                self.scraper.envoyer_messages_async(
+                    cookie=cookie, cibles=cibles, message=message, max_msg=max_msg,
+                    progress_callback=progress_callback, status_callback=status_callback,
+                )
+            )
+            self.errors = self.scraper.errors.copy()
+            return result
+        except Exception as e:
+            logger.error(f"❌ Erreur envoi messages: {e}", exc_info=True)
+            self.errors.append(f"Erreur: {e}")
+            return []
+
     @property
     def db(self):
         """Accès à la base de données via le scraper interne"""

@@ -873,6 +873,127 @@ class LinkedInScraperV2:
             logger.warning(f"  ⚠️ Erreur message {profile_name}: {e}")
             return False
 
+    async def _open_linkedin_page(self, p, cookie: str, status_callback=None):
+        """Ouvre Chrome + session LinkedIn (cookie) + warm-up.
+        Retourne (browser, page) ou (None, None) si le cookie est invalide/expiré."""
+        profile = StealthProfileManager.load_or_generate(prefer_mac=True)
+        viewport = profile.viewport
+        launch_args = [
+            "--no-sandbox",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-infobars",
+            "--disable-dev-shm-usage",
+            f"--window-size={profile.screen['width']},{profile.screen['height']}",
+        ]
+        try:
+            browser = await p.chromium.launch(channel="chrome", headless=self.config.HEADLESS, args=launch_args)
+        except Exception:
+            browser = await p.chromium.launch(headless=self.config.HEADLESS, args=launch_args)
+        context = await browser.new_context(**self._context_kwargs(profile, viewport))
+        if self._stealth:
+            await context.set_extra_http_headers(StealthProfileManager.get_stealth_headers(profile))
+        await context.add_cookies([{
+            "name": "li_at", "value": cookie, "domain": ".linkedin.com",
+            "path": "/", "httpOnly": True, "secure": True,
+        }])
+        page = await context.new_page()
+        if self._stealth:
+            await page.add_init_script(StealthProfileManager.get_stealth_init_script(profile))
+        self.human.attach_monitor(page)
+        if status_callback:
+            status_callback("🌡️ Warm-up session...")
+        if not await self.human.warmup_session(page):
+            await browser.close()
+            return None, None
+        return browser, page
+
+    async def verifier_acceptations_async(self, cookie: str, profils, max_check: int = 30,
+                                          progress_callback=None, status_callback=None):
+        """Revisite les profils invités et détecte ceux devenus relation 1er degré.
+        Retourne la liste [{'url','nom'}] des profils ayant accepté."""
+        self.errors = []
+        profils = list(profils)[:max_check]
+        acceptees = []
+        if not profils:
+            return acceptees
+        async with async_playwright() as p:
+            if status_callback:
+                status_callback("🚀 Lancement du navigateur...")
+            browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+            if page is None:
+                self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                return acceptees
+            try:
+                total = len(profils)
+                for i, prof in enumerate(profils):
+                    url = prof.get("url"); nom = prof.get("nom", "")
+                    if status_callback:
+                        status_callback(f"🔎 [{i+1}/{total}] {nom}")
+                    try:
+                        clean_url = url.split('?')[0].rstrip('/') + '/'
+                        if not await self.network_manager.safe_page_goto(page, clean_url):
+                            continue
+                        if any(x in page.url for x in ["login", "authwall"]):
+                            self.errors.append("Redirigé vers login — cookie invalide.")
+                            break
+                        await self.human.human_delay(1500, 400)
+                        btn = page.locator(
+                            'main button[aria-label^="Message"], main a[aria-label^="Message"], '
+                            'main button:has-text("Message"), main a:has-text("Message")'
+                        ).first
+                        if await btn.count() > 0 and await btn.is_visible():
+                            acceptees.append({"url": url, "nom": nom})
+                            logger.info(f"  ✅ A accepté : {nom}")
+                    except Exception as e:
+                        logger.warning(f"  ⚠️ Vérif {nom}: {e}")
+                    if progress_callback:
+                        progress_callback(min((i + 1) / total, 1.0))
+                    await self.human.human_delay(
+                        self.config.DELAY_BETWEEN_PROFILES_MIN,
+                        (self.config.DELAY_BETWEEN_PROFILES_MAX - self.config.DELAY_BETWEEN_PROFILES_MIN) // 3,
+                    )
+            finally:
+                await browser.close()
+        return acceptees
+
+    async def envoyer_messages_async(self, cookie: str, cibles, message: str, max_msg: int = 20,
+                                     progress_callback=None, status_callback=None):
+        """Envoie `message` à chaque cible (relation 1er degré).
+        Retourne la liste [{'url','nom'}] des personnes effectivement messagées."""
+        self.errors = []
+        cibles = list(cibles)[:max_msg]
+        envoyes = []
+        if not cibles or not message.strip():
+            return envoyes
+        async with async_playwright() as p:
+            if status_callback:
+                status_callback("🚀 Lancement du navigateur...")
+            browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+            if page is None:
+                self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                return envoyes
+            try:
+                total = len(cibles)
+                for i, c in enumerate(cibles):
+                    url = c.get("url"); nom = c.get("nom", "")
+                    if status_callback:
+                        status_callback(f"✉️ [{i+1}/{total}] {nom}")
+                    try:
+                        if await self.envoyer_message(page, url, nom, message):
+                            envoyes.append({"url": url, "nom": nom})
+                    except Exception as e:
+                        logger.warning(f"  ⚠️ Message {nom}: {e}")
+                    if progress_callback:
+                        progress_callback(min((i + 1) / total, 1.0))
+                    await self.human.human_delay(
+                        self.config.DELAY_BETWEEN_PROFILES_MIN,
+                        (self.config.DELAY_BETWEEN_PROFILES_MAX - self.config.DELAY_BETWEEN_PROFILES_MIN) // 3,
+                    )
+                    await self.human.random_long_pause(probability=0.10)
+            finally:
+                await browser.close()
+        return envoyes
+
     async def run_scraper_async(
         self,
         cookie: str,

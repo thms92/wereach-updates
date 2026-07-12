@@ -88,6 +88,12 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_profiles_ecole ON profiles(ecole)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_invitations_statut ON invitations(statut)")
 
+            # Migration douce : colonne date_message (envoi du message post-acceptation)
+            try:
+                cursor.execute("ALTER TABLE invitations ADD COLUMN date_message TIMESTAMP")
+            except Exception:
+                pass  # colonne déjà présente
+
             conn.commit()
             conn.close()
             logger.info("Base de données initialisée avec succès")
@@ -188,6 +194,78 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"Erreur vérification invitation: {e}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Suivi des acceptations & messages (page "Messages")
+    # ------------------------------------------------------------------
+    def invitations_en_attente(self) -> List[Dict]:
+        """Profils invités dont l'invitation est encore 'envoyee' (pas encore acceptée)."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT p.url, p.nom, p.poste, p.entreprise
+                FROM invitations i JOIN profiles p ON i.profile_id = p.id
+                WHERE i.statut = 'envoyee'
+                ORDER BY i.date_envoi ASC
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"url": r[0], "nom": r[1], "poste": r[2], "entreprise": r[3]} for r in rows]
+        except Exception as e:
+            logger.error(f"Erreur invitations_en_attente: {e}")
+            return []
+
+    def marquer_acceptee(self, url: str) -> bool:
+        """Passe l'invitation d'un profil au statut 'acceptee'."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE invitations SET statut = 'acceptee', date_acceptation = CURRENT_TIMESTAMP
+                WHERE statut = 'envoyee' AND profile_id = (SELECT id FROM profiles WHERE url = ?)
+            """, (url,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"Erreur marquer_acceptee: {e}")
+            return False
+
+    def acceptees_non_messagees(self) -> List[Dict]:
+        """Profils ayant accepté mais pas encore messagés."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT p.url, p.nom, p.poste, p.entreprise, i.date_acceptation
+                FROM invitations i JOIN profiles p ON i.profile_id = p.id
+                WHERE i.statut = 'acceptee' AND i.date_message IS NULL
+                ORDER BY i.date_acceptation DESC
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            return [{"url": r[0], "nom": r[1], "poste": r[2], "entreprise": r[3],
+                     "date_acceptation": r[4]} for r in rows]
+        except Exception as e:
+            logger.error(f"Erreur acceptees_non_messagees: {e}")
+            return []
+
+    def marquer_messagee(self, url: str) -> bool:
+        """Marque le message comme envoyé (date_message) pour un profil accepté."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE invitations SET date_message = CURRENT_TIMESTAMP
+                WHERE statut = 'acceptee' AND profile_id = (SELECT id FROM profiles WHERE url = ?)
+            """, (url,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"Erreur marquer_messagee: {e}")
             return False
 
     def get_statistiques(self) -> Dict:
