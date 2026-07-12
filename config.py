@@ -22,23 +22,27 @@ class ScraperConfig:
     # -----------------------------------------------------------------------
 
     # Entre chaque profil traité (scroll, lecture, décision)
-    DELAY_BETWEEN_PROFILES_MIN: int = 2500
-    DELAY_BETWEEN_PROFILES_MAX: int = 5500
+    # Valeurs volontairement longues (mode "sécurité max", sans proxy)
+    DELAY_BETWEEN_PROFILES_MIN: int = 4000
+    DELAY_BETWEEN_PROFILES_MAX: int = 9000
 
     # Après envoi d'invitation (attendre que la modal se ferme)
-    DELAY_AFTER_INVITATION_MIN: int = 1800
-    DELAY_AFTER_INVITATION_MAX: int = 3500
+    DELAY_AFTER_INVITATION_MIN: int = 3000
+    DELAY_AFTER_INVITATION_MAX: int = 6000
 
     # Après le clic sur "Se connecter" (attendre l'ouverture de la modal)
-    DELAY_AFTER_CONNECT_CLICK_MIN: int = 1200
-    DELAY_AFTER_CONNECT_CLICK_MAX: int = 2800
+    DELAY_AFTER_CONNECT_CLICK_MIN: int = 1800
+    DELAY_AFTER_CONNECT_CLICK_MAX: int = 4000
 
     # Après le chargement d'une page (temps de "lecture" initiale)
-    DELAY_PAGE_LOAD_MIN: int = 1500
-    DELAY_PAGE_LOAD_MAX: int = 4500
+    DELAY_PAGE_LOAD_MIN: int = 2500
+    DELAY_PAGE_LOAD_MAX: int = 6000
 
-    MAX_PROFILES_PER_RUN: int = 200
-    MAX_INVITATIONS_PER_DAY: int = 50
+    # Plafonds PAR UTILISATEUR et PAR JOUR (source de vérité — appliqués dans
+    # le scraper via DailyLimitsTracker). Conservateurs pour limiter le risque
+    # LinkedIn quand plusieurs comptes partagent l'IP du serveur (sans proxy).
+    MAX_PROFILES_PER_RUN: int = 80
+    MAX_INVITATIONS_PER_DAY: int = 20
     MAX_RETRY_ATTEMPTS: int = 3
     # Headless pilotable par variable d'env : SCRAPER_HEADLESS=false lance un
     # navigateur VISIBLE (headed). LinkedIn masque certains boutons d'action

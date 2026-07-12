@@ -38,8 +38,10 @@ class LinkedInScraperV2:
     """
 
     def __init__(self, use_database: bool = True, proxy: dict = None,
-                 db_file: str = None, profiles_csv: str = None):
+                 db_file: str = None, profiles_csv: str = None,
+                 config_dir: str = None):
         self._proxy = proxy
+        self._config_dir = config_dir
         # Camouflage (spoof UA + navigator + en-têtes Sec-CH-UA). Sur du vrai
         # Chrome, ce spoofing rend la session incohérente → LinkedIn sert sa
         # version allégée sans JavaScript (pas de bouton "Se connecter").
@@ -58,8 +60,10 @@ class LinkedInScraperV2:
             timeout=self.config.TIMEOUT_PAGE
         ))
 
-        # Initialiser le module de comportement humain
-        self.human = HumanBehavior(fatigue_factor=0.0)
+        # Initialiser le module de comportement humain (compteur quotidien
+        # PAR UTILISATEUR quand config_dir est fourni → isolation multi-user)
+        _limits_file = os.path.join(config_dir, "daily_limits.json") if config_dir else None
+        self.human = HumanBehavior(fatigue_factor=0.0, limits_file=_limits_file)
 
         # Initialiser la base de données si nécessaire
         if use_database:
@@ -1148,6 +1152,16 @@ class LinkedInScraperV2:
                         if inviter:
                             if invitations_envoyees >= nb_profils:
                                 logger.info(f"✋ Limite de {nb_profils} invitations atteinte")
+                                break
+                            # Sécurité max : plafond quotidien PAR UTILISATEUR
+                            if not self.human.daily_limits.can_invite():
+                                logger.warning(
+                                    f"🛑 Plafond quotidien d'invitations atteint "
+                                    f"({self.human.daily_limits.invitations_today}/"
+                                    f"{self.human.daily_limits.max_invitations}) — arrêt sécurité."
+                                )
+                                if status_callback:
+                                    status_callback("🛑 Plafond quotidien d'invitations atteint")
                                 break
                         else:
                             if profils_scrapes >= nb_profils:

@@ -19,9 +19,11 @@ class LinkedInScraperV2Sync:
     """
 
     def __init__(self, use_database: bool = True, proxy: dict = None,
-                 db_file: str = None, profiles_csv: str = None):
+                 db_file: str = None, profiles_csv: str = None,
+                 config_dir: str = None):
         self.scraper = LinkedInScraperV2(use_database=use_database, proxy=proxy,
-                                          db_file=db_file, profiles_csv=profiles_csv)
+                                          db_file=db_file, profiles_csv=profiles_csv,
+                                          config_dir=config_dir)
         self.errors = []
 
     def run_scraper(

@@ -283,7 +283,7 @@ elif page == "🔍 Recherche":
             cookie = st.session_state.global_cookie
             keyword = st.text_input("Mots-clés", "Product Manager")
             entreprise = st.text_input("Entreprise (optionnel)", "")
-            nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=200, value=10)
+            nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10)
 
             ile_de_france = st.toggle("🗼 Île-de-France uniquement", value=False, help="Filtre les résultats pour la région Île-de-France")
 
@@ -333,7 +333,7 @@ elif page == "🔍 Recherche":
                     st.error("❌ Sélectionnez exactement une école")
                 else:
                     with st.spinner("🚀 Scraping en cours..."):
-                        scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv))
+                        scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
                         progress_bar = st.progress(0)
                         status_text = st.empty()
@@ -419,7 +419,7 @@ elif page == "🔍 Recherche":
             key="keyword_client",
         )
         entreprise_client = st.text_input("Entreprise", "", key="entreprise_client")
-        nb_client = st.number_input("Nombre de profils", min_value=1, max_value=200, value=10, key="nb_client")
+        nb_client = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10, key="nb_client")
 
         ile_de_france_client = st.toggle("🗼 Île-de-France uniquement", value=False, key="idf_client", help="Filtre les résultats pour la région Île-de-France")
 
@@ -448,7 +448,7 @@ elif page == "🔍 Recherche":
                 st.error("❌ Cookie manquant")
             else:
                 with st.spinner("🚀 Recherche en cours..."):
-                    scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv))
+                    scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -548,7 +548,7 @@ elif page == "🔗 Scraping URLs":
             st.error("❌ Aucune URL LinkedIn valide")
         else:
             with st.spinner(f"🔄 Scraping de {nb_urls} profils en cours..."):
-                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv))
+                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()

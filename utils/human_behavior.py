@@ -36,16 +36,19 @@ class DailyLimitsTracker:
 
     LIMITS_FILE = "config/daily_limits.json"
 
-    def __init__(self, max_profiles: int = 200, max_invitations: int = 50):
+    def __init__(self, max_profiles: int = 80, max_invitations: int = 20,
+                 limits_file: str = None):
         self.max_profiles = max_profiles
         self.max_invitations = max_invitations
+        # Fichier de compteur PAR UTILISATEUR quand fourni (isolation multi-user)
+        self.limits_file = limits_file or self.LIMITS_FILE
         self._data = self._load()
 
     def _load(self) -> Dict:
         today = date.today().isoformat()
         try:
-            if os.path.exists(self.LIMITS_FILE):
-                with open(self.LIMITS_FILE, "r") as f:
+            if os.path.exists(self.limits_file):
+                with open(self.limits_file, "r") as f:
                     data = json.load(f)
                 if data.get("date") == today:
                     return data
@@ -55,8 +58,8 @@ class DailyLimitsTracker:
 
     def _save(self):
         try:
-            os.makedirs(os.path.dirname(self.LIMITS_FILE), exist_ok=True)
-            with open(self.LIMITS_FILE, "w") as f:
+            os.makedirs(os.path.dirname(self.limits_file), exist_ok=True)
+            with open(self.limits_file, "w") as f:
                 json.dump(self._data, f, indent=2)
         except Exception:
             pass
@@ -174,15 +177,25 @@ class HumanBehavior:
     Toutes les méthodes sont async et utilisent Playwright.
     """
 
-    def __init__(self, fatigue_factor: float = 0.0):
+    def __init__(self, fatigue_factor: float = 0.0, limits_file: str = None):
         """
         Args:
             fatigue_factor: Entre 0 et 1. Plus il est élevé, plus les délais augmentent
                             (simule la fatigue d'un utilisateur après une longue session).
+            limits_file: Fichier de compteur quotidien PAR UTILISATEUR (isolation).
         """
         self.fatigue_factor = fatigue_factor  # entre 0.0 et 1.0
         self.response_monitor = ResponseMonitor()
-        self.daily_limits = DailyLimitsTracker()
+        # Plafonds = source de vérité dans config.py (sécurité max sans proxy)
+        try:
+            from config import ScraperConfig
+            _maxp = ScraperConfig.MAX_PROFILES_PER_RUN
+            _maxi = ScraperConfig.MAX_INVITATIONS_PER_DAY
+        except Exception:
+            _maxp, _maxi = 80, 20
+        self.daily_limits = DailyLimitsTracker(
+            max_profiles=_maxp, max_invitations=_maxi, limits_file=limits_file
+        )
 
     # =========================================================================
     # DÉLAIS NATURELS
