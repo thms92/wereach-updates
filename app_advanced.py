@@ -20,7 +20,7 @@ from queue_manager import QueueManager, JobStatus
 from logger import logger
 from utils.user_context import resolve_user_email, user_paths_for, DEFAULT_DEV_EMAIL
 from utils.proxy_store import load_proxy, save_proxy
-from utils.app_auth import verify_user, auth_configured
+from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import inject_theme
 
 
@@ -47,8 +47,8 @@ def current_user_email():
     # 2) Identité via le login applicatif
     if st.session_state.get("auth_email"):
         return st.session_state["auth_email"]
-    # 3) Dev local : seulement si AUCUN compte n'est configuré
-    if not auth_configured():
+    # 3) Dev local : seulement si AUCUN mot de passe d'accès n'est configuré
+    if not access_configured():
         return os.getenv("DEV_USER_EMAIL") or DEFAULT_DEV_EMAIL
     # 4) Sinon : non authentifié → écran de connexion
     return None
@@ -64,14 +64,17 @@ if _email is None:
     with _c2:
         st.subheader("🔒 Connexion")
         with st.form("login_form"):
-            _em = st.text_input("Email")
+            _em = st.text_input("Email", placeholder=f"prenom.nom@{ALLOWED_DOMAIN}")
             _pw = st.text_input("Mot de passe", type="password")
             if st.form_submit_button("Se connecter", use_container_width=True):
-                if verify_user(_em, _pw):
+                if not email_domain_ok(_em):
+                    st.error(f"❌ Utilise ton adresse email @{ALLOWED_DOMAIN}.")
+                elif verify_access(_em, _pw):
                     st.session_state.auth_email = _em.strip().lower()
                     st.rerun()
                 else:
                     st.error("❌ Email ou mot de passe incorrect.")
+        st.caption(f"Réservé aux membres @{ALLOWED_DOMAIN}.")
     st.stop()
 
 if st.session_state.get('user_email') != _email:

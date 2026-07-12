@@ -19,6 +19,9 @@ from pathlib import Path
 from config import ScraperConfig
 
 USERS_FILE = os.path.join(ScraperConfig.CONFIG_DIR, "users.json")
+ACCESS_FILE = os.path.join(ScraperConfig.CONFIG_DIR, "access.json")
+# Domaine email autorisé pour se connecter (ex. wefiit.com).
+ALLOWED_DOMAIN = os.getenv("WEFIIT_ALLOWED_DOMAIN", "wefiit.com").strip().lower().lstrip("@")
 _ITERATIONS = 200_000
 
 
@@ -80,3 +83,37 @@ def list_users(path: str = USERS_FILE) -> list:
 def auth_configured(path: str = USERS_FILE) -> bool:
     """True si au moins un utilisateur existe → l'app exige une connexion."""
     return len(_load(path)) > 0
+
+
+# ---------------------------------------------------------------------------
+# Accès partagé : un domaine email autorisé (@wefiit.com) + UN mot de passe
+# générique commun à tout le groupe. L'email saisi fixe l'identité (isolation
+# par utilisateur), le mot de passe est le même pour tout le monde.
+# ---------------------------------------------------------------------------
+def set_access_password(password: str, path: str = ACCESS_FILE) -> None:
+    """Définit (ou remplace) le mot de passe d'accès partagé."""
+    salt = secrets.token_hex(16)
+    _save({"salt": salt, "hash": _hash(password, salt)}, path)
+
+
+def access_configured(path: str = ACCESS_FILE) -> bool:
+    """True si un mot de passe d'accès partagé est défini → connexion exigée."""
+    rec = _load(path)
+    return bool(rec.get("salt") and rec.get("hash"))
+
+
+def email_domain_ok(email: str) -> bool:
+    """True si l'email appartient au domaine autorisé (ou si aucun filtre)."""
+    if not ALLOWED_DOMAIN:
+        return True
+    return (email or "").strip().lower().endswith("@" + ALLOWED_DOMAIN)
+
+
+def verify_access(email: str, password: str, path: str = ACCESS_FILE) -> bool:
+    """Vérifie : email du bon domaine ET mot de passe d'accès partagé correct."""
+    if not email_domain_ok(email):
+        return False
+    rec = _load(path)
+    if not rec.get("salt") or not rec.get("hash"):
+        return False
+    return secrets.compare_digest(rec["hash"], _hash(password, rec["salt"]))
