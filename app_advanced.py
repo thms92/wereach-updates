@@ -233,6 +233,44 @@ elif page == "🔍 Recherche":
     nb_en_attente = sum(1 for j in qm.jobs if j.status == JobStatus.EN_ATTENTE)
     queue_tab_label = f"🔄 File d'attente ({nb_en_attente})" if nb_en_attente > 0 else "🔄 File d'attente"
 
+    # --- Bandeau session LinkedIn (partagé, façon maquette) ---
+    _ck = st.session_state.global_cookie
+    if st.session_state.get("cookie_editing") or not _ck:
+        with st.container(border=True):
+            st.markdown("**Cookie de session LinkedIn · li_at**")
+            _cin, _cbtn = st.columns([4, 1])
+            _new_ck = _cin.text_input(
+                "li_at", value=_ck, type="password",
+                label_visibility="collapsed",
+                placeholder="Colle ici la valeur du cookie li_at…",
+                key="cookie_shared",
+            )
+            if _cbtn.button("Enregistrer", type="primary", use_container_width=True):
+                if _new_ck and st.session_state.cookie_manager.validate_cookie_format(_new_ck):
+                    st.session_state.cookie_manager.save_cookie(_new_ck)
+                    st.session_state.global_cookie = _new_ck
+                    st.session_state.cookie_editing = False
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Format de cookie suspect ou vide.")
+            st.caption("Conservé de façon sécurisée — nécessaire pour lancer les recherches.")
+    else:
+        _masked = f"{_ck[:6]}…{_ck[-4:]}" if len(_ck) > 12 else _ck
+        _bl, _br = st.columns([5, 1])
+        _bl.markdown(
+            '<div style="display:flex;align-items:center;gap:11px;padding:13px 15px;'
+            'background:var(--wf-surface);border:1px solid var(--wf-border);'
+            'border-left:3px solid var(--wf-success);border-radius:13px;box-shadow:var(--wf-shadow)">'
+            '<span style="width:9px;height:9px;flex:none;border-radius:50%;background:var(--wf-success)"></span>'
+            '<div style="min-width:0"><div style="font-weight:600;font-size:.85rem;color:var(--wf-text)">Session LinkedIn active</div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--wf-muted)">li_at · {_masked}</div></div></div>',
+            unsafe_allow_html=True,
+        )
+        if _br.button("Modifier", use_container_width=True):
+            st.session_state.cookie_editing = True
+            st.rerun()
+
+    st.write("")
     tab1, tab2, tab3 = st.tabs(["👤 Candidats", "🏢 Clients/Entreprises", queue_tab_label])
 
     # TAB 1: CANDIDATS
@@ -242,30 +280,14 @@ elif page == "🔍 Recherche":
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            # Cookie global
-            cookie = st.text_input(
-                "Cookie li_at",
-                value=st.session_state.global_cookie,
-                type="password",
-                help="Le cookie sera sauvegardé de manière sécurisée",
-                key="cookie_candidats"
-            )
-
-            if cookie != st.session_state.global_cookie:
-                if st.session_state.cookie_manager.validate_cookie_format(cookie):
-                    st.session_state.cookie_manager.save_cookie(cookie)
-                    st.session_state.global_cookie = cookie
-                    st.success("✅ Cookie sauvegardé")
-                else:
-                    st.warning("⚠️ Format de cookie suspect")
-
+            cookie = st.session_state.global_cookie
             keyword = st.text_input("Mots-clés", "Product Manager")
             entreprise = st.text_input("Entreprise (optionnel)", "")
             nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=200, value=10)
 
-            ile_de_france = st.checkbox("🗼 Île-de-France uniquement", value=False, help="Filtre les résultats pour la région Île-de-France")
+            ile_de_france = st.toggle("🗼 Île-de-France uniquement", value=False, help="Filtre les résultats pour la région Île-de-France")
 
-            inviter = st.checkbox("Envoyer des invitations", value=False)
+            inviter = st.toggle("Envoyer des invitations automatiquement", value=False)
 
             if inviter:
                 reinviter_profils_scrapes = st.checkbox(
@@ -285,22 +307,19 @@ elif page == "🔍 Recherche":
                 message_personnalise = ""
 
         with col2:
-            st.subheader("🎓 Sélectionner UNE école")
-
-            ecoles_selectionnees = []
-            cols = st.columns(4)
-
-            for i, (nom, id_ecole) in enumerate(ECOLES.items()):
-                checked = cols[i % 4].checkbox(nom, key=f"ecole_candidat_{nom}")
-                if checked:
-                    ecoles_selectionnees.append(id_ecole)
-
-            if len(ecoles_selectionnees) == 1:
-                st.success(f"✅ École sélectionnée")
-            elif len(ecoles_selectionnees) > 1:
-                st.error("❌ Sélectionnez UNE seule école")
+            st.markdown("**🎓 École ciblée** — une seule")
+            ecole_nom = st.pills(
+                "École ciblée",
+                list(ECOLES.keys()),
+                selection_mode="single",
+                label_visibility="collapsed",
+                key="ecole_pill_candidat",
+            )
+            ecoles_selectionnees = [ECOLES[ecole_nom]] if ecole_nom else []
+            if ecoles_selectionnees:
+                st.success("✅ École sélectionnée")
             else:
-                st.info("ℹ️ Aucune école sélectionnée")
+                st.info("ℹ️ Sélectionne une école")
 
         st.markdown("---")
 
@@ -363,21 +382,7 @@ elif page == "🔍 Recherche":
     with tab2:
         st.subheader("Recherche clients/entreprises (sans filtre école)")
 
-        cookie_client = st.text_input(
-            "Cookie li_at",
-            value=st.session_state.global_cookie,
-            type="password",
-            key="cookie_client"
-        )
-
-        # Synchroniser le cookie global
-        if cookie_client != st.session_state.global_cookie:
-            if st.session_state.cookie_manager.validate_cookie_format(cookie_client):
-                st.session_state.cookie_manager.save_cookie(cookie_client)
-                st.session_state.global_cookie = cookie_client
-                st.success("✅ Cookie sauvegardé")
-            else:
-                st.warning("⚠️ Format de cookie suspect")
+        cookie_client = st.session_state.global_cookie
 
         # Bouton de test de cookie (lance diagnostic_cookie.py en mode headless)
         col_test_a, col_test_b = st.columns([1, 2])
@@ -416,9 +421,9 @@ elif page == "🔍 Recherche":
         entreprise_client = st.text_input("Entreprise", "", key="entreprise_client")
         nb_client = st.number_input("Nombre de profils", min_value=1, max_value=200, value=10, key="nb_client")
 
-        ile_de_france_client = st.checkbox("🗼 Île-de-France uniquement", value=False, key="idf_client", help="Filtre les résultats pour la région Île-de-France")
+        ile_de_france_client = st.toggle("🗼 Île-de-France uniquement", value=False, key="idf_client", help="Filtre les résultats pour la région Île-de-France")
 
-        inviter_client = st.checkbox("Envoyer des invitations", value=False, key="inviter_client")
+        inviter_client = st.toggle("Envoyer des invitations automatiquement", value=False, key="inviter_client")
 
         if inviter_client:
             reinviter_profils_scrapes_client = st.checkbox(
