@@ -21,19 +21,19 @@ from logger import logger
 from utils.user_context import resolve_user_email, user_paths_for, DEFAULT_DEV_EMAIL
 from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
-from wefiit_theme import inject_theme
+from wefiit_theme import inject_theme, wordmark
 
 
 # Configuration Streamlit
 st.set_page_config(
-    page_title="WeFiiT Reach",
+    page_title="We.Reach",
     page_icon="💼",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Thème WeFiiT Reach (accent #172982, off-white, arrondis, aéré)
-inject_theme()
+# Thème We.Reach (tokens Claude Design — clair/sombre)
+inject_theme(dark=st.session_state.get("wf_dark", False))
 
 def current_user_email():
     try:
@@ -59,7 +59,7 @@ _email = current_user_email()
 
 # Écran de connexion (mode déployé : des comptes existent et aucune identité)
 if _email is None:
-    st.markdown('<div class="main-header">💼 WeFiiT Reach</div>', unsafe_allow_html=True)
+    st.markdown(wordmark(size=2.4), unsafe_allow_html=True)
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
         st.subheader("🔒 Connexion")
@@ -94,10 +94,16 @@ if st.session_state.get('user_email') != _email:
     )
 
 # Header
-st.markdown('<div class="main-header">💼 WeFiiT Reach</div>', unsafe_allow_html=True)
+st.markdown(wordmark(), unsafe_allow_html=True)
 
 # Sidebar Navigation
 st.sidebar.title("🧭 Navigation")
+
+# Mode sombre (thème We.Reach)
+_dark = st.sidebar.toggle("🌙 Mode sombre", value=st.session_state.get("wf_dark", False))
+if _dark != st.session_state.get("wf_dark", False):
+    st.session_state.wf_dark = _dark
+    st.rerun()
 
 if st.session_state.get("auth_email"):
     st.sidebar.caption(f"👤 {st.session_state['auth_email']}")
