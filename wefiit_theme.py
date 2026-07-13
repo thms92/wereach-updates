@@ -124,6 +124,20 @@ label, .stSelectbox label, .stCheckbox label {{ color:var(--wf-muted) !important
 [data-testid="stAlert"] {{ border-radius:12px; border:1px solid var(--wf-border); box-shadow:var(--wf-shadow); }}
 code, pre, [data-testid="stCode"] {{ font-family:'JetBrains Mono',monospace !important; font-size:.82rem; }}
 
+/* Puces « École ciblée » (st.pills) — plus d'air + alignement soigné */
+[data-testid="stPills"] {{ margin-top:4px; }}
+[data-testid="stPills"] [role="group"],
+[data-testid="stButtonGroup"] > div,
+[data-testid="stButtonGroup"] {{
+  display:flex !important; flex-wrap:wrap !important;
+  gap:10px 10px !important; row-gap:12px !important; align-items:center;
+}}
+[data-testid="stPills"] button,
+[data-testid="stButtonGroup"] button {{
+  border-radius:20px !important; padding:7px 16px !important; margin:0 !important;
+  line-height:1.2; font-weight:600 !important; white-space:nowrap;
+}}
+
 /* Badge / pilule utilitaire (statuts) */
 .wf-badge {{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:600; padding:3px 10px; border-radius:20px; }}
 .wf-badge.ok {{ color:var(--wf-success); background:var(--wf-success-tint); }}
