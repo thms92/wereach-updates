@@ -86,6 +86,11 @@ section[data-testid="stSidebar"] [role="radiogroup"] label {{ border-radius:11px
 .stButton > button[kind="primary"] {{ background:var(--wf-accent) !important; color:var(--wf-on-accent) !important; border:none !important; font-weight:700; box-shadow:0 1px 2px rgba(23,41,130,.35); }}
 .stButton > button[kind="primary"]:hover {{ filter:brightness(1.06); color:var(--wf-on-accent) !important; }}
 .stDownloadButton > button {{ border-radius:11px; }}
+/* Le texte interne des boutons hérite de la couleur du bouton — sinon la règle
+   globale 'span/p {{color:var(--wf-text)}}' rend le libellé illisible (ex.
+   "Enregistrer" en foncé sur le bouton primaire bleu). */
+.stButton > button *, .stDownloadButton > button *, .stFormSubmitButton > button * {{ color: inherit !important; }}
+.stButton > button[kind="primary"], .stButton > button[kind="primary"] * {{ color: var(--wf-on-accent) !important; }}
 
 /* Metrics (KPI) — cartes arrondies + ombre douce */
 [data-testid="stMetric"] {{ background:var(--wf-surface); border:1px solid var(--wf-border); border-radius:16px; padding:16px 18px; box-shadow:var(--wf-shadow); }}

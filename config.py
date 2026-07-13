@@ -61,17 +61,53 @@ class ScraperConfig:
         """Génère un délai aléatoire entre min et max millisecondes"""
         return random.randint(min_ms, max_ms)
 
+# Écoles / Formations.
+# Valeur = ID interne LinkedIn (schoolFilter précis) quand on le connaît,
+# sinon le NOM de l'école → repli : injecté dans la recherche booléenne
+# (moins précis, mais fonctionnel). Pour rendre une école "précise", il
+# suffit de remplacer son nom par son ID LinkedIn numérique.
 ECOLES = {
     "Dauphine": "15092700",
     "Arts et Métiers": "1280025",
     "GEM": "18927",
-    "HEC": "235785",
-    "ESSEC": "11415",
+    "Bootcamp Noé": "Bootcamp Noé",
     "ESCP": "308907",
-    "EM Lyon": "18361",
-    "Edhec": "16001",
+    "Université Cergy": "Université Cergy",
+    "Audencia": "Audencia",
+    "INSA": "INSA",
+    "Sorbonne": "Sorbonne",
+    "PPA": "PPA",
+    "EDHEC": "16001",
+    "ESIEE": "ESIEE",
+    "ESG": "ESG",
+    "Inseec": "Inseec",
     "SKEMA": "2413397",
+    "Rennes BS": "Rennes BS",
     "Kedge": "2757210",
+    "ECE": "ECE",
+    "TBS": "TBS",
+    "Mines": "Mines",
+    "IESEG": "IESEG",
+    "ESGI": "ESGI",
+    "EPF": "EPF",
+    "Miage": "Miage",
+    "EM Lyon": "18361",
+    "PSTB": "PSTB",
+    "Neoma": "Neoma",
+    "ESSEC": "11415",
+    "EPFL": "EPFL",
+    "ESITV": "ESITV",
+    "EFREI": "EFREI",
+    "ISCOM": "ISCOM",
+    "Ingé Epita": "Ingé Epita",
+    "HEC": "235785",
+    "EM Normandie": "EM Normandie",
+    "ESSCA": "ESSCA",
+    "Paris DIDEROT": "Paris DIDEROT",
+    "IMM": "IMM",
+    "Sup de Pub": "Sup de Pub",
+    "Nanterre": "Nanterre",
+    "Université d'Angers": "Université d'Angers",
 }
 
 os.makedirs(ScraperConfig.CONFIG_DIR, exist_ok=True)

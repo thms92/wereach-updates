@@ -138,6 +138,23 @@ class LinkedInScraperV2:
             else:
                 keywords_combines = f'"{ent_safe}"'
 
+        # Filtre école : ID numérique → schoolFilter précis ; sinon (nom) → repli
+        # en injectant le nom de l'école dans la recherche booléenne.
+        ecole_filter_id = None
+        if ecoles_ids:
+            _eid = str(ecoles_ids[0]).strip()
+            if _eid.isdigit():
+                ecole_filter_id = _eid
+            elif _eid:
+                ec_safe = _eid.replace('"', '\\"')
+                if keywords_combines.strip():
+                    if " OR " in keywords_combines.upper():
+                        keywords_combines = f'({keywords_combines}) AND "{ec_safe}"'
+                    else:
+                        keywords_combines = f'{keywords_combines} AND "{ec_safe}"'
+                else:
+                    keywords_combines = f'"{ec_safe}"'
+
         if keywords_combines:
             params.append(f"keywords={urllib.parse.quote(keywords_combines)}")
 
@@ -151,9 +168,8 @@ class LinkedInScraperV2:
         if company_urn:
             params.append(f'currentCompany=%5B%22{company_urn}%22%5D')
 
-        if ecoles_ids:
-            ecole_id = ecoles_ids[0]
-            params.append(f'schoolFilter=%5B%22{ecole_id}%22%5D')
+        if ecole_filter_id:
+            params.append(f'schoolFilter=%5B%22{ecole_filter_id}%22%5D')
 
         url = base_url + "&".join(params)
         logger.debug(f"URL construite: {url}")
