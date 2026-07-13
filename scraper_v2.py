@@ -80,8 +80,11 @@ class LinkedInScraperV2:
     def _context_kwargs(self, profile, viewport) -> dict:
         kwargs = {
             "viewport": viewport,
-            "locale": profile.locale,
-            "timezone_id": profile.timezone,
+            # Forcé FR : les comptes ciblés sont français, le serveur est en DE.
+            # Un mélange locale/geo peut déclencher une boucle de redirections
+            # sur les pages /search/ de LinkedIn.
+            "locale": "fr-FR",
+            "timezone_id": "Europe/Paris",
         }
         if self._stealth:
             kwargs["user_agent"] = profile.user_agent
@@ -1186,8 +1189,9 @@ class LinkedInScraperV2:
                     if status_callback:
                         status_callback(f"🏢 Résolution URN entreprise '{entreprise}'…")
                     urn = await self._resoudre_company_urn_via_typeahead(entreprise, page)
-                    if not urn:
-                        urn = await self._resoudre_company_urn_via_navigation(entreprise, page)
+                    # Fallback navigation désactivé : /search/results/companies
+                    # boucle en redirections depuis une IP datacenter et n'apporte
+                    # rien de plus que le typeahead + le seed config.COMPANY_URNS.
                     if not urn:
                         logger.warning(
                             f"⚠️ URN entreprise '{entreprise}' non résolu (typeahead + navigation) "
