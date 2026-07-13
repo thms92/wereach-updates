@@ -54,7 +54,9 @@ echo ""
 echo "Ouverture de We.Reach dans ton navigateur..."
 echo "(Laisse cette fenetre noire ouverte pendant l'utilisation.)"
 echo ""
-python -m streamlit run app_advanced.py
+# Ouvre le navigateur tout seul (au cas où Streamlit ne le fait pas)
+( sleep 4; open "http://localhost:8501" >/dev/null 2>&1 ) &
+python -m streamlit run app_advanced.py --server.headless=false
 
 # Si erreur au lancement
 if [ $? -ne 0 ]; then
