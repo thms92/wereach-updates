@@ -1,64 +1,62 @@
 #!/bin/bash
-
-# LinkedIn Scraper Pro - Lanceur macOS
-# Double-cliquez sur ce fichier pour lancer l'application
-
-# Aller dans le dossier du script
+# ==========================================================================
+#  We.Reach — Lanceur local macOS (double-clic)
+#  Fait tout, tout seul : installe l'environnement la 1re fois, puis lance
+#  l'appli dans ton navigateur. Utilise TON Chrome + TA connexion (ton IP),
+#  donc LinkedIn ne bloque pas (contrairement au mode serveur).
+# ==========================================================================
 cd "$(dirname "$0")"
+clear
+echo "======================================"
+echo "        We.Reach — démarrage"
+echo "======================================"
+echo ""
 
-# Notification de démarrage
-osascript -e 'display notification "Démarrage de LinkedIn Scraper Pro..." with title "LinkedIn Scraper Pro"'
+# 1) Python 3 présent ?
+if ! command -v python3 &>/dev/null; then
+  osascript -e 'display dialog "Python 3 nest pas installe.
 
-# Vérifier que Python est installé
-if ! command -v python3 &> /dev/null; then
-    osascript -e 'display dialog "Python 3 n'\''est pas installé. Veuillez l'\''installer depuis python.org" buttons {"OK"} with icon stop'
+Installe-le depuis https://www.python.org/downloads/ (bouton jaune Download),
+puis double-clique a nouveau sur ce fichier." buttons {"OK"} with icon stop' >/dev/null 2>&1
+  open "https://www.python.org/downloads/"
+  exit 1
+fi
+
+# 2) Environnement isolé (.venv) — créé une seule fois
+if [ ! -d ".venv" ]; then
+  echo "Premiere installation en cours (2 a 5 minutes)..."
+  python3 -m venv .venv
+fi
+# shellcheck disable=SC1091
+source .venv/bin/activate
+
+# 3) Dépendances + navigateur Chromium (une seule fois, marqueur .setup_done)
+if [ ! -f ".venv/.setup_done" ]; then
+  echo "Installation des composants (patiente, c'est la seule fois)..."
+  python -m pip install --upgrade pip >/dev/null 2>&1
+  python -m pip install -r requirements.txt || {
+    osascript -e 'display dialog "Erreur pendant linstallation des dependances." buttons {"OK"} with icon stop' >/dev/null 2>&1
     exit 1
+  }
+  echo "Installation du navigateur (Chromium)..."
+  python -m playwright install chromium
+  touch ".venv/.setup_done"
+  echo "Installation terminee."
 fi
 
-# Ajouter le chemin des binaires Python locaux au PATH
-export PATH="$HOME/.local/bin:$PATH"
+# 4) Mode requis par LinkedIn : vrai Chrome VISIBLE, sans camouflage
+#    (indispensable pour que les boutons d'invitation apparaissent).
+export SCRAPER_HEADLESS=false
+export SCRAPER_STEALTH=false
 
-# Vérifier et installer TOUTES les dépendances manquantes
-MISSING_DEPS=false
+# 5) Lancement — Streamlit ouvre automatiquement le navigateur
+echo ""
+echo "Ouverture de We.Reach dans ton navigateur..."
+echo "(Laisse cette fenetre noire ouverte pendant l'utilisation.)"
+echo ""
+python -m streamlit run app_advanced.py
 
-# Vérifier chaque dépendance
-for module in streamlit pandas playwright plotly openpyxl cryptography; do
-    if ! python3 -c "import $module" &> /dev/null 2>&1; then
-        MISSING_DEPS=true
-        break
-    fi
-done
-
-# Si des dépendances manquent, installer depuis requirements.txt
-if [ "$MISSING_DEPS" = true ]; then
-    osascript -e 'display notification "Installation des dépendances manquantes..." with title "LinkedIn Scraper Pro"'
-
-    # Installer depuis requirements.txt s'il existe
-    if [ -f "requirements.txt" ]; then
-        python3 -m pip install --break-system-packages -r requirements.txt
-    else
-        # Sinon installation manuelle
-        python3 -m pip install --break-system-packages streamlit pandas playwright plotly openpyxl xlsxwriter python-dotenv cryptography
-    fi
-
-    export PATH="$HOME/.local/bin:$PATH"
-
-    # Installer Playwright Chromium
-    python3 -m playwright install chromium
-
-    osascript -e 'display notification "Installation terminée !" with title "LinkedIn Scraper Pro"'
-fi
-
-# Créer le dossier config s'il n'existe pas
-mkdir -p config
-
-# Notification de lancement
-osascript -e 'display notification "Lancement de l'\''interface web..." with title "LinkedIn Scraper Pro"'
-
-# Lancer Streamlit (il ouvrira automatiquement le navigateur)
-python3 -m streamlit run app_advanced.py
-
-# Si erreur, afficher un message
+# Si erreur au lancement
 if [ $? -ne 0 ]; then
-    osascript -e 'display dialog "Erreur lors du lancement de LinkedIn Scraper Pro." buttons {"OK"} with icon stop'
+  osascript -e 'display dialog "Erreur au lancement de We.Reach. Reessaie, ou contacte Thomas." buttons {"OK"} with icon stop' >/dev/null 2>&1
 fi
