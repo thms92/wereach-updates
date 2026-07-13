@@ -80,7 +80,7 @@ ECOLES = {
     "EDHEC": "16001",
     "ESIEE": "15106279",
     "ESG": "1883450",
-    "Inseec": "Inseec",                  # ID en doublon reçu → à revérifier
+    "Inseec": "12635396",
     "SKEMA": "2413397",
     "Rennes BS": "15092681",
     "Kedge": "2757210",
