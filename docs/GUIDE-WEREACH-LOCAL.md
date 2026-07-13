@@ -5,23 +5,20 @@ permet à LinkedIn de fonctionner normalement. Installation = **une seule fois**
 
 ---
 
-## Étape 1 — Installer Python (une seule fois, si tu ne l'as pas)
-1. Va sur **https://www.python.org/downloads/**
-2. Clique le gros bouton jaune **« Download Python »** → ouvre le fichier téléchargé → **Suivant / Installer**.
-> Si tu as déjà Python, saute cette étape (le lanceur te le dira).
-
-## Étape 2 — Récupérer le dossier We.Reach
+## Étape 1 — Récupérer le dossier We.Reach
 1. Décompresse le fichier **`We.Reach.zip`** que Thomas t'a envoyé (double-clic).
 2. Tu obtiens un dossier **`We.Reach`**. Mets-le où tu veux (ex. Bureau).
 
-## Étape 3 — Lancer
-1. Ouvre le dossier → **double-clique** sur **`LinkedIn Scraper Pro Advanced.command`**.
-2. ⚠️ La 1re fois, macOS peut dire *« développeur non identifié »* :
-   → **clic droit** sur le fichier → **Ouvrir** → **Ouvrir**. (À faire une seule fois.)
-3. Une fenêtre noire s'ouvre. **La toute première fois**, elle installe tout
-   (2 à 5 min — c'est normal, laisse faire).
-4. Ton **navigateur s'ouvre** sur We.Reach. 🎉
+## Étape 2 — Lancer (tout s'installe automatiquement)
+1. Ouvre le dossier → **clic droit** sur **`LinkedIn Scraper Pro Advanced.command`**
+   → **Ouvrir** → **Ouvrir**. *(macOS le demande une seule fois car le fichier vient d'internet.)*
+2. Une fenêtre noire s'ouvre. **La toute première fois**, elle installe **tout, automatiquement** (2 à 5 min) :
+   - **Python** si tu ne l'as pas → macOS te demandera **le mot de passe de ta session** (normal, c'est pour installer Python) ;
+   - les composants + le navigateur.
+   Laisse faire, ne ferme rien.
+3. Ton **navigateur s'ouvre** sur We.Reach. 🎉
 > Garde la fenêtre noire ouverte pendant que tu utilises l'outil.
+> Tu n'as **rien à installer à la main** — le lanceur s'occupe de tout.
 
 ---
 

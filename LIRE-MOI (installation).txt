@@ -1,21 +1,21 @@
 ========================================================
-  We.Reach — Installation (Mac) — 3 étapes
+  We.Reach — Installation (Mac) — 2 étapes
 ========================================================
 
-1) INSTALLER PYTHON (une seule fois, si tu ne l'as pas)
-   → https://www.python.org/downloads/  (gros bouton jaune "Download")
-   → ouvre le fichier téléchargé, installe.
-   (Si tu as déjà Python, le lanceur te le dira — passe cette étape.)
-
-2) LANCER We.Reach
-   → CLIC DROIT sur le fichier :  "LinkedIn Scraper Pro Advanced.command"
+1) LANCER We.Reach
+   → Décompresse We.Reach.zip (double-clic) → dossier "We.Reach".
+   → Dans le dossier : CLIC DROIT sur "LinkedIn Scraper Pro Advanced.command"
    → Ouvrir → Ouvrir
-     (macOS demande ça une seule fois car le fichier vient d'internet — c'est normal.)
-   → La 1re fois, une fenêtre noire installe tout (2 à 5 min). Laisse faire.
+     (macOS demande ça une seule fois car le fichier vient d'internet — normal.)
+   → La 1re fois, une fenêtre noire installe TOUT automatiquement (2 à 5 min) :
+       • Python si tu ne l'as pas (macOS te demandera le mot de passe de ta
+         session — c'est normal, c'est pour installer Python) ;
+       • les composants + le navigateur.
+     Laisse faire, ne ferme pas.
    → Ton navigateur s'ouvre sur We.Reach. 🎉
    ⚠️ Garde la fenêtre noire OUVERTE pendant que tu utilises l'outil.
 
-3) UTILISER
+2) UTILISER
    → Récupère ton cookie LinkedIn (li_at) : voir l'encadré "Comment récupérer
      mon cookie" dans l'app (page Recherche).
    → Colle-le → Enregistrer → lance tes recherches / invitations.
