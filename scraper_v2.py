@@ -226,6 +226,16 @@ class LinkedInScraperV2:
         """
         if not entreprise:
             return None
+        key0 = entreprise.strip().lower()
+        # 1) Seed versionné (config.py COMPANY_URNS) — déployé avec l'app
+        try:
+            from config import COMPANY_URNS
+            if COMPANY_URNS.get(key0):
+                logger.info(f"🏢 URN entreprise '{entreprise}' (seed): {COMPANY_URNS[key0]}")
+                return str(COMPANY_URNS[key0])
+        except Exception:
+            pass
+        # 2) Cache local (config/company_urns.json, non versionné)
         try:
             import json
             from pathlib import Path

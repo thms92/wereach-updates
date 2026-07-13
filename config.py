@@ -110,4 +110,46 @@ ECOLES = {
     "Université d'Angers": "315727",
 }
 
+# Cabinets / entreprises concurrents (chasse). Sert la liste déroulante de la
+# page Recherche. Le filtrage précis (currentCompany) dépend de l'URN LinkedIn
+# dans config/company_urns.json ; sinon repli par nom (mot-clé).
+CONCURRENTS = [
+    "5 degrés", "ACCENTURE", "AFDTECH", "Ailancy", "AKKODIS (ex- AKKA & Modis)",
+    "Aldemia", "Aliancy", "Aliznet", "ALPHONSE", "ALTEN", "ALTRAN", "Amaris",
+    "AMETIX", "ANEO", "Apsia", "APSIDE", "Ares & co", "Arneo", "ASM Consulting",
+    "ASTEK", "ATECNA", "Athoria", "ATOS", "AUBAY", "AUSY", "Avanade (Microsoft)",
+    "B/ACCEPTANCE", "BAM", "Bearing Point", "Beelix", "Berexia", "BERTEK",
+    "BETC UX", "Byron Group", "Capgemini", "Capteo", "CGI", "Cognizant",
+    "Concentrix", "Consort NT", "Daveo", "DAVIDSON", "DEGETEL", "Deloitte",
+    "Devoteam", "Digilityx", "DXC", "Dynemia", "Ebiznext (Umanis)", "Eleven Labs",
+    "Emakina", "Europgroup Consulting", "Exomind", "Extia", "EY", "Fabernovel",
+    "FERPECTION", "Grant Thorton", "Havas", "Headmind (ex-Beijaflore)", "Hitpart",
+    "Hubvisory", "IBM", "IKXO", "Ineat", "INETUM (ex-GFI)", "INFOTEL", "Insign",
+    "Inspearit", "Ippon Technologies", "Itecor", "Julhiet Sterwen", "Kaibee",
+    "KANBIOS", "Karré", "Kea Partners", "Keley", "Klanik", "Klee", "KPMG",
+    "Listen Too", "LMW Digital Expert", "Mantu", "Margo", "Mazars", "MC2i",
+    "Meritis", "Mind7 Consulting", "Monsieur Guiz", "NEXTON", "NIJI", "Novencia",
+    "NSI Group", "OAIO", "Océane Consulting Testing Services", "Octo", "OnePoint",
+    "OPEN", "Orange Business Services", "Orphoz (McKinsey)", "PaloIT",
+    "Polyconseil", "Publicis Sapient", "PwC", "Razorfish (Publicis)", "SAEGUS",
+    "Scalian", "SFEIR", "Sia Partners", "SII", "Silamir", "Singulier", "Smile",
+    "SOAT", "Softeam", "SoGETI", "Solutec", "SOPRA STERIA", "SOPRA STERIA NEXT",
+    "Square Management", "Stanwell", "STEAM", "SURICATS CONSULTING",
+    "Swood Partners", "TAK", "Talan", "TEAMINSIDE", "Themis Conseil", "THEODO",
+    "Thiga", "Thinkmarket", "Tnp Consultant", "UMANIS", "UNIWARE", "UX Republic",
+    "Valtech", "Velvet Consulting", "Vertone", "VISEO", "Wavestone",
+    "Wed'R (Stanwell)", "Wemanity", "WERIN", "WOLD", "XEBIA", "Yeita", "Zenika",
+]
+
+# URN LinkedIn d'entreprises (filtre currentCompany précis). Versionné → déployé
+# avec l'app. Clés en minuscules. Complété au fil de l'eau (ex. concurrents).
+COMPANY_URNS = {
+    "thiga": "4998677",
+    "leroy merlin": "164715",
+    "kering": "165528",
+    "winamax": "862188",
+    "kiloutou": "102956",
+    "leclerc": "55152",
+}
+
 os.makedirs(ScraperConfig.CONFIG_DIR, exist_ok=True)

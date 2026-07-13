@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import os
 
 from scraper_v2_sync import LinkedInScraperV2Sync
-from config import ScraperConfig, ECOLES
+from config import ScraperConfig, ECOLES, CONCURRENTS
 from database import DatabaseManager
 from cookie_utils import CookieManager
 from export_utils import ExportManager
@@ -283,14 +283,19 @@ elif page == "🔍 Recherche":
 
     # TAB 1: CANDIDATS
     with tab1:
-        st.subheader("Recherche de candidats avec filtre école")
+        st.subheader("Recherche de candidats — par école et/ou entreprise")
 
         col1, col2 = st.columns([1, 2])
 
         with col1:
             cookie = st.session_state.global_cookie
             keyword = st.text_input("Mots-clés", "", placeholder="Ex : Product Manager, PM Senior")
-            entreprise = st.text_input("Entreprise (optionnel)", "")
+            entreprise_libre = st.text_input("Entreprise (optionnel)", "")
+            concurrent = st.selectbox("🎯 Cabinet concurrent (optionnel)", ["—"] + CONCURRENTS,
+                                      help="Chasse : cible les profils actuellement dans ce cabinet.")
+            # Un concurrent choisi prend le dessus ; on retire le parenthétique
+            # (ex. « AKKODIS (ex- AKKA & Modis) » → « AKKODIS »).
+            entreprise = concurrent.split("(")[0].strip() if concurrent != "—" else entreprise_libre
             nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10)
 
             ile_de_france = st.toggle("🗼 Île-de-France uniquement", value=False, help="Filtre les résultats pour la région Île-de-France")
@@ -315,7 +320,7 @@ elif page == "🔍 Recherche":
                 message_personnalise = ""
 
         with col2:
-            st.markdown("**🎓 École ciblée** — une seule")
+            st.markdown("**🎓 École ciblée** — optionnelle (une seule)")
             ecole_nom = st.pills(
                 "École ciblée",
                 list(ECOLES.keys()),
@@ -327,7 +332,7 @@ elif page == "🔍 Recherche":
             if ecoles_selectionnees:
                 st.success("✅ École sélectionnée")
             else:
-                st.info("ℹ️ Sélectionne une école")
+                st.caption("Aucune école — tu peux filtrer par entreprise / cabinet concurrent à la place.")
 
         st.markdown("---")
 
@@ -337,8 +342,8 @@ elif page == "🔍 Recherche":
             if st.button("🔍 Lancer le scraping", type="primary", use_container_width=True):
                 if not cookie:
                     st.error("❌ Cookie manquant")
-                elif len(ecoles_selectionnees) != 1:
-                    st.error("❌ Sélectionnez exactement une école")
+                elif not ecoles_selectionnees and not entreprise.strip():
+                    st.error("❌ Choisis au moins un filtre : une école OU une entreprise / un cabinet concurrent.")
                 else:
                     with st.spinner("🚀 Scraping en cours..."):
                         scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
