@@ -32,8 +32,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Thème We.Reach (tokens Claude Design — clair/sombre)
-inject_theme(dark=st.session_state.get("wf_dark", False))
+# Thème We.Reach (fond clair uniquement)
+inject_theme()
 
 def current_user_email():
     try:
@@ -98,12 +98,6 @@ st.markdown(wordmark(), unsafe_allow_html=True)
 
 # Sidebar Navigation
 st.sidebar.title("🧭 Navigation")
-
-# Mode sombre (thème We.Reach)
-_dark = st.sidebar.toggle("🌙 Mode sombre", value=st.session_state.get("wf_dark", False))
-if _dark != st.session_state.get("wf_dark", False):
-    st.session_state.wf_dark = _dark
-    st.rerun()
 
 if st.session_state.get("auth_email"):
     st.sidebar.caption(f"👤 {st.session_state['auth_email']}")
@@ -270,6 +264,20 @@ elif page == "🔍 Recherche":
             st.session_state.cookie_editing = True
             st.rerun()
 
+    with st.expander("❓ Comment récupérer mon cookie LinkedIn (li_at) ?"):
+        st.markdown(
+            "**Sur ordinateur, dans Chrome :**\n\n"
+            "1. Connecte-toi sur **linkedin.com** (assure-toi d'être bien connecté).\n"
+            "2. Appuie sur **F12** (ou clic droit → **Inspecter**) pour ouvrir les outils développeur.\n"
+            "3. Va dans l'onglet **Application** (si tu ne le vois pas, clique sur les `»`).\n"
+            "4. À gauche : **Cookies** → **https://www.linkedin.com**.\n"
+            "5. Dans la liste, trouve la ligne nommée **`li_at`**.\n"
+            "6. **Double-clique sur sa valeur** (longue suite de caractères) → copie-la (**Ctrl/Cmd + C**).\n"
+            "7. Reviens ici, **colle** la valeur dans le champ ci-dessus → **Enregistrer**.\n\n"
+            "⚠️ **Ne partage jamais ce cookie** : il donne accès à ton compte LinkedIn. "
+            "S'il expire (déconnexion), refais l'opération pour en récupérer un nouveau."
+        )
+
     st.write("")
     tab1, tab2 = st.tabs(["👤 Candidats", "🏢 Clients/Entreprises"])
 
@@ -281,7 +289,7 @@ elif page == "🔍 Recherche":
 
         with col1:
             cookie = st.session_state.global_cookie
-            keyword = st.text_input("Mots-clés", "Product Manager")
+            keyword = st.text_input("Mots-clés", "", placeholder="Ex : Product Manager, PM Senior")
             entreprise = st.text_input("Entreprise (optionnel)", "")
             nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10)
 
@@ -415,7 +423,8 @@ elif page == "🔍 Recherche":
 
         keyword_client = st.text_input(
             "Mots-clés",
-            '("Chief Data Officer" OR CDO OR "Head of Data" OR "Head of AI" OR "Directeur Data" OR "Responsable Data" OR "Directeur de la donnée")',
+            "",
+            placeholder='Ex : "Head of Data" OR CDO OR "Directeur Data"',
             key="keyword_client",
         )
         entreprise_client = st.text_input("Entreprise", "", key="entreprise_client")
