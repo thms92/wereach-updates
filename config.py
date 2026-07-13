@@ -86,11 +86,11 @@ ECOLES = {
     "Kedge": "2757210",
     "ECE": "280138",
     "TBS": "47992",
-    "Mines": "Mines",                    # ID en doublon reçu → à revérifier
+    "Mines": "15092675",
     "IESEG": "319911",
     "ESGI": "ESGI",                      # ID en doublon reçu → à revérifier
     "EPF": "15094113",
-    "Miage": "Miage",                    # ID en doublon reçu → à revérifier
+    "Miage": "64556889",
     "EM Lyon": "18361",
     "PSTB": "77002277",
     "Neoma": "3330082",
@@ -105,7 +105,7 @@ ECOLES = {
     "ESSCA": "238453",
     "Paris DIDEROT": "19143575",
     "IMM": "15098374",
-    "Sup de Pub": "Sup de Pub",          # ID en doublon reçu → à revérifier
+    "Sup de Pub": "15100368",
     "Nanterre": "352250",
     "Université d'Angers": "315727",
 }
