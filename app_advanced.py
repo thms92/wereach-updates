@@ -239,6 +239,7 @@ elif page == "🔍 Recherche":
                 placeholder="Colle ici la valeur du cookie li_at…",
                 key="cookie_shared",
             )
+            _new_ck = (_new_ck or "").strip()
             if _cbtn.button("Enregistrer", type="primary", use_container_width=True):
                 if _new_ck and st.session_state.cookie_manager.validate_cookie_format(_new_ck):
                     st.session_state.cookie_manager.save_cookie(_new_ck)

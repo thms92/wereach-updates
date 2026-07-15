@@ -77,19 +77,23 @@ class CookieManager:
             return None
 
     def validate_cookie_format(self, cookie: str) -> bool:
-        """Valide le format d'un cookie li_at"""
+        """Valide (souplement) le format d'un cookie li_at.
+
+        On reste permissif : les cookies li_at de LinkedIn ont grossi (200-300+
+        caractères) et le jeu de caractères varie (base64 + url-safe). Le vrai
+        test de validité, c'est le warm-up. On ne rejette donc que l'évident :
+        vide, trop court, ou contenant des espaces (copié de travers).
+        """
         if not cookie:
             return False
-
-        # Le cookie li_at de LinkedIn a généralement 152 caractères
-        if len(cookie) < 100 or len(cookie) > 200:
-            logger.warning(f"Longueur cookie suspecte: {len(cookie)}")
+        cookie = cookie.strip()
+        if len(cookie) < 30:
+            logger.warning(f"Cookie trop court: {len(cookie)}")
             return False
-
-        # Vérifier que le cookie contient uniquement des caractères alphanumériques et certains caractères spéciaux
         import re
-        if not re.match(r'^[A-Za-z0-9_\-=]+$', cookie):
-            logger.warning("Format cookie invalide")
+        # Charset large : lettres, chiffres, base64 (+/=), url-safe (-_), et
+        # quelques signes possibles du jeton.
+        if not re.match(r'^[A-Za-z0-9_\-=:./+%~]+$', cookie):
+            logger.warning("Format cookie invalide (caractères inattendus)")
             return False
-
         return True
