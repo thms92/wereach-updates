@@ -19,7 +19,7 @@ cd "$(dirname "$0")"
 
 # --- Source des mises à jour (dépôt GitHub public) ------------------------
 GH_OWNER="thms92"
-GH_REPO="wereach"
+GH_REPO="wereach-updates"
 GH_BRANCH="main"
 # --------------------------------------------------------------------------
 
