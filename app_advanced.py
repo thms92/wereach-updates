@@ -22,6 +22,7 @@ from utils.user_context import resolve_user_email, user_paths_for, DEFAULT_DEV_E
 from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import inject_theme, wordmark
+from version import get_version
 
 
 # Configuration Streamlit
@@ -127,6 +128,9 @@ with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
             st.success("Proxy enregistré ✅")
         else:
             st.warning("Indique au moins un serveur.")
+
+st.sidebar.divider()
+st.sidebar.caption(f"We.Reach v{get_version()}")
 
 # ==============================================
 # PAGE 1: DASHBOARD
