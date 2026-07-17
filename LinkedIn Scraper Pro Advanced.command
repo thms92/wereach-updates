@@ -68,11 +68,20 @@ fi
 export SCRAPER_HEADLESS=false
 export SCRAPER_STEALTH=false
 
-# 5) Lancement — ouvre le navigateur tout seul
+# 5) Streamlit demande un email au tout premier lancement et ATTEND une saisie
+#    (le serveur ne demarre jamais tant qu'on ne repond pas). On desactive ce
+#    message une fois pour toutes sur ce Mac.
+mkdir -p "$HOME/.streamlit"
+if [ ! -f "$HOME/.streamlit/credentials.toml" ]; then
+  printf '[general]\nemail = ""\n' > "$HOME/.streamlit/credentials.toml"
+fi
+
+# 6) Lancement — c'est nous qui ouvrons le navigateur (headless=true evite a la
+#    fois le message de bienvenue et un second onglet ouvert par Streamlit).
 echo ""
 echo "Ouverture de We.Reach dans ton navigateur..."
 echo "(Laisse cette fenetre noire ouverte pendant l'utilisation.)"
 echo ""
 ( sleep 4; open "http://localhost:8501" >/dev/null 2>&1 ) &
-python -m streamlit run app_advanced.py --server.headless=false \
+python -m streamlit run app_advanced.py --server.headless=true \
   || fail "Erreur au lancement de We.Reach. Envoie une capture de cette fenetre a Thomas."
