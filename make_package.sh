@@ -97,38 +97,78 @@ chmod +x "$BOOT"
 
 echo "4) LIRE-MOI au niveau supérieur…"
 cat > "$STAGE/We.Reach/0 - LIRE-MOI.txt" <<'TXT'
-========================================================
+==========================================================
   We.Reach — Installation (Mac)
-========================================================
+  ~5 minutes, UNE SEULE FOIS. Rien à installer à la main.
+==========================================================
 
-Tu n'as RIEN à installer à la main. Deux clics et c'est parti :
+----------------------------------------------------------
+ETAPE 1 — Sortir le dossier du zip
+----------------------------------------------------------
+Double-clic sur We.Reach.zip -> tu obtiens un dossier "We.Reach".
+Mets-le où tu veux (ex. le Bureau).
 
-1) CLIC DROIT sur  " 1 - Lancer We.Reach.command "  ->  Ouvrir  ->  Ouvrir
-   (macOS le demande une seule fois car le fichier vient d'internet — normal.)
+----------------------------------------------------------
+ETAPE 2 — Autoriser le lanceur (la seule etape un peu penible)
+----------------------------------------------------------
+macOS bloque par principe TOUT fichier venu d'internet. C'est normal,
+ce n'est pas un probleme de l'outil. A faire UNE FOIS :
 
-2) La 1re fois, une fenêtre noire installe TOUT automatiquement (2 à 5 min) :
-   - Python si besoin (macOS te demandera ton mot de passe de session — normal),
-   - les composants + le navigateur.
-   Laisse faire, ne ferme rien. Ton navigateur s'ouvre ensuite sur We.Reach.
+  a) CLIC DROIT sur "1 - Lancer We.Reach.command" -> Ouvrir
+     Si une fenetre propose "Ouvrir" -> clique Ouvrir : c'est bon,
+     passe directement a l'ETAPE 3.
 
-   >> Garde la fenêtre noire OUVERTE pendant que tu utilises l'outil. <<
+  b) Si l'alerte ne propose QUE "Placer dans la corbeille" / "Termine"
+     (macOS recent), alors :
+       - clique "Termine"   (SURTOUT PAS "Placer dans la corbeille")
+       - ouvre  Reglages Systeme > Confidentialite et securite
+       - descends tout en bas, section "Securite". Tu vois la ligne :
+         << "1 - Lancer We.Reach.command" a ete bloque... >>
+       - clique  "Ouvrir quand meme"
+       - saisis le mot de passe de ta session
+       - re-double-clic sur "1 - Lancer We.Reach.command" -> "Ouvrir"
 
---------------------------------------------------------
-MISES À JOUR — automatiques
-- À chaque ouverture, We.Reach vérifie s'il existe une version plus récente
-  et l'installe tout seul (quelques secondes). Tu n'as rien à refaire.
-- La version installée est affichée en bas de la barre de gauche (We.Reach vX.Y.Z).
+  >> Cette etape ne se fait QU'UNE SEULE FOIS, jamais plus ensuite. <<
 
---------------------------------------------------------
+----------------------------------------------------------
+ETAPE 3 — Laisser faire (2 a 5 min, automatique)
+----------------------------------------------------------
+Une fenetre noire installe TOUT toute seule :
+  - Python si tu ne l'as pas (macOS demandera le mot de passe de ta
+    session — c'est normal, c'est pour installer Python),
+  - les composants + le navigateur.
+Laisse faire, ne ferme rien.
+Ton navigateur s'ouvre ensuite sur We.Reach.
+
+  >> Garde la fenetre noire OUVERTE pendant que tu utilises l'outil. <<
+
+----------------------------------------------------------
+MISES A JOUR — automatiques, rien a faire
+----------------------------------------------------------
+A chaque ouverture, We.Reach se met a jour tout seul si une nouvelle
+version existe (quelques secondes).
+- Tu ne recevras JAMAIS de nouveau zip a reinstaller.
+- Tu n'auras JAMAIS a refaire l'ETAPE 2.
+- Ta version est affichee en bas de la barre de gauche : "We.Reach vX.Y.Z".
+
+----------------------------------------------------------
 UTILISER
-- Récupère ton cookie LinkedIn (li_at) : voir l'encadré "Comment récupérer
+----------------------------------------------------------
+- Recupere ton cookie LinkedIn (li_at) : voir l'encadre "Comment recuperer
   mon cookie" dans l'app (page Recherche). Colle-le -> Enregistrer.
-- Limite volontaire : 20 invitations / jour (protège ton compte).
-- Pour relancer un autre jour : re-double-clique le même fichier (instantané).
-- Un souci ? Envoie une capture de la fenêtre noire à Thomas.
+  (Ton cookie est personnel et chiffre sur TON Mac — ne le partage jamais.)
+- Limite volontaire : 20 invitations / jour (protege ton compte LinkedIn).
+- Pour relancer un autre jour : re-double-clic sur le meme fichier (instantane).
+
+----------------------------------------------------------
+UN SOUCI ?
+----------------------------------------------------------
+- Bloque sur "Email:" dans la fenetre noire -> appuie juste sur Entree.
+- Ecran "Ce site est inaccessible" -> attends 1 min (1re fois = longue).
+- Autre -> envoie une capture de la fenetre noire a Thomas.
 
 (Le dossier "app" contient le programme — n'y touche pas.)
-========================================================
+==========================================================
 TXT
 
 echo "5) Création du zip…"
