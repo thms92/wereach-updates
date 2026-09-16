@@ -138,6 +138,25 @@ code, pre, [data-testid="stCode"] {{ font-family:'JetBrains Mono',monospace !imp
   line-height:1.2; font-weight:600 !important; white-space:nowrap;
 }}
 
+/* Chips du multiselect (secteurs, cabinets concurrents).
+   Sans ça le libellé héritait de la règle globale `span {{color:var(--wf-text)}}`
+   et devenait du texte sombre sur fond accent — illisible. Même correctif que
+   pour les boutons primaires, avec le look de .wf-badge.accent. Le libellé
+   n'est plus tronqué : la pilule s'adapte au texte et la ligne passe à la
+   suivante quand il y en a plusieurs. */
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div {{ flex-wrap:wrap !important; height:auto !important; }}
+[data-baseweb="tag"] {{
+  background:var(--wf-accent-tint) !important; border:1px solid var(--wf-accent) !important;
+  border-radius:20px !important; max-width:none !important; height:auto !important;
+  padding:3px 6px 3px 10px !important; margin:3px 4px 3px 0 !important;
+}}
+[data-baseweb="tag"], [data-baseweb="tag"] * {{ color:var(--wf-accent-strong) !important; }}
+[data-baseweb="tag"] svg {{ fill:currentColor !important; }}
+[data-baseweb="tag"] span {{
+  max-width:none !important; overflow:visible !important; text-overflow:clip !important;
+  white-space:normal !important; font-size:.8rem; font-weight:600;
+}}
+
 /* Badge / pilule utilitaire (statuts) */
 .wf-badge {{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:600; padding:3px 10px; border-radius:20px; }}
 .wf-badge.ok {{ color:var(--wf-success); background:var(--wf-success-tint); }}
