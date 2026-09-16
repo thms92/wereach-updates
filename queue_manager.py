@@ -230,7 +230,7 @@ class QueueManager:
                 df = scraper.run_scraper(
                     cookie=self.config.cookie,
                     keyword=self.config.keyword,
-                    entreprise=job.entreprise,
+                    entreprises=[job.entreprise],
                     nb_profils=self.config.nb_profils_par_entreprise,
                     ecoles_ids=self.config.ecoles_ids,
                     inviter=self.config.inviter,

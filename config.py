@@ -110,6 +110,66 @@ ECOLES = {
     "Université d'Angers": "315727",
 }
 
+# Secteurs d'activité LinkedIn (facette `industry` de la recherche people).
+# Valeur = code de la taxonomie officielle "Industry Codes V2" :
+# https://learn.microsoft.com/en-us/linkedin/shared/references/reference-tables/industry-codes-v2
+# Sélection curée pour le recrutement tech / conseil. Le libellé français doit
+# rester fidèle au libellé LinkedIn (rappelé en commentaire) : un code juste
+# mais mal étiqueté renvoie silencieusement les mauvais profils.
+# tests/test_secteurs_config.py épingle chaque code à son libellé officiel.
+SECTEURS = {
+    # Tech & numérique
+    "Services et conseil informatiques": "96",      # IT Services and IT Consulting
+    "Édition de logiciels": "4",                    # Software Development
+    "Internet & technologies": "6",                 # Technology, Information and Internet
+    "Sécurité informatique": "118",                 # Computer and Network Security
+    "Jeux vidéo": "109",                            # Computer Games
+    "Matériel informatique (fabrication)": "3",     # Computer Hardware Manufacturing
+    "Télécommunications": "8",                      # Telecommunications
+    "Médias audio & vidéo en ligne": "113",         # Online Audio and Video Media
+    # Conseil & services aux entreprises
+    "Services et conseil aux entreprises": "11",    # Business Consulting and Services
+    "Comptabilité & audit": "47",                   # Accounting
+    "Études de marché": "97",                       # Market Research
+    "Recrutement et intérim": "104",                # Staffing and Recruiting
+    "Ressources humaines": "137",                   # Human Resources Services
+    "Formation professionnelle & coaching": "105",  # Professional Training and Coaching
+    "Externalisation / offshoring": "123",          # Outsourcing and Offshoring Consulting
+    "Ingénierie (bureaux d'études)": "3242",        # Engineering Services
+    # Finance
+    "Banque": "41",                                 # Banking
+    "Assurance": "42",                              # Insurance
+    "Services financiers": "43",                    # Financial Services
+    "Marchés de capitaux": "129",                   # Capital Markets
+    "Capital-risque & private equity": "106",       # Venture Capital and Private Equity Principals
+    # Marketing, communication & design
+    "Publicité & marketing": "80",                  # Advertising Services
+    "Relations publiques & communication": "98",    # Public Relations and Communications Services
+    "Design": "99",                                 # Design Services
+    # Industrie, transport & énergie
+    "Automobile (constructeurs)": "53",             # Motor Vehicle Manufacturing
+    "Aéronautique & spatial (équipementiers)": "52",  # Aviation and Aerospace Component Manufacturing
+    "Compagnies aériennes & aviation": "94",        # Airlines and Aviation
+    "Machines industrielles": "135",                # Industrial Machinery Manufacturing
+    "Industrie manufacturière": "25",               # Manufacturing
+    "Pétrole & gaz": "57",                          # Oil and Gas
+    "Énergies renouvelables": "3240",               # Renewable Energy Power Generation
+    "Services environnementaux": "86",              # Environmental Services
+    "Construction": "48",                           # Construction
+    "Transport & logistique": "116",                # Transportation, Logistics, Supply Chain and Storage
+    # Consommation & santé
+    "Distribution / retail": "27",                  # Retail
+    "Luxe & joaillerie": "143",                     # Retail Luxury Goods and Jewelry
+    "Mode & habillement": "19",                     # Retail Apparel and Fashion
+    "Industrie pharmaceutique": "15",               # Pharmaceutical Manufacturing
+    "Santé & hôpitaux": "14",                       # Hospitals and Health Care
+    "Dispositifs médicaux": "17",                   # Medical Equipment Manufacturing
+    # Immobilier, éducation & public
+    "Immobilier": "44",                             # Real Estate
+    "Enseignement supérieur": "68",                 # Higher Education
+    "Administration publique": "75",                # Government Administration
+}
+
 # Cabinets / entreprises concurrents (chasse). Sert la liste déroulante de la
 # page Recherche. Le filtrage précis (currentCompany) dépend de l'URN LinkedIn
 # dans config/company_urns.json ; sinon repli par nom (mot-clé).

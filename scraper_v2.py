@@ -19,7 +19,7 @@ import re
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Callable
+from typing import List, Optional, Dict, Callable, Union
 import pandas as pd
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 
@@ -92,35 +92,109 @@ class LinkedInScraperV2:
             kwargs["proxy"] = self._proxy
         return kwargs
 
-    def construire_url_recherche(self, keyword: str, entreprise: str, ecoles_ids: List[str], ile_de_france: bool = False) -> str:
+    # Nombre maximum de valeurs par facette LinkedIn. Au-delà, l'URL devient
+    # anormalement longue — c'est un signal de détection côté LinkedIn.
+    MAX_VALEURS_PAR_FACETTE = 10
+
+    @staticmethod
+    def _as_list(valeur) -> List[str]:
+        """Normalise None / str / liste en liste de chaînes non vides."""
+        if valeur is None:
+            return []
+        if isinstance(valeur, str):
+            valeur = [valeur]
+        return [str(v).strip() for v in valeur if str(v).strip()]
+
+    @classmethod
+    def _plafonner(cls, valeurs: List[str], nom_facette: str) -> List[str]:
+        """Limite une facette à MAX_VALEURS_PAR_FACETTE valeurs."""
+        if len(valeurs) <= cls.MAX_VALEURS_PAR_FACETTE:
+            return valeurs
+        logger.warning(
+            f"⚠️ {len(valeurs)} {nom_facette} sélectionnées — "
+            f"seules les {cls.MAX_VALEURS_PAR_FACETTE} premières sont utilisées."
+        )
+        return valeurs[: cls.MAX_VALEURS_PAR_FACETTE]
+
+    @staticmethod
+    def _encoder_facette(valeurs: List[str]) -> str:
+        """Encode une facette LinkedIn : ["a","b"] → %5B%22a%22%2C%22b%22%5D."""
+        return "%5B" + "%2C".join(f"%22{v}%22" for v in valeurs) + "%5D"
+
+    @staticmethod
+    def _expression_ou(noms: List[str]) -> str:
+        """Construit `"A"` (une valeur) ou `("A" OR "B")` (plusieurs)."""
+        cites = ['"{}"'.format(n.replace('"', '\\"')) for n in noms]
+        if len(cites) == 1:
+            return cites[0]
+        return "(" + " OR ".join(cites) + ")"
+
+    @staticmethod
+    def _combiner_et(base: str, expression: str) -> str:
+        """Ajoute `AND <expression>` à une requête booléenne existante.
+
+        La base est parenthésée si elle contient déjà un OU, sinon le AND
+        n'aurait pas la bonne priorité.
+        """
+        base = (base or "").strip()
+        if not base:
+            return expression
+        if " OR " in base.upper():
+            base = f"({base})"
+        return f"{base} AND {expression}"
+
+    @staticmethod
+    def _nom_ecole(ecole_id: str) -> str:
+        """Retrouve le nom d'une école à partir de sa valeur dans ECOLES."""
+        for nom, id_ in ECOLES.items():
+            if str(id_) == str(ecole_id):
+                return nom
+        return str(ecole_id)
+
+    def construire_url_recherche(
+        self,
+        keyword: str,
+        entreprises: Union[str, List[str], None],
+        ecoles_ids: List[str],
+        ile_de_france: bool = False,
+        secteurs_ids: Optional[List[str]] = None,
+    ) -> str:
         """
         Construit l'URL de recherche LinkedIn
 
         Args:
             keyword: Mots-clés de recherche
-            entreprise: Nom de l'entreprise (optionnel)
-            ecoles_ids: IDs des écoles
+            entreprises: Entreprise(s) ciblée(s) — une chaîne ou une liste
+            ecoles_ids: IDs (ou noms) des écoles, tels que stockés dans ECOLES
             ile_de_france: Filtrer sur la région Île-de-France (optionnel)
+            secteurs_ids: IDs numériques de secteurs LinkedIn (facette industry)
 
         Returns:
             URL complète de recherche
 
-        Note sur le filtre entreprise :
-            LinkedIn utilise `currentCompany=["<URN_id_numérique>"]` pour le
-            filtre entreprise, pas `company=<nom>` (qui est silencieusement
-            ignoré et renvoie 0 résultat). On utilise donc deux stratégies :
-              1) Si l'URN numérique est connu (cache `config/company_urns.json`,
-                 ex: {"eurosport": "165158"}), on utilise le vrai filtre
-                 `currentCompany`.
-              2) Sinon, on injecte le nom d'entreprise dans la recherche
-                 booléenne (`(keywords) AND "Entreprise"`), ce qui matche
-                 les profils mentionnant l'entreprise.
+        Sémantique LinkedIn :
+            Les valeurs d'une MÊME facette sont combinées en OU
+            (`currentCompany=["A","B"]` = chez A ou chez B), et les facettes
+            entre elles en ET (école ET entreprise ET secteur).
+
+        Note sur les replis :
+            LinkedIn attend des identifiants numériques pour `currentCompany`
+            (URN entreprise) et `schoolFilter` (ID école). Quand un seul
+            identifiant d'une facette manque, TOUTE la facette bascule dans la
+            recherche booléenne : `(kw) AND ("A" OR "B")`. Mélanger les deux
+            (`currentCompany=[urnA]` + `"B"` en mot-clé) produirait un ET et
+            ne renverrait rien.
         """
         base_url = "https://www.linkedin.com/search/results/people/?"
         params = []
 
-        # Résoudre l'URN entreprise depuis le cache (si présent)
-        company_urn = self._resoudre_company_urn(entreprise) if entreprise else None
+        entreprises = self._plafonner(self._as_list(entreprises), "entreprises")
+        ecoles_ids = self._plafonner(self._as_list(ecoles_ids), "écoles")
+        # Les secteurs n'ont pas de repli booléen : un ID non numérique est
+        # forcément une erreur de configuration, on l'ignore.
+        secteurs_ids = self._plafonner(
+            [s for s in self._as_list(secteurs_ids) if s.isdigit()], "secteurs"
+        )
 
         # Normaliser le keyword : retirer les parenthèses englobantes inutiles
         # car LinkedIn renvoie 0 résultat quand toute la requête est entourée
@@ -128,35 +202,33 @@ class LinkedInScraperV2:
         # alors que `A OR B OR C` → résultats).
         keywords_combines = self._normalize_keyword(keyword)
 
-        # Combiner entreprise dans les keywords si on n'a pas d'URN
-        if entreprise and not company_urn:
-            ent_safe = entreprise.replace('"', '\\"')
-            if keywords_combines.strip():
-                # On wrap les keywords entre parens AVANT le AND uniquement si
-                # nécessaire (plusieurs termes OR), sinon on garde tel quel.
-                if " OR " in keywords_combines.upper():
-                    keywords_combines = f'({keywords_combines}) AND "{ent_safe}"'
-                else:
-                    keywords_combines = f'{keywords_combines} AND "{ent_safe}"'
-            else:
-                keywords_combines = f'"{ent_safe}"'
+        # Facette entreprise : tout-ou-rien (cf. note sur les replis)
+        urns = [self._resoudre_company_urn(e) for e in entreprises]
+        if entreprises and all(urns):
+            company_urns = urns
+        else:
+            company_urns = []
+            if entreprises:
+                keywords_combines = self._combiner_et(
+                    keywords_combines, self._expression_ou(entreprises)
+                )
 
-        # Filtre école : ID numérique → schoolFilter précis ; sinon (nom) → repli
-        # en injectant le nom de l'école dans la recherche booléenne.
-        ecole_filter_id = None
-        if ecoles_ids:
-            _eid = str(ecoles_ids[0]).strip()
-            if _eid.isdigit():
-                ecole_filter_id = _eid
-            elif _eid:
-                ec_safe = _eid.replace('"', '\\"')
-                if keywords_combines.strip():
-                    if " OR " in keywords_combines.upper():
-                        keywords_combines = f'({keywords_combines}) AND "{ec_safe}"'
-                    else:
-                        keywords_combines = f'{keywords_combines} AND "{ec_safe}"'
-                else:
-                    keywords_combines = f'"{ec_safe}"'
+        # Facette école : même règle. Les entrées non numériques de ECOLES sont
+        # des noms (ID LinkedIn pas encore connu) → repli pour toute la facette.
+        if ecoles_ids and all(e.isdigit() for e in ecoles_ids):
+            ecoles_filter = ecoles_ids
+        else:
+            ecoles_filter = []
+            if ecoles_ids:
+                keywords_combines = self._combiner_et(
+                    keywords_combines,
+                    self._expression_ou([self._nom_ecole(e) for e in ecoles_ids]),
+                )
+
+        # Les replis peuvent avoir produit une requête entièrement parenthésée
+        # (ex. `("A" OR "B")` quand il n'y a aucun mot-clé) → 0 résultat chez
+        # LinkedIn. On repasse la normalisation après combinaison.
+        keywords_combines = self._normalize_keyword(keywords_combines)
 
         if keywords_combines:
             params.append(f"keywords={urllib.parse.quote(keywords_combines)}")
@@ -167,12 +239,14 @@ class LinkedInScraperV2:
         if ile_de_france:
             params.append('geoUrn=%5B%22104246759%22%5D')
 
-        # Filtre entreprise via URN numérique (si disponible)
-        if company_urn:
-            params.append(f'currentCompany=%5B%22{company_urn}%22%5D')
+        if company_urns:
+            params.append(f"currentCompany={self._encoder_facette(company_urns)}")
 
-        if ecole_filter_id:
-            params.append(f'schoolFilter=%5B%22{ecole_filter_id}%22%5D')
+        if ecoles_filter:
+            params.append(f"schoolFilter={self._encoder_facette(ecoles_filter)}")
+
+        if secteurs_ids:
+            params.append(f"industry={self._encoder_facette(secteurs_ids)}")
 
         url = base_url + "&".join(params)
         logger.debug(f"URL construite: {url}")
@@ -1027,9 +1101,10 @@ class LinkedInScraperV2:
         self,
         cookie: str,
         keyword: str,
-        entreprise: str,
+        entreprises: Union[str, List[str], None],
         nb_profils: int,
         ecoles_ids: List[str],
+        secteurs_ids: Optional[List[str]] = None,
         inviter: bool = False,
         email_notif: Optional[str] = None,
         message_invitation: str = "",
@@ -1044,9 +1119,10 @@ class LinkedInScraperV2:
         Args:
             cookie: Cookie li_at LinkedIn
             keyword: Mots-clés de recherche
-            entreprise: Entreprise cible (optionnel)
+            entreprises: Entreprise(s) cible(s) — chaîne ou liste (optionnel)
             nb_profils: Nombre de profils à scraper
             ecoles_ids: IDs des écoles
+            secteurs_ids: IDs de secteurs LinkedIn (facette industry, optionnel)
             inviter: Si True, envoie des invitations
             email_notif: Email pour notifications (optionnel)
             message_invitation: Message personnalisé pour invitations
@@ -1087,13 +1163,13 @@ class LinkedInScraperV2:
                      f"{self.human.daily_limits.invitations_today} invitations "
                      f"(session #{self.human.daily_limits.sessions_today})")
 
-        # Nom de l'école
-        ecole_nom = ""
-        if ecoles_ids:
-            for nom, id_ in ECOLES.items():
-                if id_ in ecoles_ids:
-                    ecole_nom = nom
-                    break
+        # Normaliser les facettes : l'appelant peut passer une chaîne unique
+        entreprises = self._as_list(entreprises)
+        ecoles_ids = self._as_list(ecoles_ids)
+        secteurs_ids = self._as_list(secteurs_ids)
+
+        # Nom(s) de(s) école(s) ciblée(s) par la recherche
+        ecole_nom = " / ".join(self._nom_ecole(e) for e in ecoles_ids)
 
         try:
             async with async_playwright() as p:
@@ -1185,7 +1261,7 @@ class LinkedInScraperV2:
                 # ajouté au cache et utilisé par construire_url_recherche pour
                 # appliquer le vrai filtre `currentCompany` (beaucoup plus précis
                 # que la stratégie "AND keyword").
-                if entreprise:
+                for entreprise in entreprises:
                     if status_callback:
                         status_callback(f"🏢 Résolution URN entreprise '{entreprise}'…")
                     urn = await self._resoudre_company_urn_via_typeahead(entreprise, page)
@@ -1194,12 +1270,14 @@ class LinkedInScraperV2:
                     # rien de plus que le typeahead + le seed config.COMPANY_URNS.
                     if not urn:
                         logger.warning(
-                            f"⚠️ URN entreprise '{entreprise}' non résolu (typeahead + navigation) "
-                            f"— repli sur recherche par mot-clé (résultats parfois vides)."
+                            f"⚠️ URN entreprise '{entreprise}' non résolu (typeahead) — "
+                            f"toute la facette entreprise bascule en recherche par mot-clé."
                         )
 
                 # Construire l'URL de recherche
-                url_recherche = self.construire_url_recherche(keyword, entreprise, ecoles_ids, ile_de_france)
+                url_recherche = self.construire_url_recherche(
+                    keyword, entreprises, ecoles_ids, ile_de_france, secteurs_ids
+                )
 
                 if status_callback:
                     status_callback("🔗 Chargement recherche…")
@@ -1463,7 +1541,7 @@ class LinkedInScraperV2:
                     try:
                         self.db.sauvegarder_recherche(
                             keyword=keyword,
-                            entreprise=entreprise,
+                            entreprise=", ".join(entreprises),
                             ecole=ecole_nom,
                             nb_profils=profils_scrapes,
                             nb_invitations=invitations_envoyees,

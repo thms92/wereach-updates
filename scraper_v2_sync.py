@@ -5,7 +5,7 @@ Permet d'utiliser le scraper async depuis du code synchrone (Streamlit)
 """
 
 import asyncio
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Union
 import pandas as pd
 
 from scraper_v2 import LinkedInScraperV2
@@ -30,9 +30,10 @@ class LinkedInScraperV2Sync:
         self,
         cookie: str,
         keyword: str,
-        entreprise: str,
+        entreprises: Union[str, List[str], None],
         nb_profils: int,
         ecoles_ids: List[str],
+        secteurs_ids: Optional[List[str]] = None,
         inviter: bool = False,
         email_notif: Optional[str] = None,
         message_invitation: str = "",
@@ -50,9 +51,10 @@ class LinkedInScraperV2Sync:
         Args:
             cookie: Cookie li_at LinkedIn
             keyword: Mots-clés de recherche
-            entreprise: Entreprise cible (optionnel)
+            entreprises: Entreprise(s) cible(s) — chaîne ou liste (optionnel)
             nb_profils: Nombre de profils à scraper
             ecoles_ids: IDs des écoles
+            secteurs_ids: IDs de secteurs LinkedIn (facette industry, optionnel)
             inviter: Si True, envoie des invitations
             email_notif: Email pour notifications (optionnel)
             message_invitation: Message personnalisé pour invitations
@@ -72,9 +74,10 @@ class LinkedInScraperV2Sync:
                 self.scraper.run_scraper_async(
                     cookie=cookie,
                     keyword=keyword,
-                    entreprise=entreprise,
+                    entreprises=entreprises,
                     nb_profils=nb_profils,
                     ecoles_ids=ecoles_ids,
+                    secteurs_ids=secteurs_ids,
                     inviter=inviter,
                     email_notif=email_notif,
                     message_invitation=message_invitation,

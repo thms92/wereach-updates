@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 import os
 
 from scraper_v2_sync import LinkedInScraperV2Sync
-from config import ScraperConfig, ECOLES, CONCURRENTS
+from config import ScraperConfig, ECOLES, CONCURRENTS, SECTEURS
+from utils.search_filters import parse_entreprises
 from database import DatabaseManager
 from cookie_utils import CookieManager
 from export_utils import ExportManager
@@ -108,7 +109,7 @@ if st.session_state.get("auth_email"):
 
 page = st.sidebar.radio(
     "Choisir une page",
-    ["📊 Dashboard", "🔍 Recherche", "💾 Historique", "✉️ Messages", "📜 Logs"]
+    ["📊 Dashboard", "🔍 Recherche", "🎯 Chasse", "💾 Historique", "✉️ Messages", "📜 Logs"]
 )
 
 with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
@@ -288,19 +289,24 @@ elif page == "🔍 Recherche":
 
     # TAB 1: CANDIDATS
     with tab1:
-        st.subheader("Recherche de candidats — par école et/ou entreprise")
+        st.subheader("Recherche de candidats — écoles, entreprises et secteurs")
 
         col1, col2 = st.columns([1, 2])
 
         with col1:
             cookie = st.session_state.global_cookie
             keyword = st.text_input("Mots-clés", "", placeholder="Ex : Product Manager, PM Senior")
-            entreprise_libre = st.text_input("Entreprise (optionnel)", "")
-            concurrent = st.selectbox("🎯 Cabinet concurrent (optionnel)", ["—"] + CONCURRENTS,
-                                      help="Chasse : cible les profils actuellement dans ce cabinet.")
-            # Un concurrent choisi prend le dessus ; on retire le parenthétique
-            # (ex. « AKKODIS (ex- AKKA & Modis) » → « AKKODIS »).
-            entreprise = concurrent.split("(")[0].strip() if concurrent != "—" else entreprise_libre
+            entreprise_libre = st.text_input(
+                "Entreprises (optionnel)", "",
+                placeholder="Ex : Capgemini, Accenture",
+                help="Plusieurs entreprises : sépare-les par des virgules.",
+            )
+            concurrents = st.multiselect(
+                "🎯 Cabinets concurrents (optionnel)", CONCURRENTS,
+                help="Chasse : cible les profils actuellement dans ces cabinets.",
+            )
+            # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.
+            entreprises = parse_entreprises(entreprise_libre, concurrents)
             nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10)
 
             ile_de_france = st.toggle("🗼 Île-de-France uniquement", value=False, help="Filtre les résultats pour la région Île-de-France")
@@ -325,19 +331,27 @@ elif page == "🔍 Recherche":
                 message_personnalise = ""
 
         with col2:
-            st.markdown("**🎓 École ciblée** — optionnelle (une seule)")
-            ecole_nom = st.pills(
-                "École ciblée",
+            st.markdown("**🎓 Écoles ciblées** — optionnel, plusieurs possibles")
+            ecole_noms = st.pills(
+                "Écoles ciblées",
                 list(ECOLES.keys()),
-                selection_mode="single",
+                selection_mode="multi",
                 label_visibility="collapsed",
-                key="ecole_pill_candidat",
+                key="ecoles_pills_candidat",
             )
-            ecoles_selectionnees = [ECOLES[ecole_nom]] if ecole_nom else []
+            ecoles_selectionnees = [ECOLES[n] for n in (ecole_noms or [])]
             if ecoles_selectionnees:
-                st.success("✅ École sélectionnée")
+                st.success(f"✅ {len(ecoles_selectionnees)} école(s) sélectionnée(s)")
             else:
-                st.caption("Aucune école — tu peux filtrer par entreprise / cabinet concurrent à la place.")
+                st.caption("Aucune école — tu peux filtrer par entreprise / cabinet / secteur à la place.")
+
+            secteurs_noms = st.multiselect(
+                "🏭 Secteurs d'activité (optionnel)",
+                list(SECTEURS.keys()),
+                help="Les secteurs se cumulent en OU, et se combinent en ET avec les écoles et entreprises.",
+                key="secteurs_candidat",
+            )
+            secteurs_selectionnes = [SECTEURS[s] for s in secteurs_noms]
 
         st.markdown("---")
 
@@ -347,8 +361,8 @@ elif page == "🔍 Recherche":
             if st.button("🔍 Lancer le scraping", type="primary", use_container_width=True):
                 if not cookie:
                     st.error("❌ Cookie manquant")
-                elif not ecoles_selectionnees and not entreprise.strip():
-                    st.error("❌ Choisis au moins un filtre : une école OU une entreprise / un cabinet concurrent.")
+                elif not ecoles_selectionnees and not entreprises and not secteurs_selectionnes:
+                    st.error("❌ Choisis au moins un filtre : une école, une entreprise / un cabinet, ou un secteur.")
                 else:
                     with st.spinner("🚀 Scraping en cours..."):
                         scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
@@ -365,9 +379,10 @@ elif page == "🔍 Recherche":
                         df = scraper.run_scraper(
                             cookie=cookie,
                             keyword=keyword,
-                            entreprise=entreprise,
+                            entreprises=entreprises,
                             nb_profils=nb_profils,
                             ecoles_ids=ecoles_selectionnees,
+                            secteurs_ids=secteurs_selectionnes,
                             inviter=inviter,
                             message_invitation=message_personnalise,
                             reinviter_profils_scrapes=reinviter_profils_scrapes,
@@ -475,7 +490,7 @@ elif page == "🔍 Recherche":
                     df = scraper.run_scraper(
                         cookie=cookie_client,
                         keyword=keyword_client,
-                        entreprise=entreprise_client,
+                        entreprises=[entreprise_client],
                         nb_profils=nb_client,
                         ecoles_ids=[],
                         inviter=inviter_client,
@@ -760,10 +775,19 @@ elif page == "🎯 Chasse":
     col1, col2 = st.columns(2)
     with col1:
         keyword_c = st.text_input("Mots-clés", "Product Manager", key="kw_chasse")
-        entreprise_c = st.text_input("Entreprise (optionnel)", "", key="ent_chasse")
+        entreprise_c = st.text_input(
+            "Entreprises (optionnel)", "", key="ent_chasse",
+            placeholder="Ex : Capgemini, Accenture",
+            help="Plusieurs entreprises : sépare-les par des virgules.",
+        )
     with col2:
         nb_c = st.number_input("Nombre de profils", min_value=1, max_value=200, value=10, key="nb_chasse")
         idf_c = st.checkbox("🗼 Île-de-France uniquement", value=False, key="idf_chasse")
+        secteurs_c = st.multiselect(
+            "🏭 Secteurs d'activité (optionnel)",
+            list(SECTEURS.keys()),
+            key="secteurs_chasse",
+        )
 
     inviter_c = st.checkbox("📨 Envoyer des invitations pendant le scraping", value=False, key="inv_chasse")
     note_c = ""
@@ -786,9 +810,10 @@ elif page == "🎯 Chasse":
                 df_res = scraper.run_scraper(
                     cookie=st.session_state.global_cookie,
                     keyword=keyword_c,
-                    entreprise=entreprise_c,
+                    entreprises=parse_entreprises(entreprise_c, []),
                     nb_profils=int(nb_c),
                     ecoles_ids=[],
+                    secteurs_ids=[SECTEURS[s] for s in secteurs_c],
                     inviter=inviter_c,
                     message_invitation=note_c,
                     ile_de_france=idf_c,

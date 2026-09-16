@@ -23,3 +23,28 @@ def test_sync_wrapper_db_csv_default_global():
     s = LinkedInScraperV2Sync(use_database=True)
     # defaults preserved (backward compatible)
     assert s.scraper.profil_file == s.scraper.config.PROFIL_FILE
+
+
+def test_sync_wrapper_forwards_entreprises_et_secteurs():
+    import pandas as pd
+
+    s = LinkedInScraperV2Sync(use_database=False)
+    captured = {}
+
+    async def fake_run(**kwargs):
+        captured.update(kwargs)
+        return pd.DataFrame()
+
+    s.scraper.run_scraper_async = fake_run
+    s.run_scraper(
+        cookie="c",
+        keyword="PM",
+        entreprises=["Thiga", "Kering"],
+        nb_profils=1,
+        ecoles_ids=["15092700", "308907"],
+        secteurs_ids=["11"],
+    )
+
+    assert captured["entreprises"] == ["Thiga", "Kering"]
+    assert captured["ecoles_ids"] == ["15092700", "308907"]
+    assert captured["secteurs_ids"] == ["11"]
