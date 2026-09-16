@@ -112,17 +112,39 @@ if st.session_state.get("auth_email"):
 PAGES = [
     "📊 Dashboard",
     "🔍 Recherche",
-    "💾 Historique",
     "✉️ Messages",
+    "💾 Historique",
     "📜 Logs",
 ]
 
-# La page courante transite par session_state : le test de fumée peut la
-# fixer sans piloter le widget, qui changera de nature en Tâche 7.
+# Icônes vectorielles Material — st.radio ne rend que du texte, d'où les
+# boutons ci-dessous (maquette validée le 2026-09-16).
+ICONES_PAGES = {
+    "📊 Dashboard": ":material/dashboard:",
+    "🔍 Recherche": ":material/search:",
+    "✉️ Messages": ":material/mail:",
+    "💾 Historique": ":material/database:",
+    "📜 Logs": ":material/terminal:",
+}
+
 _page_memorisee = st.session_state.get("page")
-_index_initial = PAGES.index(_page_memorisee) if _page_memorisee in PAGES else 0
-page = st.sidebar.radio("Choisir une page", PAGES, index=_index_initial)
-st.session_state["page"] = page
+if _page_memorisee not in PAGES:
+    st.session_state["page"] = PAGES[0]
+
+st.sidebar.markdown("**Navigation**")
+for _libelle in PAGES:
+    _actif = st.session_state["page"] == _libelle
+    if st.sidebar.button(
+        _libelle.split(" ", 1)[1],
+        icon=ICONES_PAGES[_libelle],
+        key=f"nav_{_libelle}",
+        type="primary" if _actif else "secondary",
+        use_container_width=True,
+    ):
+        st.session_state["page"] = _libelle
+        st.rerun()
+
+page = st.session_state["page"]
 
 with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
     paths = st.session_state.user_paths

@@ -157,6 +157,13 @@ code, pre, [data-testid="stCode"] {{ font-family:'JetBrains Mono',monospace !imp
   white-space:normal !important; font-size:.8rem; font-weight:600;
 }}
 
+/* Navigation latérale : l'item actif est une pilule teintée, pas un bouton
+   plein — le navy massif de .stButton[kind="primary"] écraserait le menu. */
+section[data-testid="stSidebar"] .stButton > button {{ justify-content:flex-start !important; border:none !important; background:transparent !important; font-weight:500 !important; border-radius:11px !important; padding:10px 12px !important; }}
+section[data-testid="stSidebar"] .stButton > button:hover {{ background:var(--wf-surface2) !important; }}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] * {{ background:var(--wf-accent-tint) !important; color:var(--wf-accent) !important; font-weight:700 !important; box-shadow:none !important; }}
+
 /* Badge / pilule utilitaire (statuts) */
 .wf-badge {{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:600; padding:3px 10px; border-radius:20px; }}
 .wf-badge.ok {{ color:var(--wf-success); background:var(--wf-success-tint); }}

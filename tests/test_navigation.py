@@ -54,3 +54,26 @@ def test_toute_entree_de_menu_correspond_a_une_page():
 def test_aucun_doublon_dans_le_menu():
     pages = pages_du_menu(arbre_app())
     assert len(pages) == len(set(pages))
+
+
+def icones_pages(arbre: ast.Module) -> dict:
+    """Table ICONES_PAGES : un libellé de menu vers une icône Material."""
+    for noeud in ast.walk(arbre):
+        if isinstance(noeud, ast.Assign):
+            for cible in noeud.targets:
+                if isinstance(cible, ast.Name) and cible.id == "ICONES_PAGES":
+                    return {k.value: v.value for k, v in
+                            zip(noeud.value.keys, noeud.value.values)}
+    raise AssertionError("Table ICONES_PAGES introuvable dans app_advanced.py")
+
+
+def test_chaque_entree_de_menu_a_une_icone():
+    arbre = arbre_app()
+    assert set(icones_pages(arbre)) == set(pages_du_menu(arbre))
+
+
+def test_les_icones_sont_des_symboles_material():
+    # Les emoji sont écartés au profit d'icônes vectorielles (maquette validée
+    # le 2026-09-16). Le format Material est le seul que Streamlit sache rendre.
+    for icone in icones_pages(arbre_app()).values():
+        assert icone.startswith(":material/") and icone.endswith(":"), icone
