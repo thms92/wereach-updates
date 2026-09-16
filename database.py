@@ -69,20 +69,6 @@ class DatabaseManager:
                 )
             """)
 
-            # Table des templates de recherche
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS templates (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nom TEXT UNIQUE NOT NULL,
-                    keyword TEXT,
-                    entreprise TEXT,
-                    ecoles TEXT,
-                    message_invitation TEXT,
-                    nb_profils INTEGER DEFAULT 10,
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
             # Index pour performances
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_profiles_url ON profiles(url)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_profiles_ecole ON profiles(ecole)")
@@ -370,41 +356,3 @@ class DatabaseManager:
             logger.error(f"Erreur récupération profils: {e}")
             return []
 
-    def sauvegarder_template(self, nom: str, keyword: str, entreprise: str,
-                           ecoles: str, message: str, nb_profils: int) -> bool:
-        """Sauvegarde un template de recherche"""
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                INSERT OR REPLACE INTO templates
-                (nom, keyword, entreprise, ecoles, message_invitation, nb_profils)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (nom, keyword, entreprise, ecoles, message, nb_profils))
-
-            conn.commit()
-            conn.close()
-            return True
-
-        except Exception as e:
-            logger.error(f"Erreur sauvegarde template: {e}")
-            return False
-
-    def get_templates(self) -> List[Dict]:
-        """Récupère tous les templates"""
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cursor = conn.cursor()
-
-            cursor.execute("SELECT * FROM templates ORDER BY date_creation DESC")
-
-            columns = [desc[0] for desc in cursor.description]
-            templates = [dict(zip(columns, row)) for row in cursor.fetchall()]
-
-            conn.close()
-            return templates
-
-        except Exception as e:
-            logger.error(f"Erreur récupération templates: {e}")
-            return []
