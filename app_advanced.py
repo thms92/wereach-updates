@@ -112,7 +112,6 @@ if st.session_state.get("auth_email"):
 PAGES = [
     "📊 Dashboard",
     "🔍 Recherche",
-    "🎯 Chasse",
     "💾 Historique",
     "✉️ Messages",
     "📜 Logs",
@@ -773,78 +772,6 @@ elif page == "💾 Historique":
 # ==============================================
 # PAGE 6: CONFIGURATION
 # ==============================================
-elif page == "🎯 Chasse":
-    st.header("🎯 Chasse — recherche & invitation")
-    st.caption("Recherche des prospects et, si tu coches l'option, envoie les invitations dans le même parcours.")
-
-    cookie_chasse = st.text_input(
-        "Cookie li_at", value=st.session_state.global_cookie, type="password", key="cookie_chasse"
-    )
-    if cookie_chasse and cookie_chasse != st.session_state.global_cookie:
-        if st.session_state.cookie_manager.validate_cookie_format(cookie_chasse):
-            st.session_state.cookie_manager.save_cookie(cookie_chasse)
-            st.session_state.global_cookie = cookie_chasse
-
-    col1, col2 = st.columns(2)
-    with col1:
-        keyword_c = st.text_input("Mots-clés", "Product Manager", key="kw_chasse")
-        entreprise_c = st.text_input(
-            "Entreprises (optionnel)", "", key="ent_chasse",
-            placeholder="Ex : Capgemini, Accenture",
-            help="Plusieurs entreprises : sépare-les par des virgules.",
-        )
-    with col2:
-        nb_c = st.number_input("Nombre de profils", min_value=1, max_value=200, value=10, key="nb_chasse")
-        idf_c = st.checkbox("🗼 Île-de-France uniquement", value=False, key="idf_chasse")
-        secteurs_c = st.multiselect(
-            "🏭 Secteurs d'activité (optionnel)",
-            list(SECTEURS.keys()),
-            key="secteurs_chasse",
-        )
-
-    inviter_c = st.checkbox("📨 Envoyer des invitations pendant le scraping", value=False, key="inv_chasse")
-    note_c = ""
-    if inviter_c:
-        if st.checkbox("Ajouter une note à l'invitation (⚠️ ~5/mois max chez LinkedIn)", key="note_chk_chasse"):
-            note_c = st.text_area("Note (identique pour tous)", max_chars=280, key="note_chasse")
-
-    if st.button("🎯 Lancer la chasse", type="primary"):
-        if not st.session_state.global_cookie:
-            st.error("❌ Cookie manquant")
-        else:
-            with st.spinner("🚀 Chasse en cours… (le navigateur va s'ouvrir)"):
-                scraper = LinkedInScraperV2Sync(
-                    use_database=True, proxy=st.session_state.get('user_proxy'),
-                    db_file=str(st.session_state.user_paths.db_file),
-                    profiles_csv=str(st.session_state.user_paths.profiles_csv),
-                )
-                progress = st.progress(0)
-                status = st.empty()
-                df_res = scraper.run_scraper(
-                    cookie=st.session_state.global_cookie,
-                    keyword=keyword_c,
-                    entreprises=parse_entreprises(entreprise_c, []),
-                    nb_profils=int(nb_c),
-                    ecoles_ids=[],
-                    secteurs_ids=[SECTEURS[s] for s in secteurs_c],
-                    inviter=inviter_c,
-                    message_invitation=note_c,
-                    ile_de_france=idf_c,
-                    progress_callback=lambda p: progress.progress(p),
-                    status_callback=lambda s: status.text(s),
-                )
-            if df_res is not None and not df_res.empty:
-                st.success(f"✅ {len(df_res)} profil(s)" + (" — invitations envoyées" if inviter_c else ""))
-                st.dataframe(df_res, use_container_width=True)
-                excel = st.session_state.export_manager.export_to_excel(df_res.to_dict('records'))
-                st.download_button(
-                    "📥 Télécharger Excel", data=excel,
-                    file_name=f"chasse_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            else:
-                st.warning("Aucun profil trouvé (essaie sans entreprise ou d'autres mots-clés).")
-
 elif page == "✉️ Messages":
     st.header("✉️ Suivi & Messages")
     st.caption("Détecte qui a accepté ton invitation, puis envoie-leur un message.")
