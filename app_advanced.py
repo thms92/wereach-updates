@@ -297,7 +297,9 @@ elif page == "🔍 Recherche":
         )
 
     st.write("")
-    tab1, tab2 = st.tabs(["👤 Candidats", "🏢 Clients/Entreprises"])
+    tab1, tab2, tab3 = st.tabs(
+        ["👤 Candidats", "🏢 Clients/Entreprises", "🔗 Par URLs"]
+    )
 
     # TAB 1: CANDIDATS
     with tab1:
@@ -533,107 +535,108 @@ elif page == "🔍 Recherche":
                         )
 
     # TAB 3: FILE D'ATTENTE
-elif page == "🔗 Scraping URLs":
-    st.header("🔗 Scraping par URLs de profils")
-    st.caption("Collez des URLs LinkedIn pour récupérer le poste et la société de chaque profil.")
+    # TAB 3: PAR URLS (ancienne page « Scraping URLs »)
+    with tab3:
+        st.subheader("Traiter une liste d'URLs de profils")
+        st.caption("Collez des URLs LinkedIn pour récupérer le poste et la société de chaque profil.")
 
-    col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1])
 
-    with col1:
-        urls_input = st.text_area(
-            "URLs LinkedIn (une par ligne)",
-            placeholder="https://www.linkedin.com/in/jean-dupont-12345/\nhttps://www.linkedin.com/in/marie-martin-67890/",
-            height=250,
-            key="urls_input"
-        )
+        with col1:
+            urls_input = st.text_area(
+                "URLs LinkedIn (une par ligne)",
+                placeholder="https://www.linkedin.com/in/jean-dupont-12345/\nhttps://www.linkedin.com/in/marie-martin-67890/",
+                height=250,
+                key="urls_input"
+            )
 
-    with col2:
-        cookie_urls = st.text_input(
-            "Cookie li_at",
-            value=st.session_state.global_cookie,
-            type="password",
-            key="cookie_urls"
-        )
+        with col2:
+            cookie_urls = st.text_input(
+                "Cookie li_at",
+                value=st.session_state.global_cookie,
+                type="password",
+                key="cookie_urls"
+            )
 
-        if cookie_urls != st.session_state.global_cookie:
-            if st.session_state.cookie_manager.validate_cookie_format(cookie_urls):
-                st.session_state.cookie_manager.save_cookie(cookie_urls)
-                st.session_state.global_cookie = cookie_urls
-                st.success("✅ Cookie sauvegardé")
+            if cookie_urls != st.session_state.global_cookie:
+                if st.session_state.cookie_manager.validate_cookie_format(cookie_urls):
+                    st.session_state.cookie_manager.save_cookie(cookie_urls)
+                    st.session_state.global_cookie = cookie_urls
+                    st.success("✅ Cookie sauvegardé")
 
-        # Compter les URLs valides
-        urls_list = [u.strip() for u in urls_input.strip().split('\n') if u.strip() and '/in/' in u]
-        nb_urls = len(urls_list)
+            # Compter les URLs valides
+            urls_list = [u.strip() for u in urls_input.strip().split('\n') if u.strip() and '/in/' in u]
+            nb_urls = len(urls_list)
 
-        if nb_urls > 0:
-            st.info(f"🔗 {nb_urls} URL(s) détectée(s)")
-        else:
-            st.warning("Collez des URLs LinkedIn ci-contre")
+            if nb_urls > 0:
+                st.info(f"🔗 {nb_urls} URL(s) détectée(s)")
+            else:
+                st.warning("Collez des URLs LinkedIn ci-contre")
+
+            st.markdown("---")
+            st.markdown("**Options**")
+
+            inviter_urls = st.checkbox("Envoyer des invitations", value=False, key="inviter_urls")
+
+            if inviter_urls:
+                message_urls = st.text_area(
+                    "Message d'invitation",
+                    placeholder="Message personnalisé...",
+                    max_chars=200,
+                    key="message_urls"
+                )
+            else:
+                message_urls = ""
 
         st.markdown("---")
-        st.markdown("**Options**")
 
-        inviter_urls = st.checkbox("Envoyer des invitations", value=False, key="inviter_urls")
+        if st.button("🚀 Lancer le scraping", type="primary", use_container_width=True, key="btn_url_scraping"):
+            if not cookie_urls:
+                st.error("❌ Cookie manquant")
+            elif nb_urls == 0:
+                st.error("❌ Aucune URL LinkedIn valide")
+            else:
+                with st.spinner(f"🔄 Scraping de {nb_urls} profils en cours..."):
+                    scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
-        if inviter_urls:
-            message_urls = st.text_area(
-                "Message d'invitation",
-                placeholder="Message personnalisé...",
-                max_chars=200,
-                key="message_urls"
-            )
-        else:
-            message_urls = ""
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
 
-    st.markdown("---")
-
-    if st.button("🚀 Lancer le scraping", type="primary", use_container_width=True, key="btn_url_scraping"):
-        if not cookie_urls:
-            st.error("❌ Cookie manquant")
-        elif nb_urls == 0:
-            st.error("❌ Aucune URL LinkedIn valide")
-        else:
-            with st.spinner(f"🔄 Scraping de {nb_urls} profils en cours..."):
-                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
-
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                df = scraper.run_url_scraper(
-                    cookie=cookie_urls,
-                    urls=urls_list,
-                    inviter=inviter_urls,
-                    message_invitation=message_urls,
-                    progress_callback=lambda p: progress_bar.progress(min(p, 1.0)),
-                    status_callback=lambda s: status_text.text(s)
-                )
-
-                if not df.empty:
-                    st.success(f"✅ {len(df)} profils récupérés sur {nb_urls} !")
-                    st.dataframe(df, use_container_width=True)
-
-                    excel_data = st.session_state.export_manager.export_to_excel(df.to_dict('records'))
-                    st.download_button(
-                        label="📥 Télécharger Excel",
-                        data=excel_data,
-                        file_name=f"profils_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    df = scraper.run_url_scraper(
+                        cookie=cookie_urls,
+                        urls=urls_list,
+                        inviter=inviter_urls,
+                        message_invitation=message_urls,
+                        progress_callback=lambda p: progress_bar.progress(min(p, 1.0)),
+                        status_callback=lambda s: status_text.text(s)
                     )
 
-                    csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
-                    st.download_button(
-                        label="📥 Télécharger CSV",
-                        data=csv_data,
-                        file_name=f"profils_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.warning("⚠️ Aucun profil récupéré")
+                    if not df.empty:
+                        st.success(f"✅ {len(df)} profils récupérés sur {nb_urls} !")
+                        st.dataframe(df, use_container_width=True)
 
-                if scraper.errors:
-                    with st.expander(f"⚠️ Erreurs ({len(scraper.errors)})"):
-                        for err in scraper.errors:
-                            st.write(f"- {err}")
+                        excel_data = st.session_state.export_manager.export_to_excel(df.to_dict('records'))
+                        st.download_button(
+                            label="📥 Télécharger Excel",
+                            data=excel_data,
+                            file_name=f"profils_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+
+                        csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                        st.download_button(
+                            label="📥 Télécharger CSV",
+                            data=csv_data,
+                            file_name=f"profils_urls_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.warning("⚠️ Aucun profil récupéré")
+
+                    if scraper.errors:
+                        with st.expander(f"⚠️ Erreurs ({len(scraper.errors)})"):
+                            for err in scraper.errors:
+                                st.write(f"- {err}")
 
 # ==============================================
 # PAGE 5: HISTORIQUE
