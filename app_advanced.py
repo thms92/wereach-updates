@@ -142,6 +142,52 @@ with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
         else:
             st.warning("Indique au moins un serveur.")
 
+with st.sidebar.expander("⚙️ Réglages"):
+    st.markdown("**🔧 Paramètres de scraping**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write(f"**Max profils par run:** {ScraperConfig.MAX_PROFILES_PER_RUN}")
+        st.write(f"**Max invitations/jour:** {ScraperConfig.MAX_INVITATIONS_PER_DAY}")
+        st.write(f"**Timeout page:** {ScraperConfig.TIMEOUT_PAGE}ms")
+
+    with col2:
+        st.write(f"**Délai entre profils:** {ScraperConfig.DELAY_BETWEEN_PROFILES_MIN}-{ScraperConfig.DELAY_BETWEEN_PROFILES_MAX}ms")
+        st.write(f"**Mode headless:** {ScraperConfig.HEADLESS}")
+        st.write(f"**Retry attempts:** {ScraperConfig.MAX_RETRY_ATTEMPTS}")
+
+    st.markdown("---")
+
+    st.markdown("**🏫 Écoles configurées**")
+
+    df_ecoles = pd.DataFrame(
+        list(ECOLES.items()),
+        columns=['École', 'ID LinkedIn']
+    )
+    st.dataframe(df_ecoles, use_container_width=True)
+
+    st.markdown("---")
+
+    st.markdown("**💾 Base de données**")
+
+    _user_db = str(st.session_state.user_paths.db_file)
+    if os.path.exists(_user_db):
+        db_size = os.path.getsize(_user_db) / 1024
+        st.success(f"✅ Base de données: {db_size:.2f} KB")
+    else:
+        st.warning("⚠️ Base de données non initialisée")
+
+    if st.button("🗑️ Réinitialiser la base de données", type="secondary"):
+        if st.checkbox("Je confirme vouloir supprimer toutes les données"):
+            try:
+                if os.path.exists(_user_db):
+                    os.remove(_user_db)
+                st.session_state.db = DatabaseManager(db_file=_user_db)
+                st.success("✅ Base de données réinitialisée")
+            except Exception as e:
+                st.error(f"❌ Erreur: {e}")
+
 st.sidebar.divider()
 st.sidebar.caption(f"We.Reach v{get_version()}")
 
@@ -820,54 +866,6 @@ elif page == "📜 Logs":
         st.info("Aucun journal pour l'instant — lance un scraping puis reviens ici.")
 
     st.caption("ℹ️ Le journal est partagé par l'instance (pas encore séparé par utilisateur).")
-
-elif page == "⚙️ Configuration":
-    st.header("⚙️ Configuration")
-
-    st.subheader("🔧 Paramètres de scraping")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.write(f"**Max profils par run:** {ScraperConfig.MAX_PROFILES_PER_RUN}")
-        st.write(f"**Max invitations/jour:** {ScraperConfig.MAX_INVITATIONS_PER_DAY}")
-        st.write(f"**Timeout page:** {ScraperConfig.TIMEOUT_PAGE}ms")
-
-    with col2:
-        st.write(f"**Délai entre profils:** {ScraperConfig.DELAY_BETWEEN_PROFILES_MIN}-{ScraperConfig.DELAY_BETWEEN_PROFILES_MAX}ms")
-        st.write(f"**Mode headless:** {ScraperConfig.HEADLESS}")
-        st.write(f"**Retry attempts:** {ScraperConfig.MAX_RETRY_ATTEMPTS}")
-
-    st.markdown("---")
-
-    st.subheader("🏫 Écoles configurées")
-
-    df_ecoles = pd.DataFrame(
-        list(ECOLES.items()),
-        columns=['École', 'ID LinkedIn']
-    )
-    st.dataframe(df_ecoles, use_container_width=True)
-
-    st.markdown("---")
-
-    st.subheader("💾 Base de données")
-
-    _user_db = str(st.session_state.user_paths.db_file)
-    if os.path.exists(_user_db):
-        db_size = os.path.getsize(_user_db) / 1024
-        st.success(f"✅ Base de données: {db_size:.2f} KB")
-    else:
-        st.warning("⚠️ Base de données non initialisée")
-
-    if st.button("🗑️ Réinitialiser la base de données", type="secondary"):
-        if st.checkbox("Je confirme vouloir supprimer toutes les données"):
-            try:
-                if os.path.exists(_user_db):
-                    os.remove(_user_db)
-                st.session_state.db = DatabaseManager(db_file=_user_db)
-                st.success("✅ Base de données réinitialisée")
-            except Exception as e:
-                st.error(f"❌ Erreur: {e}")
 
 # Footer
 st.markdown("---")

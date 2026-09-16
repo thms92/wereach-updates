@@ -9,8 +9,6 @@ L'analyse est statique — Streamlit n'est pas exécuté.
 import ast
 from pathlib import Path
 
-import pytest
-
 APP = Path(__file__).resolve().parents[1] / "app_advanced.py"
 
 
@@ -41,11 +39,6 @@ def pages_definies(arbre: ast.Module) -> list:
     return trouves
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="4 pages orphelines depuis c6035c0 — résorbé par la Tâche 6 du plan "
-           "2026-09-16-refonte-navigation ; retirer ce marqueur à ce moment-là.",
-)
 def test_toute_page_definie_est_atteignable_depuis_le_menu():
     arbre = arbre_app()
     orphelines = set(pages_definies(arbre)) - set(pages_du_menu(arbre))
