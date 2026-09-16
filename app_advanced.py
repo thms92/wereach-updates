@@ -107,10 +107,23 @@ if st.session_state.get("auth_email"):
         del st.session_state["auth_email"]
         st.rerun()
 
-page = st.sidebar.radio(
-    "Choisir une page",
-    ["📊 Dashboard", "🔍 Recherche", "🎯 Chasse", "💾 Historique", "✉️ Messages", "📜 Logs"]
-)
+# Source de vérité du menu. tests/test_navigation.py la confronte aux
+# branches `if page == …` : toute page définie doit figurer ici.
+PAGES = [
+    "📊 Dashboard",
+    "🔍 Recherche",
+    "🎯 Chasse",
+    "💾 Historique",
+    "✉️ Messages",
+    "📜 Logs",
+]
+
+# La page courante transite par session_state : le test de fumée peut la
+# fixer sans piloter le widget, qui changera de nature en Tâche 7.
+_page_memorisee = st.session_state.get("page")
+_index_initial = PAGES.index(_page_memorisee) if _page_memorisee in PAGES else 0
+page = st.sidebar.radio("Choisir une page", PAGES, index=_index_initial)
+st.session_state["page"] = page
 
 with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
     paths = st.session_state.user_paths
