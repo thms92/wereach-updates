@@ -10,6 +10,16 @@ affiche son écran de connexion puis appelle `st.stop()`. Tout ce qui suit
 `lancer_app()` franchit la porte en fournissant une identité déjà connectée, et
 `verifier_page_affichee()` refuse explicitement un rendu resté sur l'écran de
 connexion.
+
+`acces_configure` doit simuler un mot de passe d'accès configuré SANS jamais
+écrire dans le `config/access.json` réel du poste : ce fichier active l'écran
+de connexion, et toute installation locale où il traîne avec un mot de passe
+de test devient inutilisable. `utils.app_auth` résout `ACCESS_FILE` (et
+`USERS_FILE`) à l'intérieur de ses fonctions plutôt qu'en défaut figé — la
+fixture peut donc rediriger `utils.app_auth.ACCESS_FILE` vers un fichier
+jetable sous `tmp_path` via `monkeypatch`, qui s'auto-annule en fin de test.
+Aucun `finally` n'est nécessaire : le chemin réel n'est jamais ouvert, donc
+rien ne peut le laisser corrompu — même une interruption brutale (SIGKILL).
 """
 
 from pathlib import Path
@@ -17,7 +27,8 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from utils.app_auth import ACCESS_FILE, set_access_password
+from utils import app_auth
+from utils.app_auth import set_access_password
 from utils.user_context import user_paths_for
 
 APP = Path(__file__).resolve().parents[1] / "app_advanced.py"
@@ -74,18 +85,17 @@ def verifier_page_affichee(at: AppTest, page: str) -> None:
 
 
 @pytest.fixture
-def acces_configure():
-    """Simule une installation déployée : config/access.json existe.
+def acces_configure(tmp_path, monkeypatch):
+    """Simule une installation déployée : un mot de passe d'accès est défini.
 
-    Le fichier éventuellement présent est restauré à l'identique en sortie.
+    Isolation : `ACCESS_FILE` (et `USERS_FILE`, par cohérence — même si l'app
+    ne le consulte pas encore sur ce chemin) sont redirigés vers un répertoire
+    jetable sous `tmp_path`, jamais vers `config/` du dépôt. Le vrai
+    `config/access.json` du poste n'est ni lu ni écrit par ce test.
     """
-    chemin = Path(ACCESS_FILE)
-    sauvegarde = chemin.read_bytes() if chemin.exists() else None
+    repertoire = tmp_path / "config-test"
+    chemin_access = repertoire / "access.json"
+    monkeypatch.setattr(app_auth, "ACCESS_FILE", str(chemin_access))
+    monkeypatch.setattr(app_auth, "USERS_FILE", str(repertoire / "users.json"))
     set_access_password("mot-de-passe-de-test")
-    try:
-        yield chemin
-    finally:
-        if sauvegarde is None:
-            chemin.unlink(missing_ok=True)
-        else:
-            chemin.write_bytes(sauvegarde)
+    return chemin_access

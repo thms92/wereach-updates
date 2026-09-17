@@ -137,3 +137,41 @@ def test_le_nom_d_ecole_n_est_pas_traite_comme_une_expression_reguliere():
     assert libelle_vise_ecole(LIBELLE_COMPOSITE, "D.uphine") is False
     assert libelle_vise_ecole(LIBELLE_COMPOSITE, "Dauphine|ESCP") is False
     assert libelle_vise_ecole("Université d'Angers / ESCP", "Université d'Angers") is True
+
+
+# --- Un nom d'école n'est pas une sous-chaîne d'un autre -------------------
+#
+# `libelle_vise_ecole` compare par égalité (`casefold() ==`), jamais par
+# sous-chaîne : `config.ECOLES` contient de vraies paires où un nom est
+# littéralement inclus dans un autre (« ESG » dans « ESGI »). Un test de
+# sous-chaîne (`in`) laisserait les 11 tests ci-dessus verts tout en cassant
+# le filtre : chercher « ESG » remonterait aussi les profils « ESGI ».
+
+PAIRES_ECOLES_A_RISQUE = [
+    ("ESG", "ESGI"),
+    ("EPF", "EPFL"),
+    ("HEC", "EDHEC"),
+]
+
+
+@pytest.mark.parametrize("courte, longue", PAIRES_ECOLES_A_RISQUE)
+def test_une_ecole_n_est_pas_confondue_avec_celle_dont_elle_est_une_sous_chaine(courte, longue):
+    # `courte` est une sous-chaîne littérale de `longue` dans config.ECOLES
+    # (ex. "ESG" dans "ESGI") : un profil enregistré sous `longue` ne doit
+    # jamais remonter quand on filtre sur `courte`, ni l'inverse.
+    assert libelle_vise_ecole(longue, courte) is False
+    assert libelle_vise_ecole(courte, longue) is False
+    # Chacune continue de se retrouver elle-même.
+    assert libelle_vise_ecole(courte, courte) is True
+    assert libelle_vise_ecole(longue, longue) is True
+
+
+@pytest.mark.parametrize("courte, longue", PAIRES_ECOLES_A_RISQUE)
+def test_le_filtre_historique_ne_confond_pas_une_ecole_et_son_sur_ensemble(courte, longue):
+    # Bout en bout, via la page Historique : un profil « ESGI » ne doit pas
+    # apparaître quand on filtre sur « ESG ».
+    _semer_profils(str(chemins_de_test().db_file), ecole=longue)
+
+    at = _filtrer_historique(courte)
+
+    assert _nb_profils_affiches(at) == 0
