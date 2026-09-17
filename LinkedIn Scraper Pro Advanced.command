@@ -25,10 +25,12 @@ if ! touch ".werite_test" 2>/dev/null; then
 fi
 rm -f ".werite_test"
 
-# 1) Python 3 (>= 3.9) — sinon INSTALLATION AUTOMATIQUE
+# 1) Python 3 (>= 3.10) — sinon INSTALLATION AUTOMATIQUE
+# 3.10 est le vrai plancher : utils/user_context.py et utils/app_auth.py
+# annotent en `str | None`, syntaxe qui lève une TypeError à l'import sous 3.9.
 PYVER="3.12.7"
 PKG_URL="https://www.python.org/ftp/python/${PYVER}/python-${PYVER}-macos11.pkg"
-python_ok() { command -v python3 &>/dev/null && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)' 2>/dev/null; }
+python_ok() { command -v python3 &>/dev/null && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; }
 
 if ! python_ok; then
   echo "Python n'est pas installe — installation automatique."
