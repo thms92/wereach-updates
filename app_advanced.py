@@ -535,7 +535,14 @@ elif page == "🔍 Recherche":
             placeholder='Ex : "Head of Data" OR CDO OR "Directeur Data"',
             key="keyword_client",
         )
-        entreprise_client = st.text_input("Entreprise", "", key="entreprise_client")
+        entreprise_client = st.text_input(
+            "Entreprises", "",
+            placeholder="Ex : Thiga, Kering",
+            help="Plusieurs entreprises : sépare-les par des virgules.",
+            key="entreprise_client",
+        )
+        # Même lecture que l'onglet Candidats : la virgule sépare deux sociétés.
+        entreprises_client = parse_entreprises(entreprise_client, [])
         nb_client = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10, key="nb_client")
 
         ile_de_france_client = st.toggle("🗼 Île-de-France uniquement", value=False, key="idf_client", help="Filtre les résultats pour la région Île-de-France")
@@ -573,7 +580,7 @@ elif page == "🔍 Recherche":
                     df = scraper.run_scraper(
                         cookie=cookie_client,
                         keyword=keyword_client,
-                        entreprises=[entreprise_client],
+                        entreprises=entreprises_client,
                         nb_profils=nb_client,
                         ecoles_ids=[],
                         inviter=inviter_client,
