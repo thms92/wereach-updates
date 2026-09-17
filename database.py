@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from config import ScraperConfig
 from logger import logger
+from utils.ecoles import repartir_par_ecole
 
 
 class DatabaseManager:
@@ -277,14 +278,17 @@ class DatabaseManager:
             """)
             stats['invitations_aujourdhui'] = cursor.fetchone()[0]
 
-            # Profils par école
+            # Profils par école. Un profil peut porter un libellé composite
+            # (« Dauphine / ESCP ») quand la recherche visait plusieurs écoles :
+            # il compte alors pour chacune d'elles, sinon le camembert affiche
+            # une part « Dauphine / ESCP » qui n'est pas une école.
             cursor.execute("""
                 SELECT ecole, COUNT(*)
                 FROM profiles
                 WHERE ecole != ''
                 GROUP BY ecole
             """)
-            stats['par_ecole'] = dict(cursor.fetchall())
+            stats['par_ecole'] = repartir_par_ecole(cursor.fetchall())
 
             # Dernière recherche
             cursor.execute("""

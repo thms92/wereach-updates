@@ -30,6 +30,7 @@ from utils.profile_extractor import ProfileExtractor
 from utils.network_manager import NetworkManager, RetryConfig, PermanentNetworkError
 from utils.human_behavior import HumanBehavior
 from utils.stealth_profile import StealthProfileManager
+from utils.ecoles import composer_libelle
 
 
 class LinkedInScraperV2:
@@ -150,6 +151,11 @@ class LinkedInScraperV2:
             if str(id_) == str(ecole_id):
                 return nom
         return str(ecole_id)
+
+    @classmethod
+    def _libelle_ecoles(cls, ecoles_ids: List[str]) -> str:
+        """Libellé enregistré sur chaque profil : « Dauphine / ESCP »."""
+        return composer_libelle(cls._nom_ecole(e) for e in ecoles_ids)
 
     def construire_url_recherche(
         self,
@@ -1169,7 +1175,7 @@ class LinkedInScraperV2:
         secteurs_ids = self._as_list(secteurs_ids)
 
         # Nom(s) de(s) école(s) ciblée(s) par la recherche
-        ecole_nom = " / ".join(self._nom_ecole(e) for e in ecoles_ids)
+        ecole_nom = self._libelle_ecoles(ecoles_ids)
 
         try:
             async with async_playwright() as p:

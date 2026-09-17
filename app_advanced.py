@@ -14,6 +14,7 @@ import os
 from scraper_v2_sync import LinkedInScraperV2Sync
 from config import ScraperConfig, ECOLES, CONCURRENTS, SECTEURS
 from utils.search_filters import parse_entreprises
+from utils.ecoles import libelle_vise_ecole
 from database import DatabaseManager
 from cookie_utils import CookieManager
 from export_utils import ExportManager
@@ -732,7 +733,9 @@ elif page == "💾 Historique":
 
         # Appliquer les filtres
         if filtre_ecole != "Toutes":
-            df = df[df['ecole'] == filtre_ecole]
+            # La colonne `ecole` peut porter plusieurs écoles (« Dauphine / ESCP ») :
+            # on retient le profil dès que l'école choisie figure dans le libellé.
+            df = df[df['ecole'].apply(lambda lib: libelle_vise_ecole(lib, filtre_ecole))]
 
         if afficher_invitations:
             df = df[df['invitation_envoyee'] == 'Oui']
