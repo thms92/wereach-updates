@@ -25,6 +25,7 @@ from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import inject_theme, wordmark
 from version import get_version
+from utils.nouveautes import charger_notes, doit_annoncer
 
 
 # Configuration Streamlit
@@ -213,6 +214,23 @@ with st.sidebar.expander("⚙️ Réglages"):
 
 st.sidebar.divider()
 st.sidebar.caption(f"We.Reach v{get_version()}")
+
+
+# --- Annonce des nouveautés -----------------------------------------------
+# Une seule fois par version et par personne. La décision (et la mémoire de
+# ce qui a déjà été vu) est dans utils/nouveautes.py, testée sans Streamlit.
+@st.dialog(f"Nouveautés de la version {get_version()}", width="large")
+def _annoncer_nouveautes(notes: str):
+    st.markdown(notes)
+    if st.button("J'ai compris", type="primary", use_container_width=True):
+        st.rerun()
+
+
+_notes_a_annoncer = doit_annoncer(
+    st.session_state.user_paths.config_dir, get_version(), charger_notes()
+)
+if _notes_a_annoncer:
+    _annoncer_nouveautes(_notes_a_annoncer)
 
 # ==============================================
 # PAGE 1: DASHBOARD
