@@ -158,11 +158,16 @@ code, pre, [data-testid="stCode"] {{ font-family:'JetBrains Mono',monospace !imp
 }}
 
 /* Navigation latérale : l'item actif est une pilule teintée, pas un bouton
-   plein — le navy massif de .stButton[kind="primary"] écraserait le menu. */
-section[data-testid="stSidebar"] .stButton > button {{ justify-content:flex-start !important; border:none !important; background:transparent !important; font-weight:500 !important; border-radius:11px !important; padding:10px 12px !important; }}
-section[data-testid="stSidebar"] .stButton > button:hover {{ background:var(--wf-surface2) !important; }}
-section[data-testid="stSidebar"] .stButton > button[kind="primary"],
-section[data-testid="stSidebar"] .stButton > button[kind="primary"] * {{ background:var(--wf-accent-tint) !important; color:var(--wf-accent) !important; font-weight:700 !important; box-shadow:none !important; }}
+   plein — le navy massif de .stButton[kind="primary"] écraserait le menu.
+   Portée limitée au menu : Streamlit pose `st-key-<clé assainie>` sur le
+   conteneur de tout widget doté d'une clé, et les boutons du menu ont pour clé
+   `nav_<libellé>`. Sans ce scope la règle vidait aussi « Déconnexion »,
+   « Enregistrer mon proxy » et « Réinitialiser la base de données » de leur
+   bordure et de leur fond — le bouton destructif devenait une légende. */
+section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button {{ justify-content:flex-start !important; border:none !important; background:transparent !important; font-weight:500 !important; border-radius:11px !important; padding:10px 12px !important; }}
+section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button:hover {{ background:var(--wf-surface2) !important; }}
+section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button[kind="primary"] * {{ background:var(--wf-accent-tint) !important; color:var(--wf-accent) !important; font-weight:700 !important; box-shadow:none !important; }}
 
 /* Badge / pilule utilitaire (statuts) */
 .wf-badge {{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:600; padding:3px 10px; border-radius:20px; }}
