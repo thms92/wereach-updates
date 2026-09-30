@@ -133,18 +133,21 @@ _page_memorisee = st.session_state.get("page")
 if _page_memorisee not in PAGES:
     st.session_state["page"] = PAGES[0]
 
-st.sidebar.markdown("**Navigation**")
-for _libelle in PAGES:
-    _actif = st.session_state["page"] == _libelle
-    if st.sidebar.button(
-        _libelle.split(" ", 1)[1],
-        icon=ICONES_PAGES[_libelle],
-        key=f"nav_{_libelle}",
-        type="primary" if _actif else "secondary",
-        use_container_width=True,
-    ):
-        st.session_state["page"] = _libelle
-        st.rerun()
+# Les boutons vivent dans un conteneur identifie : le theme s'y accroche pour
+# resserrer l'espacement et aligner les libelles a gauche, sans toucher aux
+# autres boutons de la barre laterale.
+with st.sidebar.container(key="nav_menu"):
+    for _libelle in PAGES:
+        _actif = st.session_state["page"] == _libelle
+        if st.button(
+            _libelle.split(" ", 1)[1],
+            icon=ICONES_PAGES[_libelle],
+            key=f"nav_{_libelle}",
+            type="primary" if _actif else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["page"] = _libelle
+            st.rerun()
 
 page = st.session_state["page"]
 

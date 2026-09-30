@@ -164,10 +164,23 @@ code, pre, [data-testid="stCode"] {{ font-family:'JetBrains Mono',monospace !imp
    `nav_<libellé>`. Sans ce scope la règle vidait aussi « Déconnexion »,
    « Enregistrer mon proxy » et « Réinitialiser la base de données » de leur
    bordure et de leur fond — le bouton destructif devenait une légende. */
-section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button {{ justify-content:flex-start !important; border:none !important; background:transparent !important; font-weight:500 !important; border-radius:11px !important; padding:10px 12px !important; }}
-section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button:hover {{ background:var(--wf-surface2) !important; }}
-section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button[kind="primary"],
-section[data-testid="stSidebar"] [class*="st-key-nav_"] .stButton > button[kind="primary"] * {{ background:var(--wf-accent-tint) !important; color:var(--wf-accent) !important; font-weight:700 !important; box-shadow:none !important; }}
+/* Espacement : le bloc vertical de la barre laterale met 16px entre chaque
+   element, ce qui fait flotter le menu. On resserre, dans le conteneur du
+   menu uniquement. */
+.st-key-nav_menu {{ gap:2px !important; }}
+
+/* Les libelles etaient centres : le flex-start pose sur le bouton ne suffit
+   pas, Streamlit intercale un div interne qui recentre. Il faut les deux. */
+.st-key-nav_menu .stButton > button {{ justify-content:flex-start !important; border:none !important; background:transparent !important; font-weight:500 !important; border-radius:11px !important; padding:9px 12px !important; }}
+.st-key-nav_menu .stButton > button > div {{ justify-content:flex-start !important; width:100% !important; }}
+.st-key-nav_menu .stButton > button:hover {{ background:var(--wf-surface2) !important; }}
+
+/* Item actif : le fond teinte va sur le BOUTON SEUL. Le poser aussi sur les
+   enfants superposait deux couches semi-transparentes et dessinait un
+   rectangle sombre autour du texte, qu'on prenait pour une selection. */
+.st-key-nav_menu .stButton > button[kind="primary"] {{ background:var(--wf-accent-tint) !important; box-shadow:none !important; }}
+.st-key-nav_menu .stButton > button[kind="primary"], 
+.st-key-nav_menu .stButton > button[kind="primary"] * {{ color:var(--wf-accent) !important; font-weight:700 !important; }}
 
 /* Badge / pilule utilitaire (statuts) */
 .wf-badge {{ display:inline-flex; align-items:center; gap:5px; font-size:.72rem; font-weight:600; padding:3px 10px; border-radius:20px; }}
