@@ -5,6 +5,12 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.2.2
+
+**Le menu de gauche a été mis au propre.**
+Libellés alignés, espacement resserré, et la page sur laquelle vous vous
+trouvez est désormais mise en valeur lisiblement.
+
 ## 1.2.1
 
 **Le blocage de macOS au lancement ne reviendra plus.**
