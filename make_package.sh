@@ -112,23 +112,42 @@ Mets-le où tu veux (ex. le Bureau).
 ETAPE 2 — Autoriser le lanceur (la seule etape un peu penible)
 ----------------------------------------------------------
 macOS bloque par principe TOUT fichier venu d'internet. C'est normal,
-ce n'est pas un probleme de l'outil. A faire UNE FOIS :
+ce n'est pas un probleme de l'outil : Apple ne peut pas verifier un
+programme qui ne vient pas de son Store.
 
-  a) CLIC DROIT sur "1 - Lancer We.Reach.command" -> Ouvrir
-     Si une fenetre propose "Ouvrir" -> clique Ouvrir : c'est bon,
-     passe directement a l'ETAPE 3.
+Si tu double-cliques maintenant, tu verras une alerte qui ne propose que
+"Placer dans la corbeille" et "Termine". Ne clique SURTOUT PAS sur la
+corbeille : clique "Termine", et suis l'une des deux methodes ci-dessous.
 
-  b) Si l'alerte ne propose QUE "Placer dans la corbeille" / "Termine"
-     (macOS recent), alors :
-       - clique "Termine"   (SURTOUT PAS "Placer dans la corbeille")
-       - ouvre  Reglages Systeme > Confidentialite et securite
-       - descends tout en bas, section "Securite". Tu vois la ligne :
-         << "1 - Lancer We.Reach.command" a ete bloque... >>
-       - clique  "Ouvrir quand meme"
-       - saisis le mot de passe de ta session
-       - re-double-clic sur "1 - Lancer We.Reach.command" -> "Ouvrir"
+  >> A faire UNE SEULE FOIS. Plus jamais ensuite, mises a jour comprises. <<
 
-  >> Cette etape ne se fait QU'UNE SEULE FOIS, jamais plus ensuite. <<
+
+  METHODE RAPIDE (30 secondes, une commande a coller)
+  ---------------------------------------------------
+    1. Ouvre l'app "Terminal" (Cmd+Espace, tape "Terminal", Entree)
+    2. Tape ceci SANS valider, avec un espace a la fin :
+
+           xattr -cr 
+
+    3. Fais glisser le dossier "We.Reach" depuis le Finder JUSQUE DANS
+       la fenetre du Terminal : son chemin s'ecrit tout seul.
+    4. Appuie sur Entree. Rien ne s'affiche = c'est reussi.
+    5. Double-clic sur "1 - Lancer We.Reach.command" -> ETAPE 3.
+
+
+  METHODE SANS TERMINAL (2 minutes, par les Reglages)
+  ---------------------------------------------------
+    1. Double-clic sur "1 - Lancer We.Reach.command"
+       -> l'alerte apparait, clique "Termine"
+    2. Ouvre  Reglages Systeme > Confidentialite et securite
+    3. Descends tout en bas, section "Securite". Tu vois la ligne :
+           << "1 - Lancer We.Reach.command" a ete bloque... >>
+    4. Clique "Ouvrir quand meme", puis saisis le mot de passe de ta
+       session Mac
+    5. Re-double-clic sur "1 - Lancer We.Reach.command" -> "Ouvrir"
+
+  (Sur les macOS plus anciens, un CLIC DROIT > Ouvrir suffisait. Ca ne
+   marche plus depuis macOS Sequoia : utilise une des deux methodes.)
 
 ----------------------------------------------------------
 ETAPE 3 — Laisser faire (2 a 5 min, automatique)
