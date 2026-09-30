@@ -31,13 +31,25 @@ def _texte_rendu(at) -> str:
     return "\n".join(m.value for m in at.markdown)
 
 
+def _extrait_des_notes(version: str) -> str:
+    """Une phrase reellement presente dans la section de cette version.
+
+    Derive du fichier plutot que recopie : sans ca, chaque publication
+    casserait ces tests pour une raison qui n'a rien a voir avec eux.
+    """
+    from utils.nouveautes import charger_notes, lire_sections
+
+    corps = lire_sections(charger_notes())[version]
+    return next(l.strip() for l in corps.splitlines() if len(l.strip()) > 30)
+
+
 def test_la_fenetre_s_ouvre_apres_une_mise_a_jour(memoire_de_version):
     marquer_vue(memoire_de_version.parent, "0.0.1")
 
     at = lancer_app("📊 Dashboard")
 
     assert not at.exception, [str(e.value) for e in at.exception]
-    assert "Vous pouvez combiner plusieurs écoles" in _texte_rendu(at)
+    assert _extrait_des_notes(get_version()) in _texte_rendu(at)
     assert any(b.label == "J'ai compris" for b in at.button)
 
 
@@ -48,7 +60,7 @@ def test_la_fenetre_ne_reapparait_pas_au_lancement_suivant(memoire_de_version):
     at = lancer_app("📊 Dashboard")
 
     assert not at.exception, [str(e.value) for e in at.exception]
-    assert "Vous pouvez combiner plusieurs écoles" not in _texte_rendu(at)
+    assert _extrait_des_notes(get_version()) not in _texte_rendu(at)
     assert not any(b.label == "J'ai compris" for b in at.button)
 
 
@@ -74,7 +86,7 @@ def test_un_collegue_deja_installe_voit_l_annonce(memoire_de_version):
         at = lancer_app("📊 Dashboard")
 
         assert not at.exception, [str(e.value) for e in at.exception]
-        assert "Vous pouvez combiner plusieurs écoles" in _texte_rendu(at)
+        assert _extrait_des_notes(get_version()) in _texte_rendu(at)
     finally:
         if not existait:
             cookie.unlink(missing_ok=True)

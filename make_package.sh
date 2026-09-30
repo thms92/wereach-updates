@@ -53,6 +53,16 @@ cat > "$BOOT" <<BOOTSTRAP
 #!/bin/bash
 # We.Reach — lanceur (bootstrap auto-update). Ne pas modifier.
 cd "\$(dirname "\$0")"
+
+# macOS marque tout fichier venu d'internet (com.apple.quarantine) et exige
+# une autorisation manuelle au premier lancement. Quand l'utilisateur clique
+# "Ouvrir quand meme", le systeme enregistre une derogation mais LAISSE la
+# marque. Une mise a jour de macOS peut revoquer cette derogation : la marque
+# est toujours la, et le blocage revient sans raison apparente. On efface la
+# marque de tout le dossier des le premier demarrage reussi — il n'y a alors
+# plus rien a evaluer, jamais.
+xattr -cr "\$PWD" 2>/dev/null || true
+
 APP="\$PWD/app"
 GH_OWNER="$GH_OWNER"
 GH_REPO="$GH_REPO"

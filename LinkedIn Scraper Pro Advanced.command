@@ -25,6 +25,15 @@ if ! touch ".werite_test" 2>/dev/null; then
 fi
 rm -f ".werite_test"
 
+# macOS marque tout fichier venu d'internet (com.apple.quarantine) et exige
+# une autorisation manuelle au premier lancement. Quand l'utilisateur clique
+# "Ouvrir quand meme", le systeme enregistre une derogation mais LAISSE la
+# marque. Une mise a jour de macOS peut revoquer cette derogation : la marque
+# est toujours la, et le blocage revient sans raison apparente. On efface la
+# marque de tout le dossier des le premier demarrage reussi — il n'y a alors
+# plus rien a evaluer, jamais.
+xattr -cr "$PWD/.." 2>/dev/null || true
+
 # 1) Python 3 (>= 3.10) — sinon INSTALLATION AUTOMATIQUE
 # 3.10 est le vrai plancher : utils/user_context.py et utils/app_auth.py
 # annotent en `str | None`, syntaxe qui lève une TypeError à l'import sous 3.9.

@@ -5,6 +5,15 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.2.1
+
+**Le blocage de macOS au lancement ne reviendra plus.**
+Si macOS vous a déjà refusé d'ouvrir We.Reach — l'alerte qui ne propose que
+« Placer dans la corbeille » et « Terminé » —, et surtout s'il vous l'a
+refusé une deuxième fois alors que vous l'aviez déjà autorisé, c'est réglé.
+L'autorisation que vous donnez une fois est désormais définitive, y compris
+après une mise à jour de votre Mac.
+
 ## 1.2.0
 
 **Vous pouvez combiner plusieurs écoles et plusieurs entreprises.**
