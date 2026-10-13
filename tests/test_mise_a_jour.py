@@ -128,3 +128,26 @@ def test_hors_ligne_rien_ne_s_affiche(monkeypatch):
 
     assert not at.exception, [str(e.value) for e in at.exception]
     assert not any(b.label == "Mettre à jour maintenant" for b in at.button)
+
+
+def test_le_bouton_force_une_nouvelle_verification(monkeypatch):
+    """La vérification est mise en cache 10 minutes pour ne pas solliciter le
+    dépôt à chaque clic. Qui vient d'apprendre qu'une version est sortie ne
+    doit pas avoir à attendre : le bouton vide ce cache."""
+    import utils.mise_a_jour as m
+    from tests.conftest import lancer_app
+
+    appels = []
+    monkeypatch.setattr(m, "version_publiee",
+                        lambda *a, **k: (appels.append(1), "1.0.0")[1])
+
+    at = lancer_app("📊 Dashboard")
+    avant = len(appels)
+    bouton = [b for b in at.sidebar.button if b.key == "btn_verif_maj"]
+    assert bouton, "bouton de vérification absent de la barre latérale"
+
+    apres = bouton[0].click().run()
+
+    assert len(appels) > avant, "le cache n'a pas été vidé"
+    assert not apres.exception, [str(e.value) for e in apres.exception]
+    assert any("dernière version" in s.value for s in apres.sidebar.success)

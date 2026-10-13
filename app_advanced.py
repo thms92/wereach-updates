@@ -246,6 +246,21 @@ with st.sidebar.expander("🐞 Signaler un problème"):
 st.sidebar.divider()
 st.sidebar.caption(f"We.Reach v{get_version()}")
 
+# La verification est mise en cache 10 minutes pour ne pas solliciter le depot
+# a chaque clic. Ce bouton la force, pour qui vient d'etre prevenu qu'une
+# version est sortie et ne veut pas attendre.
+_verifier_version = st.cache_data(ttl=600, show_spinner=False)(version_publiee)
+
+if st.sidebar.button("🔄 Vérifier les mises à jour", use_container_width=True,
+                     key="btn_verif_maj"):
+    _verifier_version.clear()
+    st.session_state["_maj_verifiee"] = True
+    st.rerun()
+
+if st.session_state.pop("_maj_verifiee", False):
+    if not mise_a_jour_disponible(get_version(), _verifier_version()):
+        st.sidebar.success("Vous avez la dernière version.")
+
 
 # --- Annonce des nouveautés -----------------------------------------------
 # Une seule fois par version et par personne. La décision (et la mémoire de
@@ -269,7 +284,7 @@ if _notes_a_annoncer:
 # pages. Le bouton relance le lanceur, qui ferme l'instance en cours et
 # installe la nouvelle version. L'appel reseau est silencieux : hors ligne,
 # rien ne s'affiche et l'application fonctionne normalement.
-_version_distante = st.cache_data(ttl=600, show_spinner=False)(version_publiee)()
+_version_distante = _verifier_version()
 if mise_a_jour_disponible(get_version(), _version_distante):
     _col_msg, _col_btn = st.columns([3, 1], vertical_alignment="center")
     with _col_msg:

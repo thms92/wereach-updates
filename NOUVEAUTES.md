@@ -5,6 +5,13 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.8
+
+**Un bouton « Vérifier les mises à jour » dans le panneau de gauche.**
+We.Reach ne regarde le dépôt qu'une fois toutes les dix minutes, pour ne pas
+le solliciter sans cesse. Si on vous annonce qu'une version vient de sortir,
+ce bouton la cherche immédiatement.
+
 ## 1.4.7
 
 **Une école sans identifiant ne ruine plus toute la recherche.**

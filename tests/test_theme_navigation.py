@@ -85,7 +85,11 @@ def test_le_css_du_theme_n_a_aucune_accolade_mal_echappee():
 
 def test_le_selecteur_du_menu_correspond_aux_cles_des_boutons_de_navigation():
     at = lancer_app("📊 Dashboard")
-    cles = [b.key for b in at.sidebar.button if b.key]
+    # On ne retient que les boutons du menu : la barre latérale en contient
+    # d'autres (vérification des mises à jour, par exemple) qui ne doivent ni
+    # porter ce préfixe ni faire échouer ce test.
+    cles = [b.key for b in at.sidebar.button
+            if (b.key or "").startswith(PREFIXE_CLE_NAV)]
 
     assert cles == [f"{PREFIXE_CLE_NAV}{page}" for page in PAGES]
     assert SELECTEUR_NAV in css_du_theme()
