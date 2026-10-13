@@ -24,6 +24,7 @@ rien ne peut le laisser corrompu — même une interruption brutale (SIGKILL).
 
 from pathlib import Path
 
+import os
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -99,3 +100,21 @@ def acces_configure(tmp_path, monkeypatch):
     monkeypatch.setattr(app_auth, "USERS_FILE", str(repertoire / "users.json"))
     set_access_password("mot-de-passe-de-test")
     return chemin_access
+
+
+@pytest.fixture(autouse=True, scope="session")
+def donnees_de_test_isolees(tmp_path_factory):
+    """Aucun test n'écrit dans les données réelles du poste.
+
+    Depuis que les données vivent sous ~/Library/Application Support, une
+    suite non isolée y crée des dossiers — c'est arrivé une fois, avec la
+    base et la clé de chiffrement de l'utilisateur de test.
+    """
+    racine = tmp_path_factory.mktemp("donnees_wereach")
+    ancien = os.environ.get("WEREACH_DATA_DIR")
+    os.environ["WEREACH_DATA_DIR"] = str(racine)
+    yield racine
+    if ancien is None:
+        os.environ.pop("WEREACH_DATA_DIR", None)
+    else:
+        os.environ["WEREACH_DATA_DIR"] = ancien

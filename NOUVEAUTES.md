@@ -5,6 +5,18 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.3.0
+
+**We.Reach fonctionne où que vous rangiez son dossier.**
+Jusqu'ici il ne démarrait de façon fiable que depuis Téléchargements : posé
+sur le Bureau ou dans Documents, iCloud en déplaçait des morceaux pour gagner
+de la place et l'outil cassait. Vos données sont désormais rangées à part,
+hors de portée d'iCloud. Vous pouvez mettre le dossier où bon vous semble.
+
+**Retélécharger l'outil ne vous fait plus rien perdre.**
+Avant, un nouveau dossier repartait vide : cookie à ressaisir, historique
+envolé. Maintenant il retrouve tout automatiquement.
+
 ## 1.2.3
 
 **L'outil se répare tout seul après une mise à jour de votre Mac.**

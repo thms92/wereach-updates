@@ -70,28 +70,47 @@ venv_ok() {
     >/dev/null 2>&1
 }
 
-if ! venv_ok; then
-  if [ -d ".venv" ]; then
+# L'environnement vit HORS du dossier de l'application. Pose sur le Bureau,
+# ce dossier est synchronise par iCloud (reglage par defaut de macOS), qui
+# decharge des fichiers pour gagner de la place et casse les milliers de liens
+# du venv. Seul Telechargements y echappait, d'ou un outil qui ne demarrait
+# qu'a cet endroit. Application Support n'est jamais synchronise : le dossier
+# de l'app devient deplacable n'importe ou.
+SUPPORT="$HOME/Library/Application Support/We.Reach"
+VENV="$SUPPORT/venv"
+mkdir -p "$SUPPORT" 2>/dev/null
+
+if ! venv_ok "$VENV"; then
+  if [ -d "$VENV" ]; then
     echo "Environnement Python inutilisable (frequent apres une mise a jour de macOS)."
     echo "Reconstruction automatique, patiente 2 a 3 minutes..."
-    rm -rf .venv   # emporte .setup_done : les dependances se reinstallent
+    rm -rf "$VENV"   # emporte .setup_done : les dependances se reinstallent
   else
     echo "Premiere installation (2 a 5 minutes)..."
   fi
-  python3 -m venv .venv || fail "Impossible de creer l'environnement Python (.venv)."
+  python3 -m venv "$VENV" || fail "Impossible de creer l'environnement Python."
 fi
 # shellcheck disable=SC1091
-source .venv/bin/activate || fail "Environnement Python illisible. Supprime le dossier .venv et relance."
+source "$VENV/bin/activate" || fail "Environnement Python illisible. Contacte Thomas."
+
 
 # 3) Dépendances + navigateur Chromium (une seule fois, marqueur .setup_done)
-if [ ! -f ".venv/.setup_done" ]; then
+if [ ! -f "$VENV/.setup_done" ]; then
   echo "Installation des composants (patiente, c'est la seule fois)..."
   python -m pip install --upgrade pip >/dev/null 2>&1
   python -m pip install -r requirements.txt || fail "Erreur d'installation des dependances (connexion internet ?), puis relance."
   echo "Installation du navigateur (Chromium)..."
   python -m playwright install chromium || fail "Erreur d'installation du navigateur (connexion internet ?), puis relance."
-  touch ".venv/.setup_done"
+  touch "$VENV/.setup_done"
   echo "Installation terminee."
+fi
+
+# Ancien environnement reste dans le dossier de l'app : plusieurs centaines de
+# Mo, et c'est precisement lui qu'iCloud n'arrive pas a suivre. On ne le retire
+# qu'une fois le nouveau confirme fonctionnel.
+if [ -d ".venv" ] && venv_ok "$VENV"; then
+  echo "Nettoyage de l'ancien environnement..."
+  rm -rf ".venv"
 fi
 
 # 4) Mode requis par LinkedIn : vrai Chrome VISIBLE, sans camouflage

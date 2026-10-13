@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Identité et chemins isolés par utilisateur (multi-locataire)."""
 import hashlib
+import os
+import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,9 +35,57 @@ class UserPaths:
     proxy_file: Path
 
 
-def user_paths_for(email: str, root: str = "data/users") -> UserPaths:
+# Emplacement historique : à l'intérieur du dossier de l'application.
+ANCIENNE_RACINE = Path("data/users")
+
+
+def racine_donnees() -> Path:
+    """Où vivent les données utilisateur, hors du dossier de l'application.
+
+    Ce dossier peut être posé sur le Bureau, que macOS synchronise sur iCloud
+    par défaut. iCloud décharge alors des fichiers pour gagner de la place :
+    l'environnement Python casse et la base SQLite devient instable. Seul
+    Téléchargements y échappait, d'où un outil qui ne marchait qu'à cet
+    endroit. Application Support n'est jamais synchronisé, n'exige aucune
+    autorisation de confidentialité, et survit au remplacement du dossier —
+    donc retélécharger le zip ne fait plus rien perdre.
+    """
+    forcee = os.environ.get("WEREACH_DATA_DIR", "").strip()
+    if forcee:
+        return Path(forcee)
+    if sys.platform == "darwin":
+        return (Path.home() / "Library" / "Application Support" / "We.Reach"
+                / "data" / "users")
+    # Serveur (déploiement Linux) : on garde le comportement historique.
+    return ANCIENNE_RACINE
+
+
+def migrer_donnees_locales(uid: str, racine) -> bool:
+    """Récupère les données laissées dans l'ancien emplacement.
+
+    Ne déplace que si la destination n'existe pas : on n'écrase jamais des
+    données plus récentes, et en cas de doute on ne supprime rien.
+    """
+    ancien = ANCIENNE_RACINE / uid
+    nouveau = Path(racine) / uid
+    if not ancien.is_dir() or nouveau.exists():
+        return False
+    try:
+        nouveau.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(ancien), str(nouveau))
+        return True
+    except Exception:
+        return False
+
+
+def user_paths_for(email: str, root: str = None) -> UserPaths:
     uid = user_id_from_email(email)
-    base = Path(root) / uid
+    if root is None:
+        racine = racine_donnees()
+        migrer_donnees_locales(uid, racine)
+    else:
+        racine = Path(root)
+    base = racine / uid
     config_dir = base / "config"
     base.mkdir(parents=True, exist_ok=True)
     config_dir.mkdir(parents=True, exist_ok=True)
