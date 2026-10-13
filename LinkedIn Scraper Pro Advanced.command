@@ -110,6 +110,28 @@ if ! python_ok; then
   echo "Python installe avec succes."
 fi
 
+# Double-cliquer le lanceur alors que l'outil tourne deja remplacait les
+# fichiers sous le processus en cours : il rechargeait le nouveau
+# app_advanced.py avec l'ancien config encore en memoire, d'ou un ImportError
+# incomprehensible. Et la seconde instance, le port 8501 etant pris, se
+# rabattait ailleurs — l'utilisateur continuait donc de voir l'ancienne
+# version dans son navigateur.
+arreter_instance_existante() {
+  local motif="${1:-streamlit run app_advanced.py}" i
+  pgrep -f "$motif" >/dev/null 2>&1 || return 0
+  echo "We.Reach etait deja ouvert — fermeture de l'ancienne fenetre."
+  pkill -f "$motif" 2>/dev/null
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "$motif" >/dev/null 2>&1 || return 0
+    sleep 0.5
+  done
+  pkill -9 -f "$motif" 2>/dev/null
+  sleep 1
+  return 0
+}
+
+arreter_instance_existante
+
 # 2) Environnement isolé (.venv) — reconstruit des qu'il est inutilisable
 # Tester l'existence du dossier ne suffit pas : une mise a jour de macOS le
 # laisse en place mais rend son interpreteur introuvable. Le lanceur sautait

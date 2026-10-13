@@ -5,6 +5,13 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.1
+
+**Relancer We.Reach alors qu'il est déjà ouvert ne pose plus de problème.**
+Un second double-clic pouvait afficher une erreur incompréhensible, puis
+ouvrir une deuxième fenêtre qui montrait encore l'ancienne version. L'outil
+ferme désormais la session précédente avant de repartir, proprement.
+
 ## 1.4.0
 
 **Signaler un problème ne demande plus de capture d'écran.**
