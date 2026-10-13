@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import os
 
 from scraper_v2_sync import LinkedInScraperV2Sync
-from config import ScraperConfig, ECOLES, CONCURRENTS, SECTEURS
+from config import ScraperConfig, ECOLES, CONCURRENTS, SECTEURS, EMAIL_SUPPORT
 from utils.search_filters import parse_entreprises
 from utils.ecoles import libelle_vise_ecole
 from database import DatabaseManager
@@ -26,6 +26,7 @@ from utils.app_auth import verify_access, access_configured, email_domain_ok, AL
 from wefiit_theme import inject_theme, wordmark
 from version import get_version
 from utils.nouveautes import charger_notes, doit_annoncer
+from utils.diagnostic import lien_mailto, rapport
 
 
 # Configuration Streamlit
@@ -214,6 +215,18 @@ with st.sidebar.expander("⚙️ Réglages"):
                 st.success("✅ Base de données réinitialisée")
             except Exception as e:
                 st.error(f"❌ Erreur: {e}")
+
+with st.sidebar.expander("🐞 Signaler un problème"):
+    st.caption(
+        "Ouvre un mail déjà rédigé avec ce qui sert au diagnostic. "
+        "Vous voyez tout avant d'envoyer, et rien ne part sans vous."
+    )
+    _diagnostic = st.cache_data(ttl=120)(rapport)()
+    st.link_button(
+        "✉️ Préparer le mail", lien_mailto(EMAIL_SUPPORT, _diagnostic),
+        use_container_width=True,
+    )
+    st.code(_diagnostic)
 
 st.sidebar.divider()
 st.sidebar.caption(f"We.Reach v{get_version()}")

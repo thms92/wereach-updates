@@ -5,6 +5,16 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.0
+
+**Signaler un problème ne demande plus de capture d'écran.**
+Si l'outil refuse de démarrer, la fenêtre d'erreur propose désormais
+d'envoyer un rapport : un mail s'ouvre déjà rédigé, avec tout ce qui sert au
+diagnostic. Vous n'avez qu'à cliquer sur Envoyer. Un volet « Signaler un
+problème » existe aussi dans le panneau de gauche, pour les soucis
+rencontrés en cours d'utilisation. Vous voyez toujours ce qui part, et votre
+cookie LinkedIn n'y figure jamais.
+
 ## 1.3.0
 
 **We.Reach fonctionne où que vous rangiez son dossier.**

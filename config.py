@@ -110,6 +110,13 @@ ECOLES = {
     "Université d'Angers": "315727",
 }
 
+# Adresse qui reçoit les rapports de problème des utilisateurs. Inscrite en
+# clair dans l'application distribuée, donc visible de toute l'équipe et dans
+# le dépôt public. Le lanceur en garde une copie (il ne peut pas lire Python
+# quand c'est justement Python qui manque) ; un test vérifie qu'elles
+# concordent.
+EMAIL_SUPPORT = "thomas.laudet@wefiit.com"
+
 # Secteurs d'activité LinkedIn (facette `industry` de la recherche people).
 # Valeur = code de la taxonomie officielle "Industry Codes V2" :
 # https://learn.microsoft.com/en-us/linkedin/shared/references/reference-tables/industry-codes-v2

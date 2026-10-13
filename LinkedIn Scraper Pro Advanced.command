@@ -12,9 +12,63 @@ echo "        We.Reach — démarrage"
 echo "======================================"
 echo ""
 
-fail() {  # fenêtre d'erreur + garde le terminal ouvert
-  osascript -e "display dialog \"$1\" buttons {\"OK\"} with icon stop" >/dev/null 2>&1
-  echo ""; echo "❌ $1"; echo ""
+# Adresse qui recoit les rapports. Doit rester identique a EMAIL_SUPPORT dans
+# config.py — un test le verifie. Elle est dupliquee ici parce que le lanceur
+# ne peut pas lire du Python quand c'est justement Python qui manque.
+EMAIL_SUPPORT="thomas.laudet@wefiit.com"
+
+# Encodage d'URL en shell pur, pour la meme raison. LC_ALL=C fait travailler
+# octet par octet : les accents ressortent correctement en UTF-8 percent-encode.
+urlencode() {
+  local LC_ALL=C s="$1" i c
+  for (( i=0; i<${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+      # & 0xFF : sans ce masque, les octets hauts (accents) sortent avec
+      # l'extension de signe, soit %FFFFFFFFFFFFFFC3 au lieu de %C3.
+      *) printf '%%%02X' "$(( $(printf '%d' "'$c") & 0xFF ))" ;;
+    esac
+  done
+}
+
+diagnostic() {
+  echo "We.Reach - rapport de probleme"
+  echo ""
+  echo "Version      : $(cat VERSION 2>/dev/null || echo inconnue)"
+  echo "macOS        : $(sw_vers -productVersion 2>/dev/null || echo inconnu)"
+  echo "Mac          : $(sysctl -n hw.model 2>/dev/null || echo inconnu)"
+  echo "Python       : $(python3 --version 2>&1 || echo introuvable)"
+  echo "Dossier      : $PWD"
+  if command -v venv_ok >/dev/null 2>&1 && [ -n "${VENV:-}" ]; then
+    echo "Environnement: $(venv_ok "$VENV" && echo sain || echo "absent ou casse")"
+  fi
+  echo "Date         : $(date '+%Y-%m-%d %H:%M')"
+  echo ""
+  echo "Probleme signale :"
+  echo "$1"
+  echo ""
+  echo "Dernieres lignes du journal :"
+  tail -n 12 scraper.log 2>/dev/null || echo "(journal introuvable)"
+}
+
+fail() {  # fenetre d'erreur, rapport pre-rempli, et garde le terminal ouvert
+  local msg="$1" diag reponse
+  diag="$(diagnostic "$msg")"
+  printf '%s\n' "$diag" > "$HOME/Desktop/diagnostic-wereach.txt" 2>/dev/null
+
+  reponse=$(osascript -e "display dialog \"$msg
+
+Veux-tu envoyer un rapport ? Un mail s'ouvrira, deja redige : tu n'auras qu'a cliquer sur Envoyer.\" buttons {\"Non\", \"Envoyer un rapport\"} default button \"Envoyer un rapport\" with icon stop" 2>/dev/null)
+
+  case "$reponse" in
+    *"Envoyer un rapport"*)
+      open "mailto:$EMAIL_SUPPORT?subject=$(urlencode "We.Reach - probleme au lancement")&body=$(urlencode "$diag")" 2>/dev/null
+      ;;
+  esac
+
+  echo ""; echo "❌ $msg"; echo ""
+  echo "Un diagnostic a ete enregistre sur ton Bureau : diagnostic-wereach.txt"
   read -r -p "Appuie sur Entree pour fermer..."
   exit 1
 }
