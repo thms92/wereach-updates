@@ -12,8 +12,13 @@ from datetime import datetime, timedelta
 import os
 
 from scraper_v2_sync import LinkedInScraperV2Sync
-from config import ScraperConfig, ECOLES, CONCURRENTS, SECTEURS, EMAIL_SUPPORT
-from utils.search_filters import criteres_suffisants, parse_entreprises
+from config import (ScraperConfig, ECOLES, CONCURRENTS, SECTEURS,
+                    EMAIL_SUPPORT)
+from scraper_v2 import LinkedInScraperV2 as _S
+MAX_ENTREPRISES = _S.MAX_VALEURS_PAR_FACETTE
+from utils.search_filters import (criteres_suffisants,
+                                  ecoles_sans_identifiant,
+                                  parse_entreprises)
 from utils.ecoles import libelle_vise_ecole
 from database import DatabaseManager
 from cookie_utils import CookieManager
@@ -458,6 +463,13 @@ elif page == "🔍 Recherche":
             )
             # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.
             entreprises = parse_entreprises(entreprise_libre, concurrents)
+            if len(entreprises) > MAX_ENTREPRISES:
+                st.warning(
+                    f"⚠️ {len(entreprises)} entreprises sélectionnées — seules "
+                    f"les {MAX_ENTREPRISES} premières seront utilisées. "
+                    "Chacune demande une interrogation de LinkedIn pour être "
+                    "identifiée ; au-delà, le risque de blocage augmente."
+                )
             nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10)
 
             ile_de_france = st.toggle("🗼 Île-de-France uniquement", value=False, help="Filtre les résultats pour la région Île-de-France")
@@ -493,6 +505,13 @@ elif page == "🔍 Recherche":
             ecoles_selectionnees = [ECOLES[n] for n in (ecole_noms or [])]
             if ecoles_selectionnees:
                 st.success(f"✅ {len(ecoles_selectionnees)} école(s) sélectionnée(s)")
+                _ecartees = ecoles_sans_identifiant(ecoles_selectionnees)
+                if _ecartees:
+                    st.warning(
+                        "⚠️ Sans identifiant LinkedIn, ces écoles ne peuvent pas "
+                        f"entrer dans le filtre : **{', '.join(_ecartees)}**. "
+                        "La recherche se lance quand même avec les autres."
+                    )
             else:
                 st.caption("Aucune école — tu peux filtrer par entreprise / cabinet / secteur à la place.")
 

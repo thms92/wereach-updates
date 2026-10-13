@@ -57,13 +57,23 @@ def test_plusieurs_ecoles_numeriques_tiennent_dans_une_facette(scraper):
     assert _params(url)["schoolFilter"] == '["15092700","308907"]'
 
 
-def test_une_ecole_sans_id_bascule_toute_la_facette_en_mots_cles(scraper):
-    # "Bootcamp Noé" n'a pas d'ID numérique dans ECOLES : repli par nom,
-    # et Dauphine repart en mot-clé avec elle pour préserver le OU.
+def test_une_ecole_sans_id_est_ecartee_sans_ruiner_le_filtre(scraper):
+    """Règle revue après un cas réel : une utilisatrice avait sélectionné 41
+    écoles, dont 3 sans identifiant, et la totalité du filtre basculait en
+    recherche textuelle — zéro résultat. On écarte les trois, on garde le
+    filtre précis pour les autres."""
     url = scraper.construire_url_recherche("", "", ["15092700", "Bootcamp Noé"])
     params = _params(url)
+    assert params["schoolFilter"] == '["15092700"]'
+    assert "Bootcamp" not in params.get("keywords", "")
+
+
+def test_sans_aucun_id_le_repli_textuel_demeure(scraper):
+    # Sinon il ne resterait plus aucun critere d'ecole.
+    url = scraper.construire_url_recherche("", "", ["Bootcamp Noé"])
+    params = _params(url)
     assert "schoolFilter" not in params
-    assert params["keywords"] == '"Dauphine" OR "Bootcamp Noé"'
+    assert params["keywords"] == '"Bootcamp Noé"'
 
 
 # --- Secteurs ------------------------------------------------------------
@@ -99,10 +109,18 @@ def test_la_facette_est_encodee_au_format_attendu_par_linkedin(scraper):
     assert "currentCompany=%5B%224998677%22%2C%22165528%22%5D" in url
 
 
-def test_une_facette_est_plafonnee_a_dix_valeurs(scraper):
+def test_seules_les_entreprises_sont_plafonnees(scraper):
+    """Le plafond ne tient pas a la longueur de l'URL — 742 caracteres avec
+    les 38 ecoles, pour une limite pratique de 8 000 — mais au nombre
+    d'appels a l'API de LinkedIn : chaque entreprise inconnue en declenche un.
+    Les ecoles ont leurs identifiants en local, donc aucun appel."""
     ecoles = [str(1000 + i) for i in range(15)]
-    url = scraper.construire_url_recherche("", "", ecoles)
-    assert _params(url)["schoolFilter"].count(",") == 9
+    assert _params(scraper.construire_url_recherche("", "", ecoles))["schoolFilter"].count(",") == 14
+
+    entreprises = [f"Boite Inconnue {i}" for i in range(15)]
+    url = scraper.construire_url_recherche("PM", entreprises, [])
+    # repli booleen (aucune resolue), mais seules 10 y figurent
+    assert _params(url)["keywords"].count(" OR ") == 9
 
 
 def test_un_repli_sans_mot_cle_n_est_pas_entierement_parenthese(scraper):

@@ -27,6 +27,7 @@ from config import ScraperConfig, ECOLES
 from logger import logger
 from utils.dom_selectors import DOMSelectors
 from utils.profile_extractor import ProfileExtractor
+from utils.search_filters import equilibrer_parentheses
 from utils.network_manager import NetworkManager, RetryConfig, PermanentNetworkError
 from utils.human_behavior import HumanBehavior
 from utils.stealth_profile import StealthProfileManager
@@ -194,19 +195,26 @@ class LinkedInScraperV2:
         base_url = "https://www.linkedin.com/search/results/people/?"
         params = []
 
+        # Seules les entreprises sont plafonnées, et non pour la longueur de
+        # l'URL — elle fait 742 caractères avec les 38 écoles, pour une limite
+        # pratique de 8 000. La vraie raison est le nombre d'appels à l'API de
+        # LinkedIn : chaque entreprise non connue en déclenche un pour résoudre
+        # son identifiant. Écoles et secteurs ont leurs identifiants dans
+        # config.py, donc aucun appel : rien ne justifie de les tronquer.
         entreprises = self._plafonner(self._as_list(entreprises), "entreprises")
-        ecoles_ids = self._plafonner(self._as_list(ecoles_ids), "écoles")
+        ecoles_ids = self._as_list(ecoles_ids)
         # Les secteurs n'ont pas de repli booléen : un ID non numérique est
         # forcément une erreur de configuration, on l'ignore.
-        secteurs_ids = self._plafonner(
-            [s for s in self._as_list(secteurs_ids) if s.isdigit()], "secteurs"
-        )
+        secteurs_ids = [s for s in self._as_list(secteurs_ids) if s.isdigit()]
 
         # Normaliser le keyword : retirer les parenthèses englobantes inutiles
         # car LinkedIn renvoie 0 résultat quand toute la requête est entourée
         # d'une seule paire de parens (ex: `(A OR B OR C)` → 0 résultat,
         # alors que `A OR B OR C` → résultats).
-        keywords_combines = self._normalize_keyword(keyword)
+        # Une parenthèse oubliée rend l'expression invalide et LinkedIn
+        # répond « Aucun résultat » sans erreur — indiagnostiquable. On répare
+        # avant d'envelopper quoi que ce soit, sinon on aggrave le défaut.
+        keywords_combines = self._normalize_keyword(equilibrer_parentheses(keyword))
 
         # Facette entreprise : tout-ou-rien (cf. note sur les replis)
         urns = [self._resoudre_company_urn(e) for e in entreprises]
@@ -221,8 +229,15 @@ class LinkedInScraperV2:
 
         # Facette école : même règle. Les entrées non numériques de ECOLES sont
         # des noms (ID LinkedIn pas encore connu) → repli pour toute la facette.
-        if ecoles_ids and all(e.isdigit() for e in ecoles_ids):
-            ecoles_filter = ecoles_ids
+        # Une seule école sans identifiant faisait auparavant basculer la
+        # TOTALITÉ du filtre en recherche textuelle : trois écoles obscures
+        # suffisaient à ruiner une sélection de quarante. On écarte celles qui
+        # n'ont pas d'identifiant et on garde le filtre précis pour les autres
+        # — l'interface nomme les écartées. Le repli textuel ne subsiste que
+        # si AUCUNE n'a d'identifiant, sinon il ne resterait aucun critère.
+        ecoles_avec_id = [e for e in ecoles_ids if e.isdigit()]
+        if ecoles_avec_id:
+            ecoles_filter = ecoles_avec_id
         else:
             ecoles_filter = []
             if ecoles_ids:

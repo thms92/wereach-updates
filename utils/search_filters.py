@@ -52,3 +52,39 @@ def criteres_suffisants(
     simple clic malheureux.
     """
     return bool((mots_cles or "").strip() or ecoles or entreprises or secteurs)
+
+
+def equilibrer_parentheses(requete: Optional[str]) -> str:
+    """Répare les parenthèses d'une requête booléenne.
+
+    Une parenthèse oubliée rend l'expression invalide, et LinkedIn répond
+    « Aucun résultat » sans la moindre erreur — impossible à diagnostiquer
+    pour qui écrit la requête. Une fermante orpheline est retirée, une
+    ouvrante non refermée l'est en fin d'expression.
+    """
+    sortie, ouvertes = [], 0
+    for caractere in requete or "":
+        if caractere == ")":
+            if ouvertes == 0:
+                continue  # fermante sans ouvrante : on l'écarte
+            ouvertes -= 1
+        elif caractere == "(":
+            ouvertes += 1
+        sortie.append(caractere)
+    return "".join(sortie) + ")" * ouvertes
+
+
+def ecoles_sans_identifiant(ecoles_ids: Optional[List[str]]) -> List[str]:
+    """Noms des écoles sélectionnées dont l'identifiant LinkedIn est inconnu.
+
+    Elles ne peuvent pas entrer dans le filtre précis. L'interface les nomme
+    pour que la personne sache ce qui n'a pas été pris en compte.
+    """
+    from config import ECOLES
+
+    inconnues = [str(e) for e in (ecoles_ids or []) if not str(e).isdigit()]
+    noms = []
+    for valeur in inconnues:
+        nom = next((n for n, i in ECOLES.items() if str(i) == valeur), valeur)
+        noms.append(nom)
+    return noms

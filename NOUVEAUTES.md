@@ -5,6 +5,22 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.7
+
+**Une école sans identifiant ne ruine plus toute la recherche.**
+Il suffisait d'une seule pour que le filtre « écoles » cesse d'en être un et
+devienne une simple recherche de mots dans les profils : sélectionner
+quarante écoles ne renvoyait alors aucun résultat. Celles qui posent problème
+sont maintenant écartées, nommées à l'écran, et la recherche part avec les
+autres.
+
+**Plus aucune limite sur le nombre d'écoles ni de secteurs.**
+Vous pouvez tous les sélectionner. Le plafond de dix n'avait pas lieu d'être.
+
+**Vos parenthèses sont réparées toutes seules.**
+Une parenthèse oubliée dans les mots-clés rendait la requête invalide, et
+LinkedIn répondait « Aucun résultat » sans rien expliquer.
+
 ## 1.4.6
 
 **We.Reach vous prévient quand une mise à jour existe.**
