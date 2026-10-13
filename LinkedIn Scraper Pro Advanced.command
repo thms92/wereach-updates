@@ -56,9 +56,28 @@ if ! python_ok; then
   echo "Python installe avec succes."
 fi
 
-# 2) Environnement isolé (.venv) — créé une seule fois
-if [ ! -d ".venv" ]; then
-  echo "Premiere installation (2 a 5 minutes)..."
+# 2) Environnement isolé (.venv) — reconstruit des qu'il est inutilisable
+# Tester l'existence du dossier ne suffit pas : une mise a jour de macOS le
+# laisse en place mais rend son interpreteur introuvable. Le lanceur sautait
+# alors la reconstruction, sautait aussi l'installation (le marqueur
+# .setup_done etant la), et echouait plus loin sur "python: command not
+# found" — sans autre issue qu'une reinstallation complete.
+# find_spec verifie l'interpreteur ET les paquets sans les importer : 0,02 s.
+venv_ok() {
+  local v="${1:-.venv}"
+  [ -x "$v/bin/python" ] && "$v/bin/python" -c \
+    'import importlib.util as u; raise SystemExit(0 if u.find_spec("streamlit") and u.find_spec("playwright") else 1)' \
+    >/dev/null 2>&1
+}
+
+if ! venv_ok; then
+  if [ -d ".venv" ]; then
+    echo "Environnement Python inutilisable (frequent apres une mise a jour de macOS)."
+    echo "Reconstruction automatique, patiente 2 a 3 minutes..."
+    rm -rf .venv   # emporte .setup_done : les dependances se reinstallent
+  else
+    echo "Premiere installation (2 a 5 minutes)..."
+  fi
   python3 -m venv .venv || fail "Impossible de creer l'environnement Python (.venv)."
 fi
 # shellcheck disable=SC1091

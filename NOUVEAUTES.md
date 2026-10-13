@@ -5,6 +5,14 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.2.3
+
+**L'outil se répare tout seul après une mise à jour de votre Mac.**
+Jusqu'ici, une montée de version de macOS pouvait casser l'installation : la
+fenêtre noire affichait « python: command not found » et la seule issue était
+de tout réinstaller. Désormais We.Reach s'en aperçoit au démarrage, se
+reconstruit en deux ou trois minutes, et repart. Vous n'avez rien à faire.
+
 ## 1.2.2
 
 **Le menu de gauche a été mis au propre.**
