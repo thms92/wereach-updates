@@ -5,6 +5,14 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.9
+
+**L'annonce d'une mise à jour apparaît toute seule.**
+Jusqu'ici elle ne pouvait surgir qu'au moment où vous cliquiez quelque part :
+en laissant We.Reach ouvert sans y toucher, on pouvait ne jamais être
+prévenu. L'outil surveille désormais en arrière-plan et vous avertit dans les
+cinq minutes, sans rien faire.
+
 ## 1.4.8
 
 **Un bouton « Vérifier les mises à jour » dans le panneau de gauche.**
