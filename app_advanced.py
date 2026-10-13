@@ -20,7 +20,8 @@ from cookie_utils import CookieManager
 from export_utils import ExportManager
 from queue_manager import QueueManager, JobStatus
 from logger import logger
-from utils.user_context import resolve_user_email, user_paths_for, DEFAULT_DEV_EMAIL
+from utils.user_context import (resolve_user_email, user_paths_for,
+                                DEFAULT_DEV_EMAIL, mode_admin)
 from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import inject_theme, wordmark
@@ -152,69 +153,74 @@ with st.sidebar.container(key="nav_menu"):
 
 page = st.session_state["page"]
 
-with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
-    paths = st.session_state.user_paths
-    cur = st.session_state.get('user_proxy') or {}
-    server = st.text_input("Serveur (http://host:port)", value=cur.get("server", ""))
-    p_user = st.text_input("Login proxy", value=cur.get("username", ""))
-    p_pass = st.text_input("Mot de passe proxy", type="password",
-                           value=cur.get("password", ""))
-    if st.button("💾 Enregistrer mon proxy"):
-        if server.strip():
-            proxy = {"server": server.strip(),
-                     "username": p_user.strip(),
-                     "password": p_pass}
-            save_proxy(str(paths.proxy_file), str(paths.key_file), proxy)
-            st.session_state.user_proxy = proxy
-            st.success("Proxy enregistré ✅")
+# Reglages techniques : masques pour l'equipe. Le proxy n'a pas de sens
+# quand chacun scrape depuis son propre Mac, et Reglages contient un
+# bouton qui efface toute la base. Deposer un fichier `admin` dans le
+# dossier de l'application les fait reapparaitre.
+if mode_admin():
+    with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
+        paths = st.session_state.user_paths
+        cur = st.session_state.get('user_proxy') or {}
+        server = st.text_input("Serveur (http://host:port)", value=cur.get("server", ""))
+        p_user = st.text_input("Login proxy", value=cur.get("username", ""))
+        p_pass = st.text_input("Mot de passe proxy", type="password",
+                               value=cur.get("password", ""))
+        if st.button("💾 Enregistrer mon proxy"):
+            if server.strip():
+                proxy = {"server": server.strip(),
+                         "username": p_user.strip(),
+                         "password": p_pass}
+                save_proxy(str(paths.proxy_file), str(paths.key_file), proxy)
+                st.session_state.user_proxy = proxy
+                st.success("Proxy enregistré ✅")
+            else:
+                st.warning("Indique au moins un serveur.")
+
+    with st.sidebar.expander("⚙️ Réglages"):
+        st.markdown("**🔧 Paramètres de scraping**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write(f"**Max profils par run:** {ScraperConfig.MAX_PROFILES_PER_RUN}")
+            st.write(f"**Max invitations/jour:** {ScraperConfig.MAX_INVITATIONS_PER_DAY}")
+            st.write(f"**Timeout page:** {ScraperConfig.TIMEOUT_PAGE}ms")
+
+        with col2:
+            st.write(f"**Délai entre profils:** {ScraperConfig.DELAY_BETWEEN_PROFILES_MIN}-{ScraperConfig.DELAY_BETWEEN_PROFILES_MAX}ms")
+            st.write(f"**Mode headless:** {ScraperConfig.HEADLESS}")
+            st.write(f"**Retry attempts:** {ScraperConfig.MAX_RETRY_ATTEMPTS}")
+
+        st.markdown("---")
+
+        st.markdown("**🏫 Écoles configurées**")
+
+        df_ecoles = pd.DataFrame(
+            list(ECOLES.items()),
+            columns=['École', 'ID LinkedIn']
+        )
+        st.dataframe(df_ecoles, use_container_width=True)
+
+        st.markdown("---")
+
+        st.markdown("**💾 Base de données**")
+
+        _user_db = str(st.session_state.user_paths.db_file)
+        if os.path.exists(_user_db):
+            db_size = os.path.getsize(_user_db) / 1024
+            st.success(f"✅ Base de données: {db_size:.2f} KB")
         else:
-            st.warning("Indique au moins un serveur.")
+            st.warning("⚠️ Base de données non initialisée")
 
-with st.sidebar.expander("⚙️ Réglages"):
-    st.markdown("**🔧 Paramètres de scraping**")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.write(f"**Max profils par run:** {ScraperConfig.MAX_PROFILES_PER_RUN}")
-        st.write(f"**Max invitations/jour:** {ScraperConfig.MAX_INVITATIONS_PER_DAY}")
-        st.write(f"**Timeout page:** {ScraperConfig.TIMEOUT_PAGE}ms")
-
-    with col2:
-        st.write(f"**Délai entre profils:** {ScraperConfig.DELAY_BETWEEN_PROFILES_MIN}-{ScraperConfig.DELAY_BETWEEN_PROFILES_MAX}ms")
-        st.write(f"**Mode headless:** {ScraperConfig.HEADLESS}")
-        st.write(f"**Retry attempts:** {ScraperConfig.MAX_RETRY_ATTEMPTS}")
-
-    st.markdown("---")
-
-    st.markdown("**🏫 Écoles configurées**")
-
-    df_ecoles = pd.DataFrame(
-        list(ECOLES.items()),
-        columns=['École', 'ID LinkedIn']
-    )
-    st.dataframe(df_ecoles, use_container_width=True)
-
-    st.markdown("---")
-
-    st.markdown("**💾 Base de données**")
-
-    _user_db = str(st.session_state.user_paths.db_file)
-    if os.path.exists(_user_db):
-        db_size = os.path.getsize(_user_db) / 1024
-        st.success(f"✅ Base de données: {db_size:.2f} KB")
-    else:
-        st.warning("⚠️ Base de données non initialisée")
-
-    if st.button("🗑️ Réinitialiser la base de données", type="secondary"):
-        if st.checkbox("Je confirme vouloir supprimer toutes les données"):
-            try:
-                if os.path.exists(_user_db):
-                    os.remove(_user_db)
-                st.session_state.db = DatabaseManager(db_file=_user_db)
-                st.success("✅ Base de données réinitialisée")
-            except Exception as e:
-                st.error(f"❌ Erreur: {e}")
+        if st.button("🗑️ Réinitialiser la base de données", type="secondary"):
+            if st.checkbox("Je confirme vouloir supprimer toutes les données"):
+                try:
+                    if os.path.exists(_user_db):
+                        os.remove(_user_db)
+                    st.session_state.db = DatabaseManager(db_file=_user_db)
+                    st.success("✅ Base de données réinitialisée")
+                except Exception as e:
+                    st.error(f"❌ Erreur: {e}")
 
 with st.sidebar.expander("🐞 Signaler un problème"):
     st.caption(

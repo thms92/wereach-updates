@@ -91,8 +91,14 @@ def test_le_selecteur_du_menu_correspond_aux_cles_des_boutons_de_navigation():
     assert SELECTEUR_NAV in css_du_theme()
 
 
-def test_les_boutons_hors_navigation_restent_hors_de_portee_de_la_regle():
-    """Ceux que la règle débordait : aucun ne porte de clé `nav_`."""
+def test_les_boutons_hors_navigation_restent_hors_de_portee_de_la_regle(monkeypatch):
+    """Ceux que la règle débordait : aucun ne porte de clé `nav_`.
+
+    En mode admin, pour que les boutons du proxy et de la réinitialisation —
+    masqués à l'équipe depuis la 1.4.5 — soient présents et donc vérifiés.
+    C'est sur eux que la règle débordait à l'origine.
+    """
+    monkeypatch.setenv("WEREACH_ADMIN", "1")
     at = lancer_app("📊 Dashboard")
     hors_nav = {
         b.label: b.key

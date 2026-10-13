@@ -99,3 +99,38 @@ def user_paths_for(email: str, root: str = None) -> UserPaths:
         profiles_csv=base / "profils_scrapes.csv",
         proxy_file=config_dir / "proxy.enc",
     )
+
+
+def racine_application() -> Path:
+    """Dossier stable de l'application, hors du code et hors des données.
+
+    Y vivent les marqueurs et réglages qui doivent survivre au remplacement
+    du dossier de l'application — donc aux mises à jour et aux
+    retéléchargements.
+    """
+    forcee = os.environ.get("WEREACH_DATA_DIR", "").strip()
+    if forcee:
+        return Path(forcee)
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "We.Reach"
+    return Path(".")
+
+
+def mode_admin() -> bool:
+    """Faut-il montrer les réglages techniques ?
+
+    Le proxy n'a aucun sens dans l'usage actuel — chacun scrape depuis son
+    propre Mac, donc sa propre adresse IP — et le volet Réglages contient un
+    bouton qui efface toute la base de profils. Ni l'un ni l'autre n'a sa
+    place sous la main de l'équipe.
+
+    L'administrateur les retrouve en déposant un fichier `admin` dans le
+    dossier de l'application ; la variable WEREACH_ADMIN tranche dans les deux
+    sens si besoin (déploiement serveur, dépannage).
+    """
+    drapeau = os.environ.get("WEREACH_ADMIN", "").strip().lower()
+    if drapeau in ("1", "true", "oui"):
+        return True
+    if drapeau in ("0", "false", "non"):
+        return False
+    return (racine_application() / "admin").exists()

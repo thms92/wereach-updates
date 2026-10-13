@@ -5,6 +5,13 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.5
+
+**Le panneau de gauche s'allège.**
+Les réglages techniques — proxy, paramètres de scraping, réinitialisation de
+la base — n'y figurent plus. Ils ne servaient pas à l'usage quotidien, et
+l'un d'eux effaçait tout votre historique d'un simple clic.
+
 ## 1.4.4
 
 **Le bouton « Préparer le mail » fonctionne vraiment.**
