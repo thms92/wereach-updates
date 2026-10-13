@@ -5,6 +5,14 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.4
+
+**Le bouton « Préparer le mail » fonctionne vraiment.**
+Il annonçait que votre messagerie s'ouvrait, et rien ne se passait : macOS
+peut avoir confié les liens mail à un navigateur, qui les avale en silence.
+We.Reach le détecte et ouvre Mail. Si vous avez choisi Outlook, c'est Outlook
+qui s'ouvre — on contourne un navigateur, pas votre choix.
+
 ## 1.4.3
 
 **Le signalement ouvre votre logiciel de messagerie, plus le navigateur.**

@@ -68,30 +68,66 @@ def test_le_lien_mailto_encode_les_caracteres_speciaux():
 from utils.diagnostic import ouvrir_mail
 
 
-def test_le_mail_s_ouvre_par_la_commande_open(monkeypatch):
-    """`st.link_button` laissait le NAVIGATEUR décider du sort d'un mailto —
-    Chrome et Arc le détournent souvent vers un webmail. L'app tournant sur le
-    Mac de la personne, on appelle `open`, qui respecte le client par défaut
-    du système."""
+def test_un_navigateur_detourne_le_mailto_on_force_mail(monkeypatch):
+    """Sur le Mac de Thomas, macOS avait designe Chrome comme gestionnaire des
+    liens mailto : `open` faisait son travail, Chrome avalait le lien, et rien
+    ne s'ouvrait. Quand le gestionnaire est un navigateur, on le contourne."""
     appels = []
     monkeypatch.setattr("sys.platform", "darwin")
-    monkeypatch.setattr("subprocess.run", lambda *a, **k: appels.append(a[0]))
+    monkeypatch.setattr("utils.diagnostic._gestionnaire_mailto", lambda: "com.google.chrome")
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: appels.append(a[0]) or _ok())
 
-    assert ouvrir_mail("mailto:a@b.fr?subject=x") is True
-    assert appels == [["open", "mailto:a@b.fr?subject=x"]]
+    assert ouvrir_mail("mailto:a@b.fr") is True
+    assert appels == [["open", "-a", "Mail", "mailto:a@b.fr"]]
+
+
+def test_un_vrai_client_mail_est_respecte(monkeypatch):
+    # Quelqu'un qui a choisi Outlook doit garder Outlook : on ne force Mail
+    # que pour echapper a un navigateur.
+    appels = []
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("utils.diagnostic._gestionnaire_mailto",
+                        lambda: "com.microsoft.outlook")
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: appels.append(a[0]) or _ok())
+
+    assert ouvrir_mail("mailto:a@b.fr") is True
+    assert appels == [["open", "mailto:a@b.fr"]]
+
+
+def test_un_echec_est_rapporte_comme_tel(monkeypatch):
+    """L'ancienne version renvoyait True quoi qu'il arrive : l'interface
+    annoncait « ta messagerie s'ouvre » alors que rien ne s'ouvrait."""
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("utils.diagnostic._gestionnaire_mailto", lambda: "")
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: _echec())
+
+    assert ouvrir_mail("mailto:a@b.fr") is False
 
 
 def test_hors_mac_on_n_ouvre_rien(monkeypatch):
-    # Sur un deploiement serveur, `open` s'executerait sur le serveur et non
-    # chez la personne : on s'abstient plutot que d'agir au mauvais endroit.
+    # Sur un deploiement serveur, `open` s'executerait sur le serveur.
     monkeypatch.setattr("sys.platform", "linux")
     assert ouvrir_mail("mailto:a@b.fr") is False
 
 
-def test_un_echec_d_ouverture_ne_fait_pas_planter(monkeypatch):
+def test_une_exception_ne_fait_pas_planter(monkeypatch):
     def boum(*a, **k):
         raise OSError("pas de client mail")
 
     monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("utils.diagnostic._gestionnaire_mailto", lambda: "")
     monkeypatch.setattr("subprocess.run", boum)
     assert ouvrir_mail("mailto:a@b.fr") is False
+
+
+class _Resultat:
+    def __init__(self, code):
+        self.returncode = code
+
+
+def _ok():
+    return _Resultat(0)
+
+
+def _echec():
+    return _Resultat(1)

@@ -10,6 +10,7 @@ Tout ce qui sort d'ici part dans un mail : le contenu est expurgé des
 secrets, car le cookie LinkedIn vaut un accès au compte de la personne.
 """
 
+import json
 import platform
 import re
 import subprocess
@@ -95,21 +96,59 @@ def lien_mailto(destinataire: str, corps: str, sujet: str = None) -> str:
     return f"mailto:{destinataire}?{params}"
 
 
-def ouvrir_mail(lien: str) -> bool:
-    """Ouvre le client de messagerie par défaut du Mac sur un lien mailto.
+# Navigateurs susceptibles de s'etre empares des liens mailto. Chrome le fait
+# volontiers a l'installation, et avale ensuite le lien sans rien afficher :
+# `open` reussit, et rien ne s'ouvre.
+_NAVIGATEURS = ("chrome", "safari", "firefox", "arc", "edge", "opera", "brave")
 
-    Un lien HTML laisserait le NAVIGATEUR décider du sort d'un `mailto:` —
-    Chrome et Arc le détournent volontiers vers un webmail. L'application
-    tournant sur le Mac de la personne, on passe par `open`, qui respecte le
-    client par défaut du système : Mail, Outlook, peu importe lequel.
+
+def _gestionnaire_mailto() -> str:
+    """Identifiant du logiciel que macOS a désigné pour les liens mailto.
+
+    Lu en JSON via plutil plutôt qu'en analysant la sortie texte de
+    `defaults` : l'entrée qui porte `mailto` contient elle-même un
+    sous-dictionnaire, ce qu'une expression régulière lit de travers.
+    """
+    try:
+        sortie = subprocess.run(
+            ["sh", "-c",
+             "defaults export com.apple.LaunchServices/"
+             "com.apple.launchservices.secure - | plutil -convert json -o - -"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        for entree in json.loads(sortie).get("LSHandlers", []):
+            if entree.get("LSHandlerURLScheme") == "mailto":
+                return str(entree.get("LSHandlerRoleAll", "")).lower()
+    except Exception:
+        pass
+    return ""
+
+
+def ouvrir_mail(lien: str) -> bool:
+    """Ouvre un lien mailto dans un vrai logiciel de messagerie.
+
+    `st.link_button` laissait le navigateur décider, et Chrome détourne
+    volontiers les mailto vers un webmail. Mais passer par `open` ne suffit
+    pas non plus : macOS peut avoir désigné un navigateur comme gestionnaire
+    des mailto — c'était le cas ici — et le lien disparaissait en silence,
+    `open` renvoyant pourtant 0.
+
+    On ne force Mail que dans ce cas. Quelqu'un ayant choisi Outlook garde
+    Outlook : on contourne un navigateur, pas le choix de la personne.
 
     Retourne False sans rien faire hors macOS : sur un déploiement serveur,
     `open` s'exécuterait sur le serveur et non chez la personne.
     """
     if sys.platform != "darwin":
         return False
+
+    gestionnaire = _gestionnaire_mailto()
+    detourne = any(nom in gestionnaire for nom in _NAVIGATEURS)
+    commande = ["open", "-a", "Mail", lien] if detourne else ["open", lien]
+
     try:
-        subprocess.run(["open", lien], check=False, timeout=10)
-        return True
+        return subprocess.run(
+            commande, capture_output=True, timeout=15
+        ).returncode == 0
     except Exception:
         return False
