@@ -28,6 +28,8 @@ from wefiit_theme import inject_theme, wordmark
 from version import get_version
 from utils.nouveautes import charger_notes, doit_annoncer
 from utils.diagnostic import lien_mailto, ouvrir_mail, rapport
+from utils.mise_a_jour import (mise_a_jour_disponible, relancer,
+                               version_publiee)
 
 
 # Configuration Streamlit
@@ -255,6 +257,30 @@ _notes_a_annoncer = doit_annoncer(
 )
 if _notes_a_annoncer:
     _annoncer_nouveautes(_notes_a_annoncer)
+
+# --- Bandeau de mise a jour ------------------------------------------------
+# La mise a jour ne se faisait qu'au demarrage du lanceur : qui ne ferme
+# jamais l'outil ne la recevait jamais. On la signale donc ici, sur toutes les
+# pages. Le bouton relance le lanceur, qui ferme l'instance en cours et
+# installe la nouvelle version. L'appel reseau est silencieux : hors ligne,
+# rien ne s'affiche et l'application fonctionne normalement.
+_version_distante = st.cache_data(ttl=600, show_spinner=False)(version_publiee)()
+if mise_a_jour_disponible(get_version(), _version_distante):
+    _col_msg, _col_btn = st.columns([3, 1], vertical_alignment="center")
+    with _col_msg:
+        st.warning(
+            f"⬆️ **Une nouvelle version est disponible ({_version_distante}).** "
+            f"Vous utilisez la {get_version()}."
+        )
+    with _col_btn:
+        if st.button("Mettre à jour maintenant", type="primary",
+                     use_container_width=True, key="btn_maj"):
+            if relancer():
+                st.info("We.Reach redémarre avec la nouvelle version…")
+            else:
+                st.error(
+                    "Ferme puis rouvre We.Reach pour installer la mise à jour."
+                )
 
 # ==============================================
 # PAGE 1: DASHBOARD

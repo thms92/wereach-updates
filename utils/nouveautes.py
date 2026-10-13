@@ -16,7 +16,7 @@ FICHIER_NOTES = "NOUVEAUTES.md"
 _FICHIER_VU = "derniere_version_vue.txt"
 
 
-def _cle(version: str) -> tuple:
+def cle_version(version: str) -> tuple:
     """Version en tuple d'entiers, pour comparer 1.10.0 > 1.9.0 correctement."""
     morceaux = []
     for part in (version or "").strip().split("."):
@@ -37,7 +37,7 @@ def lire_sections(texte: str) -> dict:
             if version_courante is not None:
                 sections[version_courante] = "\n".join(lignes_courantes).strip()
             titre = ligne[3:].strip()
-            version_courante = titre if _cle(titre) else None
+            version_courante = titre if cle_version(titre) else None
             lignes_courantes = []
         elif version_courante is not None:
             lignes_courantes.append(ligne)
@@ -53,11 +53,11 @@ def notes_depuis(texte: str, version_actuelle: str, derniere_vue: str) -> str:
     Cumulatif à dessein : quelqu'un qui n'ouvre pas l'application pendant
     quelques semaines peut sauter une version, et ne doit rien rater.
     """
-    plancher, plafond = _cle(derniere_vue), _cle(version_actuelle)
+    plancher, plafond = cle_version(derniere_vue), cle_version(version_actuelle)
     retenues = [
-        (_cle(v), v, corps)
+        (cle_version(v), v, corps)
         for v, corps in lire_sections(texte).items()
-        if plancher < _cle(v) <= plafond
+        if plancher < cle_version(v) <= plafond
     ]
     retenues.sort(reverse=True)  # la plus récente en premier
     return "\n\n".join(f"## {v}\n{corps}" for _, v, corps in retenues)

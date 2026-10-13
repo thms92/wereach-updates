@@ -5,6 +5,14 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.6
+
+**We.Reach vous prévient quand une mise à jour existe.**
+Un bandeau apparaît en haut de l'écran avec un bouton « Mettre à jour
+maintenant » : un clic, et l'outil redémarre à jour. Jusqu'ici la mise à jour
+ne s'installait qu'au démarrage — qui ne fermait jamais l'application pouvait
+rester des semaines sur une ancienne version sans le savoir.
+
 ## 1.4.5
 
 **Le panneau de gauche s'allège.**
