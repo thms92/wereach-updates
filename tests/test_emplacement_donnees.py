@@ -103,3 +103,38 @@ def test_un_utilisateur_retrouve_son_cookie_apres_un_retelechargement(tmp_path, 
     p2 = user_paths_for("lea@wefiit.com")
 
     assert p2.cookie_file.read_text(encoding="utf-8") == "li_at=precieux"
+
+
+def test_un_utilisateur_migre_est_informe_des_nouveautes(tmp_path, monkeypatch):
+    """Le scénario réel de la 1.3.0 : ses données dormaient dans le dossier de
+    l'application, elles sont récupérées — et elle doit quand même voir
+    l'annonce, car on tient à informer à chaque mise à jour.
+
+    Le piège : sans fichier « dernière version vue », elle pourrait être prise
+    pour une nouvelle venue et l'annonce serait avalée en silence. C'est son
+    cookie, récupéré par la migration, qui la trahit comme utilisatrice en
+    place.
+    """
+    from utils.nouveautes import doit_annoncer
+    from version import get_version
+
+    notes = f"# Nouveautés\n\n## {get_version()}\n- Quelque chose d'important\n"
+
+    dossier_app = tmp_path / "We.Reach" / "app"
+    dossier_app.mkdir(parents=True)
+    monkeypatch.chdir(dossier_app)
+    monkeypatch.setenv("WEREACH_DATA_DIR", str(tmp_path / "support"))
+
+    uid = user_id_from_email("lea@wefiit.com")
+    ancien = dossier_app / "data" / "users" / uid / "config"
+    ancien.mkdir(parents=True)
+    (ancien / "cookie.txt").write_text("li_at=le_sien", encoding="utf-8")
+
+    chemins = user_paths_for("lea@wefiit.com")
+
+    assert chemins.cookie_file.read_text(encoding="utf-8") == "li_at=le_sien"
+    assert "Quelque chose d'important" in doit_annoncer(
+        chemins.config_dir, get_version(), notes
+    )
+    # ...et une seule fois
+    assert doit_annoncer(chemins.config_dir, get_version(), notes) is None
