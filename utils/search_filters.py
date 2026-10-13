@@ -33,3 +33,22 @@ def parse_entreprises(
         vus.add(nom.lower())
         resultat.append(nom)
     return resultat
+
+
+def criteres_suffisants(
+    mots_cles: Optional[str],
+    ecoles: Optional[List[str]],
+    entreprises: Optional[List[str]],
+    secteurs: Optional[List[str]],
+) -> bool:
+    """Y a-t-il de quoi lancer une recherche ?
+
+    L'onglet Candidats exigeait auparavant un filtre (école, entreprise ou
+    secteur), ce que l'onglet Clients/Entreprises n'a jamais demandé. Une
+    recherche par mots-clés seuls est pourtant légitime.
+
+    Reste un garde-fou : sans aucun critère, LinkedIn renverrait une liste de
+    profils au hasard, et le quota quotidien d'invitations y passerait sur un
+    simple clic malheureux.
+    """
+    return bool((mots_cles or "").strip() or ecoles or entreprises or secteurs)

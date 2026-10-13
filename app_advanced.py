@@ -13,7 +13,7 @@ import os
 
 from scraper_v2_sync import LinkedInScraperV2Sync
 from config import ScraperConfig, ECOLES, CONCURRENTS, SECTEURS, EMAIL_SUPPORT
-from utils.search_filters import parse_entreprises
+from utils.search_filters import criteres_suffisants, parse_entreprises
 from utils.ecoles import libelle_vise_ecole
 from database import DatabaseManager
 from cookie_utils import CookieManager
@@ -478,8 +478,13 @@ elif page == "🔍 Recherche":
             if st.button("🔍 Lancer le scraping", type="primary", use_container_width=True):
                 if not cookie:
                     st.error("❌ Cookie manquant")
-                elif not ecoles_selectionnees and not entreprises and not secteurs_selectionnes:
-                    st.error("❌ Choisis au moins un filtre : une école, une entreprise / un cabinet, ou un secteur.")
+                elif not criteres_suffisants(
+                    keyword, ecoles_selectionnees, entreprises, secteurs_selectionnes
+                ):
+                    st.error(
+                        "❌ Saisis des mots-clés, ou choisis au moins un filtre. "
+                        "Sans aucun critère, LinkedIn renverrait des profils au hasard."
+                    )
                 else:
                     with st.spinner("🚀 Scraping en cours..."):
                         scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))

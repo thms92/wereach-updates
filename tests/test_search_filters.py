@@ -31,3 +31,30 @@ def test_une_saisie_vide_donne_une_liste_vide():
 
 def test_une_saisie_absente_donne_une_liste_vide():
     assert parse_entreprises(None, None) == []
+
+
+# --- Y a-t-il de quoi lancer une recherche ? ------------------------------
+
+from utils.search_filters import criteres_suffisants
+
+
+def test_des_mots_cles_seuls_suffisent():
+    # L'onglet Candidats exigeait un filtre, contrairement à Clients/Entreprises.
+    # Une recherche par mots-clés seuls est légitime.
+    assert criteres_suffisants("Product Manager", [], [], [])
+
+
+def test_un_filtre_seul_suffit():
+    assert criteres_suffisants("", ["15092700"], [], [])
+    assert criteres_suffisants("", [], ["Capgemini"], [])
+    assert criteres_suffisants("", [], [], ["11"])
+
+
+def test_aucun_critere_ne_suffit_pas():
+    # Sans rien, LinkedIn renverrait des profils au hasard et le quota
+    # quotidien d'invitations y passerait.
+    assert not criteres_suffisants("", [], [], [])
+
+
+def test_des_espaces_ne_sont_pas_des_mots_cles():
+    assert not criteres_suffisants("   ", [], [], [])

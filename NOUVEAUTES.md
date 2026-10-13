@@ -5,6 +5,15 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.2
+
+**Vous pouvez lancer une recherche sans poser de filtre.**
+L'onglet Candidats exigeait au moins une école, une entreprise ou un secteur.
+Des mots-clés seuls suffisent désormais — comme c'était déjà le cas dans
+l'onglet Clients/Entreprises. Seule une recherche entièrement vide reste
+refusée : sans le moindre critère, LinkedIn renverrait des profils au hasard
+et votre quota d'invitations y passerait.
+
 ## 1.4.1
 
 **Relancer We.Reach alors qu'il est déjà ouvert ne pose plus de problème.**
