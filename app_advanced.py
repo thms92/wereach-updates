@@ -26,7 +26,7 @@ from utils.app_auth import verify_access, access_configured, email_domain_ok, AL
 from wefiit_theme import inject_theme, wordmark
 from version import get_version
 from utils.nouveautes import charger_notes, doit_annoncer
-from utils.diagnostic import lien_mailto, rapport
+from utils.diagnostic import lien_mailto, ouvrir_mail, rapport
 
 
 # Configuration Streamlit
@@ -222,10 +222,12 @@ with st.sidebar.expander("🐞 Signaler un problème"):
         "Vous voyez tout avant d'envoyer, et rien ne part sans vous."
     )
     _diagnostic = st.cache_data(ttl=120)(rapport)()
-    st.link_button(
-        "✉️ Préparer le mail", lien_mailto(EMAIL_SUPPORT, _diagnostic),
-        use_container_width=True,
-    )
+    _lien = lien_mailto(EMAIL_SUPPORT, _diagnostic)
+    if st.button("✉️ Préparer le mail", use_container_width=True, type="primary"):
+        if ouvrir_mail(_lien):
+            st.success("Ton logiciel de messagerie s'ouvre avec le mail déjà rédigé.")
+        else:
+            st.warning("Impossible d'ouvrir la messagerie — copie le texte ci-dessous.")
     st.code(_diagnostic)
 
 st.sidebar.divider()

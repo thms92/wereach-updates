@@ -61,3 +61,37 @@ def test_le_lien_mailto_encode_les_caracteres_speciaux():
     assert " " not in lien
     assert "\n" not in lien
     assert "%26" in lien  # l'esperluette casserait l'URL sans encodage
+
+
+# --- Ouverture du client mail ---------------------------------------------
+
+from utils.diagnostic import ouvrir_mail
+
+
+def test_le_mail_s_ouvre_par_la_commande_open(monkeypatch):
+    """`st.link_button` laissait le NAVIGATEUR décider du sort d'un mailto —
+    Chrome et Arc le détournent souvent vers un webmail. L'app tournant sur le
+    Mac de la personne, on appelle `open`, qui respecte le client par défaut
+    du système."""
+    appels = []
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: appels.append(a[0]))
+
+    assert ouvrir_mail("mailto:a@b.fr?subject=x") is True
+    assert appels == [["open", "mailto:a@b.fr?subject=x"]]
+
+
+def test_hors_mac_on_n_ouvre_rien(monkeypatch):
+    # Sur un deploiement serveur, `open` s'executerait sur le serveur et non
+    # chez la personne : on s'abstient plutot que d'agir au mauvais endroit.
+    monkeypatch.setattr("sys.platform", "linux")
+    assert ouvrir_mail("mailto:a@b.fr") is False
+
+
+def test_un_echec_d_ouverture_ne_fait_pas_planter(monkeypatch):
+    def boum(*a, **k):
+        raise OSError("pas de client mail")
+
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("subprocess.run", boum)
+    assert ouvrir_mail("mailto:a@b.fr") is False

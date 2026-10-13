@@ -13,6 +13,7 @@ secrets, car le cookie LinkedIn vaut un accès au compte de la personne.
 import platform
 import re
 import subprocess
+import sys
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
@@ -92,3 +93,23 @@ def lien_mailto(destinataire: str, corps: str, sujet: str = None) -> str:
         quote_via=urllib.parse.quote,
     )
     return f"mailto:{destinataire}?{params}"
+
+
+def ouvrir_mail(lien: str) -> bool:
+    """Ouvre le client de messagerie par défaut du Mac sur un lien mailto.
+
+    Un lien HTML laisserait le NAVIGATEUR décider du sort d'un `mailto:` —
+    Chrome et Arc le détournent volontiers vers un webmail. L'application
+    tournant sur le Mac de la personne, on passe par `open`, qui respecte le
+    client par défaut du système : Mail, Outlook, peu importe lequel.
+
+    Retourne False sans rien faire hors macOS : sur un déploiement serveur,
+    `open` s'exécuterait sur le serveur et non chez la personne.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        subprocess.run(["open", lien], check=False, timeout=10)
+        return True
+    except Exception:
+        return False

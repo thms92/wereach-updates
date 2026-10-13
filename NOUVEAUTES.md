@@ -5,6 +5,13 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.4.3
+
+**Le signalement ouvre votre logiciel de messagerie, plus le navigateur.**
+Le bouton « Préparer le mail » passait par un lien web, que Chrome ou Arc
+détournaient volontiers vers un webmail. Il ouvre maintenant directement
+Mail — ou le logiciel de messagerie que vous avez défini par défaut.
+
 ## 1.4.2
 
 **Vous pouvez lancer une recherche sans poser de filtre.**
