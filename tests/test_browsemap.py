@@ -55,3 +55,139 @@ def test_l_url_du_panneau_se_construit_depuis_celle_du_profil():
 
 def test_l_url_du_panneau_est_nulle_si_ce_n_est_pas_un_profil():
     assert url_panneau("https://www.linkedin.com/company/thiga/") is None
+
+
+# --- Filtrage des suggestions --------------------------------------------
+
+from utils.browsemap import filtrer_suggestions
+
+
+def suggestion(**champs):
+    """Une entrée de panneau, par défaut retenable, surchargeable au besoin."""
+    base = {
+        "nom": "Jean Dupont",
+        "url": URL_SIMPLE,
+        "degre": "2e",
+        "intitule": "Product Manager, Thiga",
+        "invitable": True,
+    }
+    base.update(champs)
+    return base
+
+
+def motifs(ecartees):
+    return [e["motif"] for e in ecartees]
+
+
+def test_une_suggestion_ordinaire_est_retenue():
+    retenues, ecartees = filtrer_suggestions([suggestion()])
+    assert [r["nom"] for r in retenues] == ["Jean Dupont"]
+    assert ecartees == []
+
+
+def test_l_url_retenue_est_canonique():
+    # Ce qui sort d'ici part dans run_url_scraper : les paramètres de suivi
+    # n'ont rien à y faire.
+    brute = URL_SIMPLE + "?miniProfileUrn=urn%3Ali%3Afsd_profile%3AACoAAA"
+    retenues, _ = filtrer_suggestions([suggestion(url=brute)])
+    assert retenues[0]["url"] == URL_SIMPLE
+
+
+def test_le_premier_degre_est_ecarte():
+    _, ecartees = filtrer_suggestions([suggestion(degre="1er")])
+    assert "réseau" in motifs(ecartees)[0]
+
+
+def test_les_autres_degres_sont_retenus():
+    retenues, _ = filtrer_suggestions(
+        [suggestion(degre="2e"), suggestion(url="https://www.linkedin.com/in/marie/", degre="3e")]
+    )
+    assert len(retenues) == 2
+
+
+def test_un_profil_deja_au_fichier_est_ecarte():
+    _, ecartees = filtrer_suggestions([suggestion()], urls_en_base=[URL_SIMPLE])
+    assert "fichier" in motifs(ecartees)[0]
+
+
+def test_le_fichier_est_compare_sous_forme_canonique():
+    # La base peut contenir le lien tel qu'il avait été copié jadis.
+    stockee = "http://www.linkedin.com/in/JEAN-DUPONT-12345?trk=x"
+    _, ecartees = filtrer_suggestions([suggestion()], urls_en_base=[stockee])
+    assert len(ecartees) == 1
+
+
+def test_l_entreprise_de_reference_est_ecartee():
+    # « Le même profil ailleurs » : celui qui y est encore n'est pas la cible.
+    _, ecartees = filtrer_suggestions([suggestion()], entreprise_reference="Thiga")
+    assert "Thiga" in motifs(ecartees)[0]
+
+
+def test_l_entreprise_de_reference_se_compare_sans_tenir_compte_de_la_casse():
+    _, ecartees = filtrer_suggestions([suggestion()], entreprise_reference="thiga")
+    assert len(ecartees) == 1
+
+
+def test_une_entreprise_de_reference_inconnue_n_ecarte_personne():
+    # La page n'a pas permis de la lire : on ne doit ni planter ni tout vider.
+    retenues, ecartees = filtrer_suggestions([suggestion()], entreprise_reference=None)
+    assert len(retenues) == 1 and ecartees == []
+
+
+def test_une_entreprise_de_reference_vide_n_ecarte_personne():
+    retenues, _ = filtrer_suggestions([suggestion()], entreprise_reference="   ")
+    assert len(retenues) == 1
+
+
+def test_les_non_invitables_sont_ecartes_sur_demande():
+    _, ecartees = filtrer_suggestions(
+        [suggestion(invitable=False)], invitables_seulement=True
+    )
+    assert "invitable" in motifs(ecartees)[0]
+
+
+def test_les_non_invitables_sont_gardes_par_defaut():
+    retenues, _ = filtrer_suggestions([suggestion(invitable=False)])
+    assert len(retenues) == 1
+
+
+def test_le_mot_attendu_filtre_sur_l_intitule():
+    _, ecartees = filtrer_suggestions([suggestion()], mot_intitule="Data")
+    assert "Data" in motifs(ecartees)[0]
+
+
+def test_le_mot_attendu_ignore_la_casse_et_les_espaces_de_bord():
+    # Une saisie « product » ne doit pas vider la liste sans raison visible.
+    retenues, _ = filtrer_suggestions([suggestion()], mot_intitule="  product  ")
+    assert len(retenues) == 1
+
+
+def test_un_mot_attendu_vide_ne_filtre_rien():
+    retenues, _ = filtrer_suggestions([suggestion()], mot_intitule="")
+    assert len(retenues) == 1
+
+
+def test_un_lien_illisible_est_ecarte_avec_son_motif():
+    _, ecartees = filtrer_suggestions([suggestion(url="https://example.com/x")])
+    assert "illisible" in motifs(ecartees)[0]
+
+
+def test_le_motif_affiche_est_le_plus_sur_des_motifs_applicables():
+    # 1er degré ET déjà au fichier : le degré est une certitude, l'autre aussi,
+    # mais l'ordre doit être stable pour que l'écran soit compréhensible.
+    _, ecartees = filtrer_suggestions(
+        [suggestion(degre="1er")], urls_en_base=[URL_SIMPLE]
+    )
+    assert "réseau" in motifs(ecartees)[0]
+
+
+def test_une_liste_entierement_ecartee_rend_tous_les_motifs():
+    # L'écran s'en sert : une liste vide sans explication passerait pour un
+    # profil sans voisins.
+    entrees = [suggestion(degre="1er"), suggestion(url="https://www.linkedin.com/in/marie/", degre="1er")]
+    retenues, ecartees = filtrer_suggestions(entrees)
+    assert retenues == [] and len(ecartees) == 2
+
+
+def test_un_panneau_vide_ne_rend_rien_sans_echouer():
+    assert filtrer_suggestions([]) == ([], [])

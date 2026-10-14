@@ -53,3 +53,59 @@ def url_panneau(url):
     """
     canonique = normaliser_url(url)
     return None if canonique is None else canonique + CHEMIN_PANNEAU
+
+
+MOTIF_URL_ILLISIBLE = "lien de profil illisible"
+MOTIF_PREMIER_DEGRE = "déjà dans ton réseau (1er degré)"
+MOTIF_DEJA_AU_FICHIER = "déjà dans ton fichier"
+MOTIF_NON_INVITABLE = "non invitable (« Suivre » seulement)"
+
+
+def filtrer_suggestions(suggestions, urls_en_base=(), entreprise_reference=None,
+                        invitables_seulement=False, mot_intitule=None):
+    """Trie les entrées du panneau en (retenues, écartées).
+
+    Chaque écartée porte son motif, affiché à l'écran : une liste qui se vide
+    doit dire pourquoi, sinon elle passe pour un profil sans voisins — c'est
+    précisément le défaut corrigé en 1.4.7, sous une autre forme.
+
+    L'ordre des exclusions n'est pas indifférent. On écarte d'abord sur ce qui
+    est certain — lien illisible, réseau, fichier —, ensuite sur ce qui est
+    approximatif — l'entreprise, lue dans un intitulé écrit à la main —, enfin
+    sur le choix de la personne. Le motif affiché est donc toujours le plus sûr
+    des motifs applicables.
+    """
+    connues = {normaliser_url(u) for u in (urls_en_base or ())}
+    connues.discard(None)
+
+    entreprise = (entreprise_reference or "").strip().lower()
+    mot = (mot_intitule or "").strip().lower()
+
+    retenues, ecartees = [], []
+
+    for entree in suggestions or ():
+        canonique = normaliser_url(entree.get("url"))
+        intitule = (entree.get("intitule") or "").lower()
+
+        if canonique is None:
+            motif = MOTIF_URL_ILLISIBLE
+        elif (entree.get("degre") or "").strip() == "1er":
+            motif = MOTIF_PREMIER_DEGRE
+        elif canonique in connues:
+            motif = MOTIF_DEJA_AU_FICHIER
+        elif entreprise and entreprise in intitule:
+            # Best effort assumé : qui ne mentionne pas son employeur dans son
+            # intitulé passera le filtre. Le tableau de l'étape 2 affiche la
+            # société lue sur la page de profil, où on le verra.
+            motif = f"encore chez {entreprise_reference.strip()}"
+        elif invitables_seulement and not entree.get("invitable"):
+            motif = MOTIF_NON_INVITABLE
+        elif mot and mot not in intitule:
+            motif = f"l'intitulé ne contient pas « {mot_intitule.strip()} »"
+        else:
+            retenues.append(dict(entree, url=canonique))
+            continue
+
+        ecartees.append(dict(entree, motif=motif))
+
+    return retenues, ecartees
