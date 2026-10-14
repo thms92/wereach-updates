@@ -133,11 +133,14 @@ def test_le_premier_degre_est_ecarte_a_l_ecran(recolte_espionne):
 
 
 def test_l_entreprise_de_reference_est_transmise_au_filtre(recolte_espionne):
-    # « ailleurs » : celui qui est encore chez Thiga n'est pas la cible.
+    # « ailleurs » : celui qui est encore chez Thiga n'est pas la cible, une
+    # fois l'entreprise écartée d'un clic.
     recolte_espionne["reponse"] = (
         [voisin("Marie Martin", "marie-martin", intitule="Lead Dev, Thiga")], "Thiga"
     )
     at = _trouver(_page_recherche())
+    _bouton(at, "Écarter Thiga").click()
+    at.run()
 
     assert at.session_state["sim_retenues"] == []
     assert "Thiga" in at.session_state["sim_ecartees"][0]["motif"]
@@ -292,11 +295,67 @@ def test_entreprise_non_lue_le_champ_est_vide_puis_la_saisie_ecarte(recolte_espi
     assert recolte_espionne["recoltes"] == 1
 
 
-def test_entreprise_lue_le_champ_est_prerempli(recolte_espionne):
-    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], "Thiga")
+def test_entreprise_lue_le_champ_reste_vide_et_elle_est_proposee(recolte_espionne):
+    # Par défaut rien n'est écarté hors fichier et 1er degré : l'entreprise
+    # lue n'est que proposée, jamais appliquée d'office.
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin", intitule="Lead Dev, Thiga")], "Thiga"
+    )
     at = _trouver(_page_recherche())
 
+    assert at.text_input(key="sim_entreprise_exclue").value == ""
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]
+    assert any("Thiga" in c.value for c in at.caption), [c.value for c in at.caption]
+    assert [b for b in at.button if b.label == "Écarter Thiga"]
+
+
+def test_ecarter_l_entreprise_proposee_remplit_le_champ_et_ecarte(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin", intitule="Lead Dev, Thiga"),
+         voisin("Paul Durand", "paul-durand", intitule="Lead Dev, Kering")],
+        "Thiga",
+    )
+    at = _trouver(_page_recherche())
+
+    _bouton(at, "Écarter Thiga").click()
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
     assert at.text_input(key="sim_entreprise_exclue").value == "Thiga"
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Paul Durand"]
+    assert at.session_state["sim_ecartees"][0]["motif"] == "encore chez Thiga"
+    assert recolte_espionne["recoltes"] == 1
+
+
+def test_entreprise_non_lue_aucune_proposition(recolte_espionne):
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _trouver(_page_recherche())
+
+    assert not [b for b in at.button if b.label.startswith("Écarter ")]
+    assert any("n'a pas pu être lue" in c.value for c in at.caption)
+
+
+def test_un_profil_suivre_seulement_est_retenu_par_defaut(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin", invitable=False)], None
+    )
+    at = _trouver(_page_recherche())
+
+    assert at.checkbox(key="sim_invitables").value is False
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]
+
+
+def test_cocher_invitables_ecarte_le_profil_suivre_seulement(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin", invitable=False)], None
+    )
+    at = _trouver(_page_recherche())
+
+    at.checkbox(key="sim_invitables").set_value(True)
+    at.run()
+
+    assert at.session_state["sim_retenues"] == []
+    assert len(at.session_state["sim_ecartees"]) == 1
 
 
 def test_changer_le_mot_apres_trouver_refiltre_sans_nouvelle_recolte(recolte_espionne):
@@ -397,6 +456,9 @@ def test_les_filtres_survivent_a_un_aller_retour_par_une_autre_page(recolte_espi
     at = _page_recherche()
     at.text_input(key="sim_mot").set_value("Product")
     at = _trouver(at)
+    assert at.text_input(key="sim_entreprise_exclue").value == ""
+    _bouton(at, "Écarter Thiga").click()
+    at.run()
     assert at.text_input(key="sim_entreprise_exclue").value == "Thiga"
     assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Paul Durand"]
 
@@ -409,15 +471,15 @@ def test_les_filtres_survivent_a_un_aller_retour_par_une_autre_page(recolte_espi
 
     assert at.text_input(key="sim_entreprise_exclue").value == "Thiga"
     assert at.text_input(key="sim_mot").value == "Product"
-    assert at.checkbox(key="sim_invitables").value is True
+    assert at.checkbox(key="sim_invitables").value is False
     assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Paul Durand"]
     assert recolte_espionne["recoltes"] == 1
 
 
-def test_la_case_invitables_decochee_survit_a_un_changement_de_page(recolte_espionne):
+def test_la_case_invitables_cochee_survit_a_un_changement_de_page(recolte_espionne):
     recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
     at = _page_recherche()
-    at.checkbox(key="sim_invitables").set_value(False)
+    at.checkbox(key="sim_invitables").set_value(True)
     at = _trouver(at)
 
     at.session_state["page"] = "💾 Historique"
@@ -425,7 +487,7 @@ def test_la_case_invitables_decochee_survit_a_un_changement_de_page(recolte_espi
     at.session_state["page"] = "🔍 Recherche"
     at.run()
 
-    assert at.checkbox(key="sim_invitables").value is False
+    assert at.checkbox(key="sim_invitables").value is True
 
 
 # --- Les avertissements se voient, l'avancement aussi ----------------------
@@ -526,4 +588,4 @@ def test_aucun_widget_n_a_a_la_fois_une_valeur_par_defaut_et_une_valeur_en_sessi
     assert not any("default value" in m for m in avertissements_streamlit), (
         avertissements_streamlit
     )
-    assert at.checkbox(key="sim_invitables").value is True
+    assert at.checkbox(key="sim_invitables").value is False

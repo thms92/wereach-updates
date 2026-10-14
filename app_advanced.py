@@ -870,7 +870,7 @@ elif page == "🔍 Recherche":
             # réaffectation qui retient les filtres d'une page à l'autre
             # (en tête de script) écrit aussi cette clé, et Streamlit avertit
             # quand un widget reçoit les deux.
-            st.session_state.setdefault("sim_invitables", True)
+            st.session_state.setdefault("sim_invitables", False)
             sim_invitables = st.checkbox(
                 "Seulement les profils invitables",
                 key="sim_invitables",
@@ -935,9 +935,9 @@ elif page == "🔍 Recherche":
                 # relancer une récolte de plusieurs minutes.
                 st.session_state["sim_suggestions"] = suggestions
                 st.session_state["sim_entreprise"] = entreprise
-                # Pré-remplie avec ce qui a été lu, vide sinon : la personne
-                # la saisit (spec §7), l'exclusion n'est pas abandonnée.
-                st.session_state["sim_entreprise_exclue"] = entreprise or ""
+                # Vide : par défaut rien n'est écarté hors fichier et 1er
+                # degré. L'entreprise lue n'est que proposée sous le champ.
+                st.session_state["sim_entreprise_exclue"] = ""
                 st.session_state["sim_erreurs"] = list(scraper.errors)
                 # Une nouvelle liste ne démarre jamais avec les invitations
                 # cochées : l'envoi est irréversible et le quota rare.
@@ -960,9 +960,20 @@ elif page == "🔍 Recherche":
                      "entreprise sont écartés : on cherche le même profil "
                      "ailleurs.",
             )
-            if not st.session_state.get("sim_entreprise"):
+            entreprise_lue = st.session_state.get("sim_entreprise")
+            if entreprise_lue:
+                st.caption(f"Entreprise du profil de départ : **{entreprise_lue}**")
+                # Le rappel s'exécute avant le rerun, donc avant que le champ
+                # soit redessiné : seul endroit sûr pour écrire sa clé.
+                st.button(
+                    f"Écarter {entreprise_lue}",
+                    key="sim_btn_ecarter_ref",
+                    on_click=lambda: st.session_state.__setitem__(
+                        "sim_entreprise_exclue", entreprise_lue),
+                )
+            else:
                 st.caption(
-                    "L'entreprise du profil de référence n'a pas pu être lue : "
+                    "L'entreprise du profil de départ n'a pas pu être lue : "
                     "saisissez-la ci-dessus pour écarter ceux qui y travaillent "
                     "encore."
                 )
