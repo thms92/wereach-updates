@@ -161,6 +161,16 @@ with st.sidebar.container(key="nav_menu"):
 
 page = st.session_state["page"]
 
+# Streamlit abandonne l'état d'un widget dès qu'un rerun ne le dessine pas, et
+# les pages sont ici des branches d'un même script : aller sur Historique puis
+# revenir vidait les filtres de « Profils similaires » alors que la liste
+# trouvée, elle, restait en session — et réapparaissaient alors en silence les
+# gens encore chez l'entreprise de référence. Se réaffecter la valeur à chaque
+# rerun la retient. Pas sim_inviter ni sim_message : repartir décoché est voulu.
+for _cle_filtre in ("sim_entreprise_exclue", "sim_mot", "sim_invitables"):
+    if _cle_filtre in st.session_state:
+        st.session_state[_cle_filtre] = st.session_state[_cle_filtre]
+
 # Reglages techniques : masques pour l'equipe. Le proxy n'a pas de sens
 # quand chacun scrape depuis son propre Mac, et Reglages contient un
 # bouton qui efface toute la base. Deposer un fichier `admin` dans le

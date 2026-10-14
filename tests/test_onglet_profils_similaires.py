@@ -372,3 +372,52 @@ def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
     _bouton(at, BOUTON_RECUPERER).click()
     at.run()
     assert recolte_espionne["appels"][0]["inviter"] is True
+
+
+# --- Les filtres survivent à un changement de page -------------------------
+
+
+def test_les_filtres_survivent_a_un_aller_retour_par_une_autre_page(recolte_espionne):
+    # Streamlit abandonne l'état d'un widget dès qu'un rerun ne le dessine pas,
+    # et les pages sont des branches d'un même script : sans parade, revenir
+    # sur Recherche vide « Entreprise à écarter » alors que la liste, elle,
+    # survit — et on y revoit en silence ceux qui sont encore chez Thiga.
+    recolte_espionne["reponse"] = (
+        [
+            voisin("Marie Martin", "marie-martin", intitule="Product Manager, Thiga"),
+            voisin("Paul Durand", "paul-durand", intitule="Product Manager, Kering"),
+        ],
+        "Thiga",
+    )
+    at = _page_recherche()
+    at.text_input(key="sim_mot").set_value("Product")
+    at = _trouver(at)
+    assert at.text_input(key="sim_entreprise_exclue").value == "Thiga"
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Paul Durand"]
+
+    at.session_state["page"] = "💾 Historique"
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    at.session_state["page"] = "🔍 Recherche"
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+    assert at.text_input(key="sim_entreprise_exclue").value == "Thiga"
+    assert at.text_input(key="sim_mot").value == "Product"
+    assert at.checkbox(key="sim_invitables").value is True
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Paul Durand"]
+    assert recolte_espionne["recoltes"] == 1
+
+
+def test_la_case_invitables_decochee_survit_a_un_changement_de_page(recolte_espionne):
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _page_recherche()
+    at.checkbox(key="sim_invitables").set_value(False)
+    at = _trouver(at)
+
+    at.session_state["page"] = "💾 Historique"
+    at.run()
+    at.session_state["page"] = "🔍 Recherche"
+    at.run()
+
+    assert at.checkbox(key="sim_invitables").value is False
