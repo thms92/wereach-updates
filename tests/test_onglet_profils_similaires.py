@@ -7,6 +7,8 @@ tests vérifient ce câblage — ce qui part dans la récolte, ce que le filtre
 reçoit, ce qui reste à l'écran.
 """
 
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 
@@ -34,15 +36,26 @@ def recolte_espionne(monkeypatch):
     `reponse` est modifiable par le test ; `appels` capture ce qui a été
     demandé.
     """
-    etat = {"reponse": ([], None), "appels": []}
+    etat = {"reponse": ([], None), "appels": [], "recoltes": 0,
+            "invitations_restantes": 1000}
+
+    class FauxLimites:
+        """Le plafond du jour, dictée par le test."""
+        def remaining_invitations(self):
+            return etat["invitations_restantes"]
 
     class FauxScraper:
         def __init__(self, **kwargs):
             self.errors = []
             self.use_database = False
+            # Même chemin que le vrai : scraper.scraper.human.daily_limits.
+            self.scraper = SimpleNamespace(
+                human=SimpleNamespace(daily_limits=FauxLimites())
+            )
 
         def recolter_browsemap(self, **kwargs):
             etat["appels"].append(kwargs)
+            etat["recoltes"] += 1
             return etat["reponse"]
 
         def run_url_scraper(self, **kwargs):
@@ -88,7 +101,7 @@ def test_un_lien_qui_n_est_pas_un_profil_est_refuse_sans_rien_lancer(recolte_esp
     at = _trouver(_page_recherche(), "https://www.linkedin.com/company/thiga/")
 
     assert recolte_espionne["appels"] == []
-    assert at.error, "aucun message d'erreur affiché"
+    assert any("/in/" in e.value for e in at.error), [e.value for e in at.error]
 
 
 def test_les_profils_retenus_sont_mis_en_session(recolte_espionne):
@@ -183,7 +196,7 @@ def test_un_cookie_absent_est_signale(recolte_espionne):
     at = _trouver(at)
 
     assert recolte_espionne["appels"] == []
-    assert at.error
+    assert any("Cookie manquant" in e.value for e in at.error), [e.value for e in at.error]
 
 
 # --- Étape 2 : récupérer et inviter --------------------------------------
@@ -252,3 +265,110 @@ def test_la_liste_trouvee_survit_au_rerun_de_l_etape_2(recolte_espionne):
     at.run()
 
     assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]
+
+
+# --- Entreprise à écarter : saisie manuelle quand elle n'a pas été lue ----
+
+
+def test_entreprise_non_lue_le_champ_est_vide_puis_la_saisie_ecarte(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin", intitule="Lead Dev, Kering")], None
+    )
+    at = _trouver(_page_recherche())
+
+    assert at.text_input(key="sim_entreprise_exclue").value == ""
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]
+
+    at.text_input(key="sim_entreprise_exclue").set_value("Kering")
+    at.run()
+
+    assert at.session_state["sim_retenues"] == []
+    assert at.session_state["sim_ecartees"][0]["motif"] == "encore chez Kering"
+    assert recolte_espionne["recoltes"] == 1
+
+
+def test_entreprise_lue_le_champ_est_prerempli(recolte_espionne):
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], "Thiga")
+    at = _trouver(_page_recherche())
+
+    assert at.text_input(key="sim_entreprise_exclue").value == "Thiga"
+
+
+def test_changer_le_mot_apres_trouver_refiltre_sans_nouvelle_recolte(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [
+            voisin("Marie Martin", "marie-martin", intitule="Product Manager, Kering"),
+            voisin("Paul Durand", "paul-durand", intitule="Data Engineer, Kering"),
+        ],
+        None,
+    )
+    at = _trouver(_page_recherche())
+    assert len(at.session_state["sim_retenues"]) == 2
+
+    at.text_input(key="sim_mot").set_value("Product")
+    at.run()
+
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]
+    assert recolte_espionne["recoltes"] == 1
+
+
+# --- Invitations : jamais cochées d'office, jamais au-delà du plafond ------
+
+
+def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _trouver(_page_recherche())
+    at.checkbox(key="sim_inviter").set_value(True)
+    at.run()
+    assert at.checkbox(key="sim_inviter").value is True
+
+    at = _trouver(at)
+    assert at.checkbox(key="sim_inviter").value is False
+
+    recolte_espionne["appels"].clear()
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+    assert recolte_espionne["appels"][0]["inviter"] is False
+
+
+def test_au_dela_du_plafond_du_jour_rien_ne_part(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand"),
+         voisin("Anne Petit", "anne-petit")],
+        None,
+    )
+    at = _trouver(_page_recherche())
+    at.checkbox(key="sim_inviter").set_value(True)
+    at.run()
+    recolte_espionne["invitations_restantes"] = 2
+    recolte_espionne["appels"].clear()
+
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+
+    assert recolte_espionne["appels"] == []
+    messages = [e.value for e in at.error]
+    assert any("2 invitation(s)" in m and "3 profil(s)" in m for m in messages), messages
+
+
+def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand")],
+        None,
+    )
+    at = _trouver(_page_recherche())
+    recolte_espionne["invitations_restantes"] = 0
+    recolte_espionne["appels"].clear()
+
+    # Plafond atteint mais pas d'invitation demandée : le scrape part.
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+    assert len(recolte_espionne["appels"]) == 1
+
+    recolte_espionne["invitations_restantes"] = 2
+    at.checkbox(key="sim_inviter").set_value(True)
+    at.run()
+    recolte_espionne["appels"].clear()
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+    assert recolte_espionne["appels"][0]["inviter"] is True

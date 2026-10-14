@@ -877,8 +877,9 @@ elif page == "🔍 Recherche":
             # l'ancienne référence resterait affichée sous la nouvelle erreur.
             if (not st.session_state.global_cookie
                     or vanity_depuis_url(sim_url) is None):
-                for cle in ("sim_retenues", "sim_ecartees",
-                            "sim_entreprise", "sim_erreurs"):
+                for cle in ("sim_retenues", "sim_ecartees", "sim_suggestions",
+                            "sim_urls_connues", "sim_entreprise",
+                            "sim_entreprise_exclue", "sim_erreurs"):
                     st.session_state.pop(cle, None)
 
             if not st.session_state.global_cookie:
@@ -901,24 +902,57 @@ elif page == "🔍 Recherche":
 
                 # Les URLs du fichier servent de filtre, comparées sous forme
                 # canonique des deux côtés — la base contient les liens tels
-                # qu'ils ont été copiés.
-                urls_en_base = (
+                # qu'ils ont été copiés. Lues une fois ici : le filtre est
+                # rejoué à chaque rerun, on n'interroge pas la base à chaque
+                # frappe dans un champ.
+                st.session_state["sim_urls_connues"] = list(
                     scraper.db.urls_connues() if scraper.use_database else ()
                 )
 
-                retenues, ecartees = filtrer_suggestions(
-                    suggestions,
-                    urls_en_base=urls_en_base,
-                    entreprise_reference=entreprise,
-                    invitables_seulement=sim_invitables,
-                    mot_intitule=sim_mot,
+                # Les suggestions brutes restent en session : les filtres de
+                # l'écran (entreprise, invitables, mot) les rejouent sans
+                # relancer une récolte de plusieurs minutes.
+                st.session_state["sim_suggestions"] = suggestions
+                st.session_state["sim_entreprise"] = entreprise
+                # Pré-remplie avec ce qui a été lu, vide sinon : la personne
+                # la saisit (spec §7), l'exclusion n'est pas abandonnée.
+                st.session_state["sim_entreprise_exclue"] = entreprise or ""
+                st.session_state["sim_erreurs"] = list(scraper.errors)
+                # Une nouvelle liste ne démarre jamais avec les invitations
+                # cochées : l'envoi est irréversible et le quota rare.
+                st.session_state.pop("sim_inviter", None)
+                st.session_state.pop("sim_message", None)
+                status_text.empty()
+
+        sim_suggestions = st.session_state.get("sim_suggestions")
+
+        if sim_suggestions is not None:
+            st.text_input(
+                "Entreprise à écarter",
+                key="sim_entreprise_exclue",
+                help="Les profils dont l'intitulé mentionne encore cette "
+                     "entreprise sont écartés : on cherche le même profil "
+                     "ailleurs.",
+            )
+            if not st.session_state.get("sim_entreprise"):
+                st.caption(
+                    "L'entreprise du profil de référence n'a pas pu être lue : "
+                    "saisissez-la ci-dessus pour écarter ceux qui y travaillent "
+                    "encore."
                 )
 
-                st.session_state["sim_retenues"] = retenues
-                st.session_state["sim_ecartees"] = ecartees
-                st.session_state["sim_entreprise"] = entreprise
-                st.session_state["sim_erreurs"] = list(scraper.errors)
-                status_text.empty()
+            retenues, ecartees = filtrer_suggestions(
+                sim_suggestions,
+                urls_en_base=st.session_state.get("sim_urls_connues") or (),
+                entreprise_reference=st.session_state.get("sim_entreprise_exclue"),
+                invitables_seulement=sim_invitables,
+                mot_intitule=sim_mot,
+            )
+            st.session_state["sim_retenues"] = retenues
+            st.session_state["sim_ecartees"] = ecartees
+        else:
+            st.session_state.pop("sim_retenues", None)
+            st.session_state.pop("sim_ecartees", None)
 
         sim_retenues = st.session_state.get("sim_retenues")
         sim_ecartees = st.session_state.get("sim_ecartees") or []
@@ -927,18 +961,6 @@ elif page == "🔍 Recherche":
             st.warning(f"⚠️ {erreur}")
 
         if sim_retenues is not None:
-            if st.session_state.get("sim_entreprise"):
-                st.caption(
-                    f"Entreprise du profil de référence : "
-                    f"**{st.session_state['sim_entreprise']}** — ceux qui y "
-                    f"sont encore ont été écartés."
-                )
-            else:
-                st.caption(
-                    "L'entreprise du profil de référence n'a pas pu être lue : "
-                    "ceux qui y travaillent encore n'ont donc pas été écartés."
-                )
-
             if sim_retenues:
                 st.success(f"✅ {len(sim_retenues)} profil(s) retenu(s)")
                 st.dataframe(
@@ -1004,47 +1026,68 @@ elif page == "🔍 Recherche":
                         scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
                         urls = [p["url"] for p in sim_retenues]
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
 
-                        with st.spinner(f"🔄 {len(urls)} profils en cours..."):
-                            df = scraper.run_url_scraper(
-                                cookie=st.session_state.global_cookie,
-                                urls=urls,
-                                inviter=sim_inviter,
-                                message_invitation=sim_message,
-                                progress_callback=lambda p: progress_bar.progress(min(p, 1.0)),
-                                status_callback=lambda s: status_text.text(s),
+                        # Le plafond du jour est contrôlé ici, avant tout
+                        # lancement : la chaîne partagée ne vérifie qu'« au
+                        # moins une restante » à l'entrée et s'arrêterait au
+                        # milieu de la liste, après avoir ouvert Chrome.
+                        restantes = None
+                        if sim_inviter:
+                            restantes = (
+                                scraper.scraper.human.daily_limits
+                                .remaining_invitations()
                             )
 
-                        if not df.empty:
-                            st.success(f"✅ {len(df)} profils récupérés sur {len(urls)} !")
-                            st.dataframe(df, use_container_width=True)
-
-                            excel_data = st.session_state.export_manager.export_to_excel(df.to_dict('records'))
-                            st.download_button(
-                                label="📥 Télécharger Excel",
-                                data=excel_data,
-                                file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key="sim_dl_excel",
-                            )
-
-                            csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
-                            st.download_button(
-                                label="📥 Télécharger CSV",
-                                data=csv_data,
-                                file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                mime="text/csv",
-                                key="sim_dl_csv",
+                        if restantes is not None and len(urls) > restantes:
+                            st.error(
+                                f"❌ Il ne reste que {restantes} invitation(s) "
+                                f"aujourd'hui pour {len(urls)} profil(s) "
+                                f"retenu(s). Décochez « Envoyer des "
+                                f"invitations », ou resserrez la liste avec "
+                                f"les filtres."
                             )
                         else:
-                            st.warning("⚠️ Aucun profil récupéré")
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
 
-                        if scraper.errors:
-                            with st.expander(f"⚠️ Erreurs ({len(scraper.errors)})"):
-                                for err in scraper.errors:
-                                    st.write(f"- {err}")
+                            with st.spinner(f"🔄 {len(urls)} profils en cours..."):
+                                df = scraper.run_url_scraper(
+                                    cookie=st.session_state.global_cookie,
+                                    urls=urls,
+                                    inviter=sim_inviter,
+                                    message_invitation=sim_message,
+                                    progress_callback=lambda p: progress_bar.progress(min(p, 1.0)),
+                                    status_callback=lambda s: status_text.text(s),
+                                )
+
+                            if not df.empty:
+                                st.success(f"✅ {len(df)} profils récupérés sur {len(urls)} !")
+                                st.dataframe(df, use_container_width=True)
+
+                                excel_data = st.session_state.export_manager.export_to_excel(df.to_dict('records'))
+                                st.download_button(
+                                    label="📥 Télécharger Excel",
+                                    data=excel_data,
+                                    file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key="sim_dl_excel",
+                                )
+
+                                csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                                st.download_button(
+                                    label="📥 Télécharger CSV",
+                                    data=csv_data,
+                                    file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                    mime="text/csv",
+                                    key="sim_dl_csv",
+                                )
+                            else:
+                                st.warning("⚠️ Aucun profil récupéré")
+
+                            if scraper.errors:
+                                with st.expander(f"⚠️ Erreurs ({len(scraper.errors)})"):
+                                    for err in scraper.errors:
+                                        st.write(f"- {err}")
 
 # ==============================================
 # PAGE 5: HISTORIQUE
