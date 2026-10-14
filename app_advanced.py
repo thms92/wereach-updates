@@ -20,6 +20,7 @@ from utils.search_filters import (criteres_suffisants,
                                   ecoles_sans_identifiant,
                                   parse_entreprises)
 from utils.ecoles import libelle_vise_ecole
+from utils.browsemap import filtrer_suggestions, vanity_depuis_url
 from database import DatabaseManager
 from cookie_utils import CookieManager
 from export_utils import ExportManager
@@ -466,8 +467,9 @@ elif page == "🔍 Recherche":
         )
 
     st.write("")
-    tab1, tab2, tab3 = st.tabs(
-        ["👤 Candidats", "🏢 Clients/Entreprises", "🔗 Par URLs"]
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["👤 Candidats", "🏢 Clients/Entreprises", "🔗 Par URLs",
+         "👥 Profils similaires"]
     )
 
     # TAB 1: CANDIDATS
@@ -832,6 +834,128 @@ elif page == "🔍 Recherche":
                         with st.expander(f"⚠️ Erreurs ({len(scraper.errors)})"):
                             for err in scraper.errors:
                                 st.write(f"- {err}")
+
+    # TAB 4: PROFILS SIMILAIRES
+    with tab4:
+        st.subheader("Retrouver un profil comme celui-là, ailleurs")
+        st.caption(
+            "Partez d'un profil qui vous a donné satisfaction : LinkedIn "
+            "propose lui-même les profils que les mêmes personnes consultent. "
+            "Les gens déjà dans votre réseau ou déjà dans votre fichier sont "
+            "écartés."
+        )
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            sim_url = st.text_input(
+                "Lien du profil de référence",
+                placeholder="https://www.linkedin.com/in/jean-dupont-12345/",
+                key="sim_url",
+                help="Le profil de quelqu'un que vous avez déjà placé, par exemple.",
+            )
+
+        with col2:
+            sim_invitables = st.checkbox(
+                "Seulement les profils invitables",
+                value=True,
+                key="sim_invitables",
+                help="Écarte ceux qui ne proposent que « Suivre » : ils ne "
+                     "peuvent pas recevoir d'invitation.",
+            )
+            sim_mot = st.text_input(
+                "Mot attendu dans l'intitulé (optionnel)",
+                placeholder="Product",
+                key="sim_mot",
+                help="Pour resserrer si la liste part dans une direction qui "
+                     "ne vous intéresse pas.",
+            )
+
+        if st.button("👥 Trouver des profils similaires", type="primary",
+                     use_container_width=True, key="sim_btn_trouver"):
+            if not st.session_state.global_cookie:
+                st.error("❌ Cookie manquant")
+            elif vanity_depuis_url(sim_url) is None:
+                st.error(
+                    "❌ Ce lien n'est pas celui d'un profil LinkedIn — "
+                    "il doit contenir « /in/ »"
+                )
+            else:
+                scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
+
+                status_text = st.empty()
+                with st.spinner("🔄 Lecture des profils voisins..."):
+                    suggestions, entreprise = scraper.recolter_browsemap(
+                        cookie=st.session_state.global_cookie,
+                        url_reference=sim_url,
+                        status_callback=lambda s: status_text.text(s),
+                    )
+
+                # Les URLs du fichier servent de filtre, comparées sous forme
+                # canonique des deux côtés — la base contient les liens tels
+                # qu'ils ont été copiés.
+                urls_en_base = (
+                    scraper.db.urls_connues() if scraper.use_database else ()
+                )
+
+                retenues, ecartees = filtrer_suggestions(
+                    suggestions,
+                    urls_en_base=urls_en_base,
+                    entreprise_reference=entreprise,
+                    invitables_seulement=sim_invitables,
+                    mot_intitule=sim_mot,
+                )
+
+                st.session_state["sim_retenues"] = retenues
+                st.session_state["sim_ecartees"] = ecartees
+                st.session_state["sim_entreprise"] = entreprise
+                st.session_state["sim_erreurs"] = list(scraper.errors)
+                status_text.empty()
+
+        sim_retenues = st.session_state.get("sim_retenues")
+        sim_ecartees = st.session_state.get("sim_ecartees") or []
+
+        for erreur in st.session_state.get("sim_erreurs") or []:
+            st.warning(f"⚠️ {erreur}")
+
+        if sim_retenues is not None:
+            if st.session_state.get("sim_entreprise"):
+                st.caption(
+                    f"Entreprise du profil de référence : "
+                    f"**{st.session_state['sim_entreprise']}** — ceux qui y "
+                    f"sont encore ont été écartés."
+                )
+            else:
+                st.caption(
+                    "L'entreprise du profil de référence n'a pas pu être lue : "
+                    "ceux qui y travaillent encore n'ont donc pas été écartés."
+                )
+
+            if sim_retenues:
+                st.success(f"✅ {len(sim_retenues)} profil(s) retenu(s)")
+                st.dataframe(
+                    pd.DataFrame(sim_retenues).reindex(
+                        # reindex et non un simple [[...]] : une clé absente
+                        # ferait planter la page entière au lieu d'afficher
+                        # une colonne vide.
+                        columns=["nom", "degre", "intitule", "invitable", "url"]
+                    ).rename(columns={
+                        "nom": "Nom", "degre": "Degré", "intitule": "Intitulé",
+                        "invitable": "Invitable", "url": "Lien",
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            elif not st.session_state.get("sim_erreurs"):
+                st.info(
+                    "Aucun profil retenu — tout a été écarté par les filtres. "
+                    "Le détail est juste en dessous."
+                )
+
+            if sim_ecartees:
+                with st.expander(f"🚫 {len(sim_ecartees)} profil(s) écarté(s) — pourquoi"):
+                    for e in sim_ecartees:
+                        st.markdown(f"- **{e.get('nom') or '(sans nom)'}** — {e['motif']}")
 
 # ==============================================
 # PAGE 5: HISTORIQUE
