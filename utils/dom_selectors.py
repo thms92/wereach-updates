@@ -757,6 +757,9 @@ class DOMSelectors:
 
         Le panneau est un overlay : on part de `div[role="dialog"]` plutôt
         que de `main`, qui porte encore le profil de référence dessous.
+        Sans dialogue, on ne se rabat PAS sur `main` ou `body` : on y
+        lirait des liens `/in/` qui ne sont pas des suggestions, et des
+        données plausibles mais fausses valent moins qu'un échec bruyant.
 
         Écrit défensivement, comme `extract_profiles_data_js` : on n'ancre sur
         aucune classe CSS — LinkedIn les regénère — mais sur les liens `/in/`
@@ -765,13 +768,15 @@ class DOMSelectors:
         un changement de structure.
         """
         return """() => {
-            const racine = document.querySelector('div[role="dialog"]')
-                        || document.querySelector('main')
-                        || document.body;
+            const racine = document.querySelector('div[role="dialog"]');
+            if (!racine) {
+                return {entrees: [], html: document.body.innerHTML.slice(0, 20000)};
+            }
 
             // Libellés de boutons et marqueurs de degré : du bruit, jamais un
             // nom ni un intitulé.
             const bruit = /^(se connecter|suivre|s'abonner|message|inviter|· ?(1er|2e|3e)|(1er|2e|3e) ?·?)$/i;
+            const motInvitation = /(se connecter|inviter|connect)/i;
 
             const vus = new Set();
             const entrees = [];
@@ -783,8 +788,9 @@ class DOMSelectors:
                 const vanity = m[1].toLowerCase();
                 if (vus.has(vanity)) continue;
 
-                const carte = lien.closest('li')
-                           || lien.closest('div[role="listitem"]')
+                // Le plus proche des deux : un li englobant une liste entière
+                // fusionnerait toutes les cartes en une seule.
+                const carte = lien.closest('li, div[role="listitem"]')
                            || lien.parentElement;
                 if (!carte) continue;
 
@@ -802,8 +808,16 @@ class DOMSelectors:
                 }
                 if (!nom) continue;
 
-                // Degré : LinkedIn l'écrit « · 2e » à côté du nom.
-                const degre = (texte.match(/\\b(1er|2e|3e)\\b/) || [''])[0];
+                // Degré : le marqueur « · 2e » d'abord ; à défaut une ligne qui
+                // ne contient que le degré. Jamais un « 2e » trouvé au milieu
+                // d'un intitulé (« 2e année d'alternance »).
+                let degre = '';
+                const marque = texte.match(/·\\s*(1er|2e|3e)\\b/);
+                if (marque) {
+                    degre = marque[1];
+                } else {
+                    degre = lignes.find(l => /^(1er|2e|3e)$/.test(l)) || '';
+                }
 
                 // Intitulé : la plus longue ligne restante. Gardé brut — il est
                 // écrit à la main, dans tous les formats imaginables, et un
@@ -815,8 +829,13 @@ class DOMSelectors:
                     if (ligne.length > intitule.length) intitule = ligne;
                 }
 
-                const bas = texte.toLowerCase();
-                const invitable = bas.includes('se connecter') || bas.includes('inviter');
+                // Invitable : décidé sur les boutons de la carte seulement. Un
+                // intitulé « Connecteur de talents » ne doit pas compter.
+                const invitable = Array.from(
+                    carte.querySelectorAll('button, a[role="button"], a[href*="invite"]')
+                ).some(b => motInvitation.test(
+                    (b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')
+                ));
 
                 vus.add(vanity);
                 entrees.push({nom, url: href, degre, intitule, invitable});

@@ -1813,7 +1813,7 @@ class LinkedInScraperV2:
         logger.info(f"📜 Panneau déroulé : {precedent} liens de profil visibles")
         return max(precedent, 0)
 
-    def _dumper_panneau(self, html: str) -> None:
+    def _dumper_panneau(self, html: str) -> bool:
         """Écrit le panneau sur disque quand on n'y a rien lu.
 
         Même geste que `extraire_profils_page` : le jour où LinkedIn change sa
@@ -1821,16 +1821,61 @@ class LinkedInScraperV2:
         yeux — faute de quoi on cherche à l'aveugle.
         """
         if not html:
-            return
+            return False
         try:
-            from pathlib import Path
             dossier = Path(__file__).parent / 'logs'
             dossier.mkdir(exist_ok=True)
             fichier = dossier / 'browsemap_dump.html'
             fichier.write_text(html, encoding='utf-8')
             logger.warning(f"⚠️ Panneau illisible — HTML enregistré dans {fichier}")
+            return True
         except Exception as err:
             logger.warning(f"⚠️ Impossible d'enregistrer le panneau: {err}")
+            return False
+
+    async def _entreprise_reference(self, page: Page) -> Optional[str]:
+        """Entreprise actuelle du profil de référence, ou None.
+
+        `extraire_profil_depuis_page` cherche les logos d'entreprise dans
+        tout le document : ici, il y piocherait celui d'une carte voisine du
+        panneau et rendrait une entreprise fausse mais crédible. On borne donc
+        la recherche à la carte de tête du profil, hors de tout dialogue.
+        None vaut « non lue » : l'appelant la demande à la personne.
+        """
+        societe = await page.evaluate("""() => {
+            const hors = el => !el.closest('[role="dialog"]');
+            const main = document.querySelector('main');
+            if (!main) return '';
+            const section = main.querySelector('section') || main;
+            const lire = conteneur => {
+                for (const p of conteneur.querySelectorAll('p')) {
+                    const txt = p.textContent.trim();
+                    const bas = txt.toLowerCase();
+                    if (txt.length > 1 && txt.length < 100
+                        && !bas.includes('premium') && !bas.includes('abonné')) {
+                        return txt;
+                    }
+                }
+                return '';
+            };
+            for (const img of section.querySelectorAll('img[src*="company-logo"]')) {
+                if (!hors(img)) continue;
+                const c = img.closest('[role="button"]') || img.closest('a')
+                       || img.parentElement?.parentElement?.parentElement;
+                const t = c ? lire(c) : '';
+                if (t) return t;
+            }
+            for (const icone of section.querySelectorAll('svg[id*="company"]')) {
+                if (!hors(icone)) continue;
+                const fig = icone.closest('figure');
+                if (!fig) continue;
+                const w = fig.parentElement?.closest('div') || fig.parentElement;
+                const t = w ? lire(w) : '';
+                if (t) return t;
+            }
+            return '';
+        }""")
+        return (societe or '').strip() or None
 
     async def recolter_browsemap_async(
         self,
@@ -1880,7 +1925,10 @@ class LinkedInScraperV2:
                     self.errors.append(f"Impossible d'ouvrir le panneau : {cible}")
                     return [], None
 
-                if any(x in page.url for x in ["login", "authwall"]):
+                # Segments de chemin, pas sous-chaînes : /in/jean-loginov/ est
+                # un profil, pas une page de connexion.
+                chemin = urllib.parse.urlparse(page.url).path
+                if chemin.startswith(("/login", "/authwall", "/checkpoint", "/uas/login")):
                     self.errors.append("Redirigé vers login — cookie invalide.")
                     return [], None
 
@@ -1888,9 +1936,7 @@ class LinkedInScraperV2:
 
                 # L'entreprise actuelle du profil de référence, lue au passage
                 # sur la même page : c'est tout ce dont le « ailleurs » a besoin.
-                entreprise = (
-                    await self.extraire_profil_depuis_page(page)
-                ).get("entreprise") or None
+                entreprise = await self._entreprise_reference(page)
 
                 if status_callback:
                     status_callback("📜 Déroulement de la liste...")
@@ -1899,21 +1945,39 @@ class LinkedInScraperV2:
                 brut = await page.evaluate(DOMSelectors.extract_browsemap_js())
                 entrees = brut.get("entrees", [])
 
-                if not entrees:
-                    self._dumper_panneau(brut.get("html", ""))
-                    self.errors.append(
-                        "Aucun profil voisin lu dans le panneau. Si ce profil "
-                        "en affiche bien sur LinkedIn, sa structure a changé : "
-                        "le contenu de la page est enregistré dans logs/ pour "
-                        "analyse."
-                    )
-
                 # Le lien du profil de référence figure dans sa propre page :
-                # ce n'est pas une suggestion.
+                # ce n'est pas une suggestion. Le contrôle de vide porte sur
+                # ce qui reste, sinon un panneau où l'on ne lit que ce lien
+                # rendrait une liste vide sans un mot.
                 suggestions = [
                     e for e in entrees
                     if vanity_depuis_url(e.get("url")) not in (None, reference)
                 ]
+
+                # Des noms tous identiques trahissent des cartes fusionnées :
+                # mieux vaut un échec bruyant que N copies d'une même personne.
+                if len(suggestions) >= 2 and len({e.get("nom") for e in suggestions}) == 1:
+                    self.errors.append(
+                        "Le panneau a été lu de travers (toutes les entrées "
+                        "portent le même nom) : sa structure a probablement "
+                        "changé."
+                    )
+                    self._dumper_panneau(brut.get("html", "") or "")
+                    return [], entreprise
+
+                if not suggestions:
+                    enregistre = self._dumper_panneau(brut.get("html", ""))
+                    suite = (
+                        "le contenu de la page est enregistré dans logs/ "
+                        "pour analyse." if enregistre
+                        else "le contenu de la page n'a pas pu être enregistré."
+                    )
+                    self.errors.append(
+                        "Aucun profil voisin lu dans le panneau. Si ce profil "
+                        "en affiche bien sur LinkedIn, sa structure a changé : "
+                        + suite
+                    )
+                    return [], entreprise
 
                 logger.info(f"✅ {len(suggestions)} profils voisins retenus du panneau")
                 return suggestions, entreprise
