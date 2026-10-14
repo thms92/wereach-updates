@@ -6,6 +6,8 @@ contient les liens tels qu'ils ont été copiés. La comparaison se fait sur des
 formes canoniques, des deux côtés — ce qui suppose de lire celles stockées.
 """
 
+import sqlite3
+
 from database import DatabaseManager
 
 
@@ -40,8 +42,16 @@ def test_les_urls_sont_rendues_telles_qu_elles_sont_stockees(tmp_path):
     assert db.urls_connues() == {brute}
 
 
-def test_un_echec_de_lecture_ne_rend_pas_None(tmp_path):
+def test_un_echec_de_lecture_ne_rend_pas_None(tmp_path, monkeypatch):
     # Les méthodes de cette classe avalent leurs exceptions. Celle-ci doit
     # alors rendre un ensemble vide : l'appelant fait `url in connues`.
-    db = DatabaseManager(db_file=str(tmp_path / "pas-une-base" / "x.db"))
+    # La base est créée normalement, puis la connexion échoue : c'est bien la
+    # branche d'exception qui est exercée.
+    db = base_jetable(tmp_path)
+
+    def connexion_impossible(*args, **kwargs):
+        raise sqlite3.OperationalError("base illisible")
+
+    monkeypatch.setattr("database.sqlite3.connect", connexion_impossible)
+
     assert db.urls_connues() == set()
