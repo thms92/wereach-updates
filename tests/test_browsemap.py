@@ -35,6 +35,36 @@ def test_la_casse_du_vanity_est_normalisee():
     assert vanity_depuis_url("https://www.linkedin.com/in/Jean-Dupont/") == "jean-dupont"
 
 
+def test_un_vanity_encode_et_son_ecriture_decodee_sont_la_meme_cle():
+    # Le panneau sert « c%C3%A9line-exemple » là où la personne colle
+    # « céline-exemple » : sans décodage, la même personne serait deux clés.
+    encode = "https://www.linkedin.com/in/c%C3%A9line-exemple/"
+    decode = "https://www.linkedin.com/in/céline-exemple/"
+    assert vanity_depuis_url(encode) == vanity_depuis_url(decode) == "céline-exemple"
+
+
+def test_la_casse_d_un_vanity_encode_est_normalisee_apres_decodage():
+    # %C3%89 est « É » : minuscule seulement une fois décodé, sinon « É »
+    # et « é » resteraient deux personnes.
+    assert vanity_depuis_url("https://www.linkedin.com/in/%C3%89lise-exemple/") == "élise-exemple"
+
+
+def test_l_url_canonique_d_un_vanity_accentue_est_la_meme_pour_les_deux_ecritures():
+    # Forme ré-encodée, en ASCII : celle que LinkedIn sert lui-même dans ses
+    # liens, qui passe telle quelle dans un CSV, un Excel ou la base.
+    attendu = "https://www.linkedin.com/in/c%C3%A9line-exemple/"
+    assert normaliser_url("https://www.linkedin.com/in/céline-exemple") == attendu
+    assert normaliser_url("https://www.linkedin.com/in/C%C3%A9line-Exemple/?trk=x") == attendu
+    # Hex en minuscules dans la source : même clé quand même.
+    assert normaliser_url("https://www.linkedin.com/in/c%c3%a9line-exemple/") == attendu
+
+
+def test_l_url_du_panneau_d_un_vanity_accentue_reste_en_ascii():
+    assert url_panneau("https://www.linkedin.com/in/céline-exemple/") == (
+        "https://www.linkedin.com/in/c%C3%A9line-exemple/" + CHEMIN_PANNEAU
+    )
+
+
 def test_une_page_entreprise_n_est_pas_un_profil():
     assert vanity_depuis_url("https://www.linkedin.com/company/thiga/") is None
 

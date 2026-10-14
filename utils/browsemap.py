@@ -12,6 +12,7 @@ panneau et trie son contenu. Tout s'y teste sans navigateur.
 """
 
 import re
+import urllib.parse
 
 # Le segment qui suit /in/ : on s'arrête au premier /, ? ou #, ce qui écarte
 # d'un coup les paramètres de suivi et les sous-pages (/details/experience/).
@@ -23,13 +24,17 @@ CHEMIN_PANNEAU = "overlay/browsemap-recommendations/"
 def vanity_depuis_url(url):
     """Identifiant du profil dans son URL, ou None si ce n'est pas un profil.
 
-    Minuscule à dessein : LinkedIn traite ces identifiants sans égard à la
-    casse, et deux écritures du même profil doivent se reconnaître.
+    Rendu décodé et en minuscules : c'est la clé qui reconnaît une même
+    personne sous ses différentes écritures. LinkedIn traite ces
+    identifiants sans égard à la casse, et sert les vanity accentués
+    encodés (« c%C3%A9line ») là où la personne colle « céline » — sans
+    décodage, ce seraient deux clés. On décode avant de minusculer : sur
+    « %C3%89 », minusculer l'encodage ne toucherait pas le « É ».
     """
     correspondance = _MOTIF_VANITY.search(url or "")
     if not correspondance:
         return None
-    return correspondance.group(1).strip().lower() or None
+    return urllib.parse.unquote(correspondance.group(1)).strip().lower() or None
 
 
 def normaliser_url(url):
@@ -38,18 +43,26 @@ def normaliser_url(url):
     Le panneau sert ses liens avec des paramètres de suivi. Sans forme
     canonique, le filtre « déjà dans ton fichier » ne reconnaît pas quelqu'un
     qui y est déjà, et la personne ressort une seconde fois.
+
+    Le vanity y est ré-encodé, pas laissé accentué : c'est la forme que
+    LinkedIn sert lui-même dans ses liens, que tout navigateur ouvre, et
+    qui passe telle quelle dans un CSV, un Excel ou la base. Décoder puis
+    ré-encoder rend la même URL pour les deux écritures, jusqu'à la casse
+    des chiffres hexadécimaux.
     """
     vanity = vanity_depuis_url(url)
     if vanity is None:
         return None
-    return f"https://www.linkedin.com/in/{vanity}/"
+    return f"https://www.linkedin.com/in/{urllib.parse.quote(vanity, safe='')}/"
 
 
 def url_panneau(url):
     """URL du panneau « Plus de profils pour vous » de ce profil, ou None.
 
-    Le panneau est directement adressable : pas de clic à simuler, pas de
-    menu à déplier.
+    Ce n'est PAS une adresse où se rendre : chargée directement, elle
+    redirige vers le profil nu (constaté au premier essai réel). C'est la
+    cible du lien « Tout afficher » de la section du profil, sur lequel on
+    clique pour ouvrir le panneau — la récolte s'en sert pour le trouver.
     """
     canonique = normaliser_url(url)
     return None if canonique is None else canonique + CHEMIN_PANNEAU
