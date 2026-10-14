@@ -5,6 +5,13 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.5.1
+
+**L'onglet « Par URLs » disparaît de Recherche.**
+Il faisait doublon avec les autres manières de constituer une liste, en
+particulier le nouvel onglet Profils similaires. La page Recherche compte
+désormais trois onglets : Candidats, Clients/Entreprises et Profils similaires.
+
 ## 1.5.0
 
 **Partez d'un profil qui a marché pour en trouver d'autres.**
