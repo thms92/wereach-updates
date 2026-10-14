@@ -873,6 +873,14 @@ elif page == "🔍 Recherche":
 
         if st.button("👥 Trouver des profils similaires", type="primary",
                      use_container_width=True, key="sim_btn_trouver"):
+            # Un refus efface le résultat précédent : sinon la liste de
+            # l'ancienne référence resterait affichée sous la nouvelle erreur.
+            if (not st.session_state.global_cookie
+                    or vanity_depuis_url(sim_url) is None):
+                for cle in ("sim_retenues", "sim_ecartees",
+                            "sim_entreprise", "sim_erreurs"):
+                    st.session_state.pop(cle, None)
+
             if not st.session_state.global_cookie:
                 st.error("❌ Cookie manquant")
             elif vanity_depuis_url(sim_url) is None:
@@ -947,10 +955,19 @@ elif page == "🔍 Recherche":
                     hide_index=True,
                 )
             elif not st.session_state.get("sim_erreurs"):
-                st.info(
-                    "Aucun profil retenu — tout a été écarté par les filtres. "
-                    "Le détail est juste en dessous."
-                )
+                # Deux vides différents : un tri qui a tout écarté (le détail
+                # existe) et un panneau que LinkedIn n'a rien proposé (aucun
+                # détail à montrer).
+                if sim_ecartees:
+                    st.info(
+                        "Aucun profil retenu — tout a été écarté par les "
+                        "filtres. Le détail est juste en dessous."
+                    )
+                else:
+                    st.info(
+                        "LinkedIn n'a proposé aucun profil voisin pour celui-ci "
+                        "— c'est le cas d'un profil peu consulté."
+                    )
 
             if sim_ecartees:
                 with st.expander(f"🚫 {len(sim_ecartees)} profil(s) écarté(s) — pourquoi"):

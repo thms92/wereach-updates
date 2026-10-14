@@ -127,16 +127,39 @@ def test_l_entreprise_de_reference_est_transmise_au_filtre(recolte_espionne):
 
 def test_une_liste_entierement_ecartee_affiche_ses_motifs(recolte_espionne):
     # Le défaut de la 1.4.7 sous une autre forme : une liste vide sans
-    # explication passerait pour un profil sans voisins.
+    # explication passerait pour un profil sans voisins. On cible l'expander
+    # lui-même : le texte d'introduction de l'onglet dit déjà « votre réseau »,
+    # une recherche dans tout l'écran réussirait même sans expander.
     recolte_espionne["reponse"] = (
         [voisin("Marie Martin", "marie-martin", degre="1er")], None
     )
     at = _trouver(_page_recherche())
 
-    textes = [m.value for m in at.markdown] + [c.value for c in at.caption]
-    assert any("réseau" in t for t in textes), (
-        f"le motif n'est pas affiché. Textes rendus : {textes}"
-    )
+    expanders = [e for e in at.expander if "1 profil(s) écarté(s)" in e.label]
+    assert expanders, f"pas d'expander des écartés : {[e.label for e in at.expander]}"
+    textes = [m.value for m in expanders[0].markdown]
+    assert any("déjà dans ton réseau (1er degré)" in t for t in textes), textes
+
+
+def test_aucun_voisin_propose_n_est_pas_presente_comme_un_tri(recolte_espionne):
+    # Rien récolté, rien écarté : dire « tout a été écarté » renverrait vers
+    # un détail qui n'existe pas.
+    recolte_espionne["reponse"] = ([], None)
+    at = _trouver(_page_recherche())
+
+    infos = [i.value for i in at.info]
+    assert any("aucun profil voisin" in t for t in infos), infos
+    assert not any("tout a été écarté" in t for t in infos), infos
+
+
+def test_un_refus_efface_les_resultats_de_la_reference_precedente(recolte_espionne):
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], "Thiga")
+    at = _trouver(_page_recherche())
+    assert "sim_retenues" in at.session_state
+
+    at = _trouver(at, "https://www.linkedin.com/company/thiga/")
+
+    assert "sim_retenues" not in at.session_state
 
 
 def test_le_mot_attendu_resserre_la_liste(recolte_espionne):
