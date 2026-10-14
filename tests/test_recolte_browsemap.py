@@ -81,7 +81,8 @@ def test_l_extracteur_javascript_lit_bien_le_panneau():
     # suppression accidentelle de ses points d'ancrage doit se voir.
     js = DOMSelectors.extract_browsemap_js()
 
-    assert js.strip().startswith("()")
+    # Un argument : la racine à lire (« panneau » ou « section »).
+    assert js.strip().startswith("(mode) =>")
     for ancre in ('role="dialog"', '/in/', 'invitable', 'intitule', 'degre'):
         assert ancre in js, f"ancre manquante dans l'extracteur : {ancre}"
 
@@ -91,6 +92,7 @@ def test_l_extracteur_javascript_lit_bien_le_panneau():
 # ---------------------------------------------------------------------------
 
 REF = "https://www.linkedin.com/in/ref/"
+URL_OVERLAY = REF + "overlay/browsemap-recommendations/"
 
 
 class FausseBrowser:
@@ -101,13 +103,63 @@ class FausseBrowser:
         self.ferme = True
 
 
-class FaussePage:
-    def __init__(self, brut, url="https://www.linkedin.com/in/ref/overlay/browsemap/"):
-        self.brut = brut
-        self.url = url
+class FauxLien:
+    """Le lien « Tout afficher » : le cliquer ouvre (ou non) le panneau."""
 
-    async def evaluate(self, js):
-        return self.brut
+    def __init__(self, page):
+        self.page = page
+
+    async def scroll_into_view_if_needed(self):
+        self.page.journal.append("defiler_vers_lien")
+
+    async def bounding_box(self):
+        return None
+
+    async def click(self):
+        self.page.journal.append("clic")
+        # Routage côté client : l'URL devient celle de l'overlay.
+        self.page.url = self.page.url_apres_clic
+        self.page.panneau_ouvert = self.page.panneau_apparait
+
+
+class FaussePage:
+    """Une page dont on dicte ce que voit chaque étape de la récolte.
+
+    `bruts` : ce que l'extracteur rend selon son mode (« panneau » ou
+    « section ») ; `lien` : le lien « Tout afficher » existe-t-il ;
+    `panneau_apparait` : le clic ouvre-t-il le dialogue.
+    """
+
+    def __init__(self, bruts, url=REF, lien=True, panneau_apparait=True,
+                 url_apres_clic=URL_OVERLAY):
+        self.bruts = bruts
+        self.url = url
+        self.lien = lien
+        self.panneau_apparait = panneau_apparait
+        self.panneau_ouvert = False
+        self.url_apres_clic = url_apres_clic
+        self.journal = []
+
+    async def wait_for_selector(self, selecteur, **k):
+        self.journal.append(("attendre_lien", selecteur))
+        if not self.lien:
+            raise TimeoutError("lien introuvable")
+        return FauxLien(self)
+
+    async def wait_for_function(self, js, **k):
+        self.journal.append("attendre_panneau")
+        if not self.panneau_ouvert:
+            raise TimeoutError("panneau absent")
+        return True
+
+    async def evaluate(self, js, arg=None):
+        if js == DOMSelectors.extract_browsemap_js():
+            mode = arg or "panneau"
+            self.journal.append(("lire", mode))
+            if mode == "panneau" and not self.panneau_ouvert:
+                return {"entrees": [], "html": "<body/>"}
+            return self.bruts.get(mode, {"entrees": [], "html": "<body/>"})
+        return None
 
 
 class FauxPlaywright:
@@ -125,17 +177,30 @@ def entree(vanity, nom, degre="2e", invitable=True):
 
 @pytest.fixture
 def faux(scraper, monkeypatch):
-    """Branche un navigateur factice ; rend une fonction qui lance la récolte."""
+    """Branche un navigateur factice ; rend une fonction qui lance la récolte.
+
+    `entrees` sont celles du panneau ouvert, `section` celles de la section
+    du profil (lecture de repli).
+    """
     navigateur = FausseBrowser()
 
-    def installer(entrees, entreprise="Thiga", url_page=None, dump=True):
-        page = FaussePage({"entrees": entrees, "html": "<div/>"},
-                          **({"url": url_page} if url_page else {}))
+    def installer(entrees, entreprise="Thiga", url_page=None, dump=True,
+                  lien=True, panneau_apparait=True, section=None,
+                  url_apres_clic=URL_OVERLAY):
+        bruts = {"panneau": {"entrees": entrees, "html": "<div/>"}}
+        if section is not None:
+            bruts["section"] = {"entrees": section, "html": "<section/>"}
+        page = FaussePage(bruts, url=url_page or REF, lien=lien,
+                          panneau_apparait=panneau_apparait,
+                          url_apres_clic=url_apres_clic)
+        scraper.page_factice = page
+        scraper.navigations = []
 
         async def ouvrir(p, cookie, status_callback=None):
             return navigateur, page
 
-        async def vrai(*a, **k):
+        async def aller(pg, url, *a, **k):
+            scraper.navigations.append(url)
             return True
 
         async def rien(*a, **k):
@@ -146,7 +211,7 @@ def faux(scraper, monkeypatch):
 
         monkeypatch.setattr("scraper_v2.async_playwright", lambda: FauxPlaywright())
         monkeypatch.setattr(scraper, "_open_linkedin_page", ouvrir)
-        monkeypatch.setattr(scraper.network_manager, "safe_page_goto", vrai)
+        monkeypatch.setattr(scraper.network_manager, "safe_page_goto", aller)
         monkeypatch.setattr(scraper.human, "human_delay", rien)
         monkeypatch.setattr(scraper, "_derouler_panneau", rien)
         monkeypatch.setattr(scraper, "_entreprise_reference", societe)
@@ -220,7 +285,7 @@ def test_un_vanity_contenant_login_n_est_pas_pris_pour_une_page_de_connexion(scr
 
     suggestions, _ = installer(
         [entree("a", "Alice")],
-        url_page="https://www.linkedin.com/in/jean-loginov/overlay/browsemap/",
+        url_page="https://www.linkedin.com/in/jean-loginov/",
     )
 
     assert len(suggestions) == 1
@@ -286,12 +351,17 @@ def test_une_liste_vide_dumpe_le_html_rendu_par_le_js(scraper, faux):
 
 
 def test_l_extracteur_rend_toujours_le_html_et_choisit_le_dialogue_le_plus_fourni():
+    # Le comportement est vérifié pour de vrai dans test_extracteur_browsemap ;
+    # ici, seulement que les trois scripts partagent le même choix de panneau.
     js = DOMSelectors.extract_browsemap_js()
 
     assert "1000000" in js and "20000" not in js
     assert "html: racine.innerHTML" in js          # plus conditionnel aux entrées vides
     assert "relations? en commun" in js
-    assert """querySelectorAll('div[role="dialog"]')""" in js
+    for script in (js, DOMSelectors.compter_panneau_browsemap_js(),
+                   DOMSelectors.derouler_panneau_browsemap_js()):
+        assert "choisirPanneau" in script
+        assert "dialog[open]" in script
 
 
 def test_le_deroulement_attend_deux_lectures_stables(scraper, monkeypatch):
@@ -301,7 +371,7 @@ def test_le_deroulement_attend_deux_lectures_stables(scraper, monkeypatch):
 
     class PageDefilante:
         async def evaluate(self, js):
-            if "return racine.querySelectorAll" in js:
+            if js == DOMSelectors.compter_panneau_browsemap_js():
                 nb_lectures.append(1)
                 return next(comptes)
             return None
@@ -316,3 +386,114 @@ def test_le_deroulement_attend_deux_lectures_stables(scraper, monkeypatch):
     assert lus == 9
     # 5, 5 (1re stable), 9 (relance), 9 (1re stable), 9 (2e stable) : arrêt.
     assert len(nb_lectures) == 5
+
+
+# --- Navigation : profil, clic sur « Tout afficher », panneau -------------
+#
+# Charger l'URL de l'overlay directement redirige vers le profil nu (premier
+# essai réel) : on va sur le profil et on clique, comme une personne.
+
+
+def test_on_ouvre_le_profil_puis_on_clique_sur_tout_afficher(scraper, faux):
+    installer, navigateur = faux
+
+    suggestions, _ = installer([entree("a", "Alice"), entree("b", "Bob")])
+
+    assert scraper.navigations == [REF]           # jamais l'URL de l'overlay
+    journal = scraper.page_factice.journal
+    assert ("attendre_lien", 'a[href*="/overlay/browsemap-recommendations"]') in journal
+    assert journal.index("defiler_vers_lien") < journal.index("clic") < journal.index("attendre_panneau")
+    assert ("lire", "panneau") in journal
+    assert ("lire", "section") not in journal
+    assert [e["nom"] for e in suggestions] == ["Alice", "Bob"]
+    assert scraper.errors == []
+    assert navigateur.ferme
+
+
+def test_sans_lien_tout_afficher_la_section_du_profil_est_lue_avec_un_avertissement(scraper, faux):
+    installer, navigateur = faux
+
+    suggestions, entreprise = installer(
+        [], lien=False, section=[entree("a", "Alice"), entree("b", "Bob")]
+    )
+
+    assert [e["nom"] for e in suggestions] == ["Alice", "Bob"]
+    assert entreprise == "Thiga"
+    assert "clic" not in scraper.page_factice.journal
+    assert len(scraper.errors) == 1
+    assert "seuls les 2 profils visibles" in scraper.errors[0]
+    assert navigateur.ferme
+
+
+def test_un_panneau_qui_ne_s_ouvre_pas_donne_la_section_avec_un_avertissement(scraper, faux):
+    installer, navigateur = faux
+
+    suggestions, _ = installer(
+        [entree("x", "Xavier")], panneau_apparait=False,
+        section=[entree("a", "Alice")],
+    )
+
+    assert [e["nom"] for e in suggestions] == ["Alice"]
+    assert "clic" in scraper.page_factice.journal
+    assert len(scraper.errors) == 1
+    assert "ne s'est pas ouvert" in scraper.errors[0]
+    assert "seuls les 1 profils visibles" in scraper.errors[0]
+    assert navigateur.ferme
+
+
+def test_ni_panneau_ni_section_est_une_erreur_bruyante(scraper, faux):
+    installer, navigateur = faux
+
+    suggestions, _ = installer([], lien=False, section=[])
+
+    assert suggestions == []
+    assert any("Aucun profil voisin" in e for e in scraper.errors)
+    assert scraper.dumps_demandes == ["<section/>"]
+    assert navigateur.ferme
+
+
+def test_la_section_introuvable_dumpe_la_page(scraper, faux):
+    # Aucune section : l'extracteur rend le HTML du document, à enregistrer.
+    installer, _ = faux
+
+    installer([], lien=False)
+
+    assert any("Aucun profil voisin" in e for e in scraper.errors)
+    assert scraper.dumps_demandes == ["<body/>"]
+
+
+def test_un_panneau_ouvert_mais_illisible_reste_une_erreur_et_pas_un_repli(scraper, faux):
+    # Le panneau est là mais rien n'y est lu : c'est un changement de
+    # structure, à crier — pas à masquer par les 5 profils de la section.
+    installer, _ = faux
+
+    suggestions, _ = installer([], section=[entree("a", "Alice")])
+
+    assert suggestions == []
+    assert any("Aucun profil voisin" in e for e in scraper.errors)
+    assert ("lire", "section") not in scraper.page_factice.journal
+
+
+def test_un_clic_renvoye_vers_la_connexion_est_refuse(scraper, faux):
+    installer, navigateur = faux
+
+    suggestions, _ = installer(
+        [entree("a", "Alice")],
+        url_apres_clic="https://www.linkedin.com/authwall?trk=x",
+    )
+
+    assert suggestions == []
+    assert any("login" in e for e in scraper.errors)
+    assert navigateur.ferme
+
+
+def test_un_vanity_encode_va_sur_l_url_canonique_du_profil(scraper, faux):
+    installer, _ = faux
+    installer([entree("a", "Alice")])         # installe les faux (récolte sur REF)
+    scraper.navigations.clear()
+
+    asyncio.run(scraper.recolter_browsemap_async(
+        cookie="C", url_reference="https://www.linkedin.com/in/C%C3%A9line-Ref/?trk=x"
+    ))
+
+    assert scraper.navigations == ["https://www.linkedin.com/in/c%C3%A9line-ref/"]

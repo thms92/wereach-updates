@@ -26,7 +26,7 @@ from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 from config import ScraperConfig, ECOLES
 from logger import logger
 from utils.dom_selectors import DOMSelectors
-from utils.browsemap import url_panneau, vanity_depuis_url
+from utils.browsemap import CHEMIN_PANNEAU, normaliser_url, vanity_depuis_url
 from utils.profile_extractor import ProfileExtractor
 from utils.search_filters import equilibrer_parentheses
 from utils.network_manager import NetworkManager, RetryConfig, PermanentNetworkError
@@ -1777,30 +1777,20 @@ class LinkedInScraperV2:
     async def _derouler_panneau(self, page: Page, limite_tours: int = 12) -> int:
         """Déroule le panneau jusqu'à ce qu'il cesse de s'allonger.
 
-        Faire défiler la fenêtre ne suffit pas : le panneau est un overlay,
-        c'est son propre conteneur qu'il faut pousser — et ce conteneur n'est
-        pas forcément le `div[role="dialog"]` lui-même, souvent un descendant.
-        On pousse donc tout ce qui peut défiler.
+        Au premier essai réel, 20 profils et pas un de plus au déroulement :
+        on garde quand même la boucle, LinkedIn peut paginer demain. Le
+        panneau choisi, compté et poussé est le même que celui qu'on lit —
+        les trois scripts partagent `choisirPanneau`.
 
         `limite_tours` borne la boucle : un panneau qui s'alimenterait sans
         fin ne doit pas immobiliser l'outil.
         """
+        compter = DOMSelectors.compter_panneau_browsemap_js()
+        pousser = DOMSelectors.derouler_panneau_browsemap_js()
         precedent = -1
         stables = 0
         for _ in range(limite_tours):
-            # Le dialogue le plus fourni en liens, comme dans l'extracteur :
-            # sinon on déroulerait un autre overlay que celui qu'on lit.
-            actuel = await page.evaluate(
-                """() => {
-                    let racine = document.body;
-                    let max = -1;
-                    for (const d of document.querySelectorAll('div[role="dialog"]')) {
-                        const n = d.querySelectorAll('a[href*="/in/"]').length;
-                        if (n > max) { max = n; racine = d; }
-                    }
-                    return racine.querySelectorAll('a[href*="/in/"]').length;
-                }"""
-            )
+            actuel = await page.evaluate(compter)
             # Deux lectures stables d'affilée : une seule peut tomber pendant
             # que LinkedIn charge la suite, et couperait la liste trop tôt.
             if actuel == precedent:
@@ -1810,28 +1800,10 @@ class LinkedInScraperV2:
             else:
                 stables = 0
             precedent = actuel
-            await page.evaluate(
-                """() => {
-                    let d = null;
-                    let max = -1;
-                    for (const c of document.querySelectorAll('div[role="dialog"]')) {
-                        const n = c.querySelectorAll('a[href*="/in/"]').length;
-                        if (n > max) { max = n; d = c; }
-                    }
-                    const cibles = d ? [d, ...d.querySelectorAll('*')] : [];
-                    let pousse = false;
-                    for (const el of cibles) {
-                        if (el.scrollHeight > el.clientHeight + 40) {
-                            el.scrollTop = el.scrollHeight;
-                            pousse = true;
-                        }
-                    }
-                    if (!pousse) window.scrollTo(0, document.body.scrollHeight);
-                }"""
-            )
+            await page.evaluate(pousser)
             await self.human.human_delay(1200, 300)
 
-        logger.info(f"📜 Panneau déroulé : {precedent} liens de profil visibles")
+        logger.info(f"📜 Panneau déroulé : {precedent} profils visibles")
         return max(precedent, 0)
 
     def _dumper_panneau(self, html: str) -> bool:
@@ -1864,7 +1836,7 @@ class LinkedInScraperV2:
         None vaut « non lue » : l'appelant la demande à la personne.
         """
         societe = await page.evaluate("""() => {
-            const hors = el => !el.closest('[role="dialog"]');
+            const hors = el => !el.closest('dialog, [role="dialog"]');
             const main = document.querySelector('main');
             if (!main) return '';
             const section = main.querySelector('section') || main;
@@ -1898,6 +1870,54 @@ class LinkedInScraperV2:
         }""")
         return (societe or '').strip() or None
 
+    @staticmethod
+    def _est_page_de_connexion(url: str) -> bool:
+        """Vrai si LinkedIn nous a renvoyés vers sa connexion.
+
+        Segments de chemin, pas sous-chaînes : /in/jean-loginov/ est un
+        profil, pas une page de connexion.
+        """
+        chemin = urllib.parse.urlparse(url or "").path
+        return chemin.startswith(("/login", "/authwall", "/checkpoint", "/uas/login"))
+
+    async def _ouvrir_panneau(self, page: Page) -> Optional[str]:
+        """Clique sur « Tout afficher » ; rend None si le panneau est ouvert.
+
+        Sinon, rend la raison de l'échec, en clair : elle finit dans
+        l'avertissement affiché à la personne.
+
+        Pourquoi un clic : chargée directement, l'URL de l'overlay redirige
+        vers le profil nu (premier essai réel). Le panneau ne s'ouvre que par
+        le lien de la section, en routage côté client — comme pour une
+        personne, qui défile jusqu'au lien, marque un temps, puis clique.
+        """
+        selecteur = f'a[href*="/{CHEMIN_PANNEAU.rstrip("/")}"]'
+        try:
+            lien = await page.wait_for_selector(selecteur, state="attached", timeout=8000)
+        except Exception as err:
+            logger.info(f"Lien « Tout afficher » introuvable : {err}")
+            lien = None
+        if lien is None:
+            return "le lien « Tout afficher » de la section est introuvable"
+
+        try:
+            await lien.scroll_into_view_if_needed()
+            await self.human.human_delay(900, 300)
+            await self.human.human_hover_and_click(page, lien)
+        except Exception as err:
+            logger.warning(f"⚠️ Clic sur « Tout afficher » impossible : {err}")
+            return "le clic sur « Tout afficher » a échoué"
+
+        # Borné : un panneau qui ne vient pas ne doit pas immobiliser l'outil,
+        # on se rabat alors sur la section, avec un avertissement.
+        attente = "() => (" + DOMSelectors.compter_panneau_browsemap_js() + ")() > 0"
+        try:
+            await page.wait_for_function(attente, timeout=10000)
+        except Exception as err:
+            logger.warning(f"⚠️ Panneau des profils voisins absent après le clic : {err}")
+            return "le panneau ne s'est pas ouvert après le clic sur « Tout afficher »"
+        return None
+
     async def recolter_browsemap_async(
         self,
         cookie: str,
@@ -1910,14 +1930,18 @@ class LinkedInScraperV2:
         personne : la liste d'URLs part ensuite dans `run_url_scraper`, qui
         fait déjà les deux.
 
-        `entreprise_reference` vaut None si la page n'a pas permis de la lire
-        — le panneau est un overlay, le profil est rendu dessous mais rien ne
-        le garantit. L'appelant la demande alors à la personne plutôt que
-        d'abandonner l'exclusion « ailleurs » en silence.
+        Parcours : la page du profil, puis un clic sur « Tout afficher » qui
+        ouvre le panneau complet (≈20 profils). Si le lien manque ou que le
+        panneau ne vient pas, on lit la section de la page du profil, qui
+        n'en montre que les premiers (≈5) — et on le dit, sans bloquer.
+
+        `entreprise_reference` vaut None si la page n'a pas permis de la lire.
+        L'appelant la demande alors à la personne plutôt que d'abandonner
+        l'exclusion « ailleurs » en silence.
         """
         self.errors = []
 
-        cible = url_panneau(url_reference)
+        cible = normaliser_url(url_reference)
         if cible is None:
             # Refusé avant tout lancement : ouvrir Chrome pour apprendre ça
             # deux minutes plus tard n'aiderait personne.
@@ -1940,38 +1964,54 @@ class LinkedInScraperV2:
 
             try:
                 if status_callback:
-                    status_callback("👥 Ouverture des profils voisins...")
+                    status_callback("👤 Ouverture du profil de référence...")
 
                 if not await self.network_manager.safe_page_goto(page, cible):
-                    self.errors.append(f"Impossible d'ouvrir le panneau : {cible}")
+                    self.errors.append(f"Impossible d'ouvrir le profil : {cible}")
                     return [], None
 
-                # Segments de chemin, pas sous-chaînes : /in/jean-loginov/ est
-                # un profil, pas une page de connexion.
-                chemin = urllib.parse.urlparse(page.url).path
-                if chemin.startswith(("/login", "/authwall", "/checkpoint", "/uas/login")):
+                if self._est_page_de_connexion(page.url):
                     self.errors.append("Redirigé vers login — cookie invalide.")
                     return [], None
 
                 await self.human.human_delay(2000, 500)
 
-                # L'entreprise actuelle du profil de référence, lue au passage
-                # sur la même page : c'est tout ce dont le « ailleurs » a besoin.
+                # L'entreprise actuelle du profil de référence, lue avant
+                # d'ouvrir le panneau, tant que rien ne recouvre le profil :
+                # c'est tout ce dont le « ailleurs » a besoin.
                 entreprise = await self._entreprise_reference(page)
 
                 if status_callback:
-                    status_callback("📜 Déroulement de la liste...")
-                await self._derouler_panneau(page)
+                    status_callback("👥 Ouverture des profils voisins...")
+                echec_ouverture = await self._ouvrir_panneau(page)
 
-                brut = await page.evaluate(DOMSelectors.extract_browsemap_js())
+                # Le clic change l'URL (routage côté client) : une session
+                # expirée peut s'y révéler.
+                if self._est_page_de_connexion(page.url):
+                    self.errors.append("Redirigé vers login — cookie invalide.")
+                    return [], None
+
+                if echec_ouverture is None:
+                    if status_callback:
+                        status_callback("📜 Déroulement de la liste...")
+                    await self._derouler_panneau(page)
+                    brut = await page.evaluate(DOMSelectors.extract_browsemap_js(), "panneau")
+                else:
+                    # Un panneau ouvert mais illisible n'arrive pas ici : ce
+                    # serait un changement de structure, qu'on crie plus bas
+                    # au lieu de le masquer derrière les 5 de la section.
+                    if status_callback:
+                        status_callback("📋 Lecture de la section du profil...")
+                    brut = await page.evaluate(DOMSelectors.extract_browsemap_js(), "section")
+
                 entrees = brut.get("entrees", [])
                 # Le JS rend toujours le HTML ; c'est ici qu'on décide de
                 # l'enregistrer, chaque fois que la lecture est douteuse.
                 html = brut.get("html", "") or ""
 
-                # Le lien du profil de référence figure dans sa propre page :
+                # Le lien du profil de référence peut figurer dans la page :
                 # ce n'est pas une suggestion. Le contrôle de vide porte sur
-                # ce qui reste, sinon un panneau où l'on ne lit que ce lien
+                # ce qui reste, sinon une lecture qui ne trouve que ce lien
                 # rendrait une liste vide sans un mot.
                 suggestions = [
                     e for e in entrees
@@ -1996,12 +2036,28 @@ class LinkedInScraperV2:
                         "pour analyse." if enregistre
                         else "le contenu de la page n'a pas pu être enregistré."
                     )
+                    ou = (
+                        "dans le panneau" if echec_ouverture is None
+                        else f"({echec_ouverture}, et la section « Plus de "
+                             f"profils pour vous » du profil est vide ou "
+                             f"introuvable)"
+                    )
                     self.errors.append(
-                        "Aucun profil voisin lu dans le panneau. Si ce profil "
-                        "en affiche bien sur LinkedIn, sa structure a changé : "
+                        f"Aucun profil voisin lu {ou}. Si ce profil en "
+                        "affiche bien sur LinkedIn, sa structure a changé : "
                         + suite
                     )
                     return [], entreprise
+
+                if echec_ouverture is not None:
+                    # Non bloquant : la liste est juste, mais courte. La
+                    # personne doit savoir qu'il en existe davantage.
+                    self.errors.append(
+                        f"Liste partielle ({echec_ouverture}) : seuls les "
+                        f"{len(suggestions)} profils visibles sur la page du "
+                        "profil ont été lus — le panneau complet en propose "
+                        "habituellement une vingtaine."
+                    )
 
                 # Avertissements : la liste est peut-être juste, mais deux
                 # lectures à vide d'un champ entier trahissent plutôt un
@@ -2021,7 +2077,7 @@ class LinkedInScraperV2:
                     )
                     self._dumper_panneau(html)
 
-                logger.info(f"✅ {len(suggestions)} profils voisins retenus du panneau")
+                logger.info(f"✅ {len(suggestions)} profils voisins retenus")
                 return suggestions, entreprise
 
             finally:

@@ -751,114 +751,259 @@ class DOMSelectors:
         }
         """
 
+    # ------------------------------------------------------------------
+    # Panneau « Plus de profils pour vous »
+    # ------------------------------------------------------------------
+
     @staticmethod
     def extract_browsemap_js() -> str:
-        """Lecture du panneau « Plus de profils pour vous ».
+        """Lecture des profils voisins, dans le panneau ou dans la section.
 
-        Le panneau est un overlay : on part de `div[role="dialog"]` plutôt
-        que de `main`, qui porte encore le profil de référence dessous.
-        Sans dialogue, on ne se rabat PAS sur `main` ou `body` : on y
-        lirait des liens `/in/` qui ne sont pas des suggestions, et des
-        données plausibles mais fausses valent moins qu'un échec bruyant.
+        La fonction rendue prend un argument `mode` :
 
-        Écrit défensivement, comme `extract_profiles_data_js` : on n'ancre sur
-        aucune classe CSS — LinkedIn les regénère — mais sur les liens `/in/`
-        et sur le texte des cartes. Quand rien n'est lu, le HTML du conteneur
-        est toujours renvoyé : c'est la seule façon de rattraper un changement
-        de structure, y compris quand la lecture « réussit » mais de travers
-        (c'est Python qui décide de l'enregistrer). Plafond d'un million de
-        caractères : un panneau déroulé dépasse largement les 20000 d'avant,
-        qui coupaient le dump avant les cartes utiles.
+        - `'panneau'` (défaut) : le panneau ouvert par « Tout afficher ».
+          On ne se rabat PAS sur `main` ou `body` quand il manque : on y
+          lirait des liens `/in/` qui ne sont pas des suggestions, et des
+          données plausibles mais fausses valent moins qu'un échec bruyant.
+        - `'section'` : la section « Plus de profils pour vous » de la page
+          du profil, repli quand le panneau ne s'ouvre pas. Elle n'en montre
+          que les premiers (≈5) ; c'est à Python de le dire.
 
-        Plusieurs dialogues peuvent coexister (messagerie, cookies) : on prend
-        celui qui porte le plus de liens `/in/`, pas le premier du document.
+        Un seul extracteur à deux racines plutôt que deux extracteurs : les
+        cartes sont les mêmes des deux côtés (constaté au premier essai
+        réel), et deux copies de la lecture d'une carte finiraient par
+        diverger sans que personne ne le voie.
+
+        Écrit défensivement : on n'ancre sur aucune classe CSS — LinkedIn
+        les regénère et les obfusque — mais sur les liens `/in/`, sur la
+        structure et sur le texte. Quand rien n'est lu, le HTML de la racine
+        (ou du document) est toujours renvoyé : c'est la seule façon de
+        rattraper un changement de structure, y compris quand la lecture
+        « réussit » mais de travers (c'est Python qui décide de
+        l'enregistrer). Plafond d'un million de caractères.
         """
-        return """() => {
-            let racine = null;
-            let max = -1;
-            for (const d of document.querySelectorAll('div[role="dialog"]')) {
-                const n = d.querySelectorAll('a[href*="/in/"]').length;
-                if (n > max) { max = n; racine = d; }
+        return (
+            "(mode) => {\n"
+            + _JS_OUTILS_PANNEAU
+            + _JS_LECTURE_CARTES
+            + "\n}"
+        )
+
+    @staticmethod
+    def compter_panneau_browsemap_js() -> str:
+        """Nombre de profils distincts dans le panneau ouvert, 0 sans panneau.
+
+        Sert à deux choses : attendre que le panneau soit là après le clic,
+        et savoir quand le déroulement cesse d'en apporter. Il choisit le
+        panneau exactement comme l'extracteur, sinon on attendrait ou on
+        déroulerait un autre conteneur que celui qu'on lit.
+        """
+        return (
+            "() => {\n"
+            + _JS_OUTILS_PANNEAU
+            + "\n    const racine = choisirPanneau();\n"
+            "    return racine ? nbProfils(racine) : 0;\n}"
+        )
+
+    @staticmethod
+    def derouler_panneau_browsemap_js() -> str:
+        """Pousse vers le bas tout ce qui défile dans le panneau ouvert.
+
+        Faire défiler la fenêtre ne suffit pas : le panneau est un overlay,
+        c'est son propre conteneur qu'il faut pousser — et ce conteneur n'est
+        pas forcément le dialogue lui-même, souvent un descendant.
+        """
+        return (
+            "() => {\n"
+            + _JS_OUTILS_PANNEAU
+            + r"""
+    const d = choisirPanneau();
+    const cibles = d ? [d, ...d.querySelectorAll('*')] : [];
+    let pousse = false;
+    for (const el of cibles) {
+        if (el.scrollHeight > el.clientHeight + 40) {
+            el.scrollTop = el.scrollHeight;
+            pousse = true;
+        }
+    }
+    if (!pousse) window.scrollTo(0, document.body.scrollHeight);
+}"""
+        )
+
+
+# Outils communs aux scripts du panneau, injectés en tête de chacun : le choix
+# du conteneur doit être le même pour attendre, dérouler et lire.
+_JS_OUTILS_PANNEAU = r"""
+    const TITRE_SECTION = 'plus de profils pour vous';
+    const normaliser = t => (t || '').replace(/\s+/g, ' ').trim();
+
+    // Clé d'une personne : le vanity décodé, en minuscules — LinkedIn sert
+    // « c%C3%A9line » là où un autre lien porte « céline ». Même règle que
+    // vanity_depuis_url côté Python.
+    const vanityDe = href => {
+        const m = (href || '').match(/\/in\/([^/?#]+)/);
+        if (!m) return null;
+        let v = m[1];
+        try { v = decodeURIComponent(v); } catch (e) { /* encodage invalide : brut */ }
+        return v.trim().toLowerCase() || null;
+    };
+
+    // « Tout afficher » pointe vers /in/<référence>/overlay/… : un lien /in/
+    // qui n'est pas une suggestion.
+    const estLienProfil = a => {
+        const href = a.getAttribute('href') || '';
+        return /\/in\/[^/?#]+/.test(href) && !/\/in\/[^/?#]+\/overlay\//.test(href);
+    };
+    const liensProfil = el =>
+        Array.from(el.querySelectorAll('a[href*="/in/"]')).filter(estLienProfil);
+    const nbProfils = el =>
+        new Set(liensProfil(el).map(a => vanityDe(a.getAttribute('href'))).filter(Boolean)).size;
+
+    // Les fenêtres du lecteur vidéo (video.js) portent role="dialog" et
+    // restent dans la page, cachées : au premier essai réel, c'est l'une
+    // d'elles que l'ancien extracteur a lue. LinkedIn garde aussi des
+    // <dialog> natifs fermés. On les écarte sur l'état visible, pas sur une
+    // liste de classes à tenir à jour — sauf vjs-hidden, qui cache même
+    // quand la feuille de style n'est pas encore chargée.
+    const estCache = el => {
+        if (el.hidden || el.closest('[hidden], .vjs-hidden')) return true;
+        if (el.tagName === 'DIALOG' && !el.open) return true;
+        const style = getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return true;
+        return el.getClientRects().length === 0;
+    };
+
+    // Plusieurs dialogues peuvent coexister (messagerie, cookies, vidéo) :
+    // on prend le visible qui porte le plus de profils, pas le premier.
+    const choisirPanneau = () => {
+        let racine = null;
+        let max = 0;
+        for (const c of document.querySelectorAll('dialog[open], [role="dialog"], [aria-modal="true"]')) {
+            if (estCache(c)) continue;
+            const n = nbProfils(c);
+            if (n > max) { max = n; racine = c; }
+        }
+        return racine;
+    };
+
+    // La section de la page du profil, reconnue à son titre — le seul repère
+    // stable, les classes étant obfusquées. Hors de tout dialogue : le
+    // panneau ouvert porte le même titre.
+    const choisirSection = () => {
+        const titres = Array.from(
+            document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')
+        ).filter(h => normaliser(h.textContent).toLowerCase() === TITRE_SECTION
+                   && !h.closest('dialog, [role="dialog"], [aria-modal="true"]'));
+        for (const titre of titres) {
+            let racine = titre.closest('section');
+            if (!racine || nbProfils(racine) === 0) {
+                racine = titre;
+                while (racine && nbProfils(racine) === 0) racine = racine.parentElement;
             }
-            if (!racine) {
-                return {entrees: [], html: document.body.innerHTML.slice(0, 1000000)};
-            }
+            if (racine && nbProfils(racine) > 0) return racine;
+        }
+        return null;
+    };
+"""
 
-            // Libellés de boutons et marqueurs de degré : du bruit, jamais un
-            // nom ni un intitulé.
-            const bruit = /^(se connecter|suivre|s'abonner|message|inviter|· ?(1er|2e|3e)|(1er|2e|3e) ?·?)$/i;
-            const motInvitation = /(se connecter|inviter|connect)/i;
+# Lecture des cartes, à partir de la racine choisie selon `mode`.
+_JS_LECTURE_CARTES = r"""
+    const racine = mode === 'section' ? choisirSection() : choisirPanneau();
+    if (!racine) {
+        return {entrees: [], html: document.body.innerHTML.slice(0, 1000000), conteneur: null};
+    }
 
-            const vus = new Set();
-            const entrees = [];
+    const titresDans = el =>
+        el.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').length;
 
-            for (const lien of racine.querySelectorAll('a[href*="/in/"]')) {
-                const href = lien.href || '';
-                const m = href.match(/\\/in\\/([^/?#]+)/);
-                if (!m) continue;
-                const vanity = m[1].toLowerCase();
-                if (vus.has(vanity)) continue;
+    // La carte d'un lien : son ancêtre le plus haut qui ne contient qu'UNE
+    // personne. Les cartes actuelles sont de simples div imbriqués, sans li
+    // ni role="listitem" ; un sélecteur de balise ne les trouve plus, une
+    // règle de structure si — et elle couvre aussi les li d'avant. On
+    // s'arrête aussi devant un ancêtre qui apporte un titre : dans une liste
+    // d'une seule personne, la carte engloberait sinon le titre de la section.
+    const carteDe = lien => {
+        let carte = lien;
+        while (carte.parentElement && carte.parentElement !== racine) {
+            const parent = carte.parentElement;
+            if (nbProfils(parent) > 1) break;
+            if (titresDans(parent) > titresDans(carte)) break;
+            carte = parent;
+        }
+        return carte;
+    };
 
-                // Le plus proche des deux : un li englobant une liste entière
-                // fusionnerait toutes les cartes en une seule.
-                const carte = lien.closest('li, div[role="listitem"]')
-                           || lien.parentElement;
-                if (!carte) continue;
+    // Libellés de boutons, de liens et marqueurs de degré : du bruit, jamais
+    // un nom ni un intitulé.
+    const bruit = /^(se connecter|suivre|s'abonner|message|inviter|tout afficher|afficher tout|· ?(1er|2e|3e)|(1er|2e|3e) ?·?)$/i;
+    const motInvitation = /(se connecter|inviter|connect)/i;
 
-                const texte = (carte.innerText || '').trim();
-                if (!texte) continue;
-                const lignes = texte.split('\\n').map(s => s.trim()).filter(Boolean);
+    const vus = new Set();
+    const entrees = [];
 
-                // Nom : la première ligne qui n'est pas du bruit.
-                let nom = '';
-                for (const ligne of lignes) {
-                    if (bruit.test(ligne)) continue;
-                    if (ligne.length < 2 || ligne.length > 120) continue;
-                    nom = ligne;
-                    break;
-                }
-                // « Marie Martin · 2e » : le marqueur de degré collé au nom
-                // n'en fait pas partie.
-                nom = nom.replace(/\\s*·\\s*(1er|2e|3e).*$/, '').trim();
-                if (!nom) continue;
+    for (const lien of liensProfil(racine)) {
+        const href = lien.href || lien.getAttribute('href') || '';
+        const vanity = vanityDe(href);
+        if (!vanity || vus.has(vanity)) continue;
 
-                // Degré : le marqueur « · 2e » d'abord ; à défaut une ligne qui
-                // ne contient que le degré. Jamais un « 2e » trouvé au milieu
-                // d'un intitulé (« 2e année d'alternance »).
-                let degre = '';
-                const marque = texte.match(/·\\s*(1er|2e|3e)\\b/);
-                if (marque) {
-                    degre = marque[1];
-                } else {
-                    degre = lignes.find(l => /^(1er|2e|3e)$/.test(l)) || '';
-                }
+        const carte = carteDe(lien);
+        const texte = (carte.innerText || '').trim();
+        if (!texte) continue;
+        const lignes = texte.split('\n').map(s => s.trim()).filter(Boolean);
 
-                // Intitulé : la plus longue ligne restante. Gardé brut — il est
-                // écrit à la main, dans tous les formats imaginables, et un
-                // champ structuré faux vaut moins qu'un texte exact.
-                let intitule = '';
-                for (const ligne of lignes) {
-                    if (ligne === nom || bruit.test(ligne)) continue;
-                    if (/^(1er|2e|3e)$/.test(ligne)) continue;
-                    // Lignes d'interface, souvent plus longues que l'intitulé.
-                    if (/relations? en commun|Voir le profil/i.test(ligne)) continue;
-                    if (ligne.length > intitule.length) intitule = ligne;
-                }
+        // Nom : la première ligne qui n'est pas du bruit.
+        let nom = '';
+        for (const ligne of lignes) {
+            if (bruit.test(ligne)) continue;
+            if (ligne.length < 2 || ligne.length > 120) continue;
+            nom = ligne;
+            break;
+        }
+        // « Marie Martin · 2e » : le marqueur de degré collé au nom n'en
+        // fait pas partie.
+        nom = nom.replace(/\s*·\s*(1er|2e|3e).*$/, '').trim();
+        if (!nom) continue;
 
-                // Invitable : décidé sur les boutons de la carte seulement. Un
-                // intitulé « Connecteur de talents » ne doit pas compter.
-                const invitable = Array.from(
-                    carte.querySelectorAll('button, a[role="button"], a[href*="invite"]')
-                ).some(b => motInvitation.test(
-                    (b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')
-                ));
+        // Degré : le marqueur « · 2e » d'abord ; à défaut une ligne qui ne
+        // contient que le degré. Jamais un « 2e » trouvé au milieu d'un
+        // intitulé (« 2e année d'alternance »).
+        let degre = '';
+        const marque = texte.match(/·\s*(1er|2e|3e)\b/);
+        if (marque) {
+            degre = marque[1];
+        } else {
+            degre = lignes.find(l => /^(1er|2e|3e)$/.test(l)) || '';
+        }
 
-                vus.add(vanity);
-                entrees.push({nom, url: href, degre, intitule, invitable});
-            }
+        // Intitulé : la plus longue ligne restante. Gardé brut — il est écrit
+        // à la main, dans tous les formats imaginables, et un champ structuré
+        // faux vaut moins qu'un texte exact.
+        let intitule = '';
+        for (const ligne of lignes) {
+            if (ligne === nom || bruit.test(ligne)) continue;
+            if (/^(1er|2e|3e)$/.test(ligne)) continue;
+            // Lignes d'interface, souvent plus longues que l'intitulé.
+            if (/relations? en commun|Voir le profil/i.test(ligne)) continue;
+            if (ligne.length > intitule.length) intitule = ligne;
+        }
 
-            return {
-                entrees: entrees,
-                html: racine.innerHTML.slice(0, 1000000)
-            };
-        }"""
+        // Invitable : décidé sur les boutons de la carte seulement — texte
+        // ET aria-label (« Inviter X à rejoindre votre réseau »). Un intitulé
+        // « Connecteur de talents » ne doit pas compter ; « Suivre » seul ne
+        // permet pas d'inviter.
+        const invitable = Array.from(
+            carte.querySelectorAll('button, a[role="button"], a[href*="invite"]')
+        ).some(b => motInvitation.test(
+            (b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')
+        ));
+
+        vus.add(vanity);
+        entrees.push({nom, url: href, degre, intitule, invitable});
+    }
+
+    return {
+        entrees: entrees,
+        html: racine.innerHTML.slice(0, 1000000),
+        conteneur: racine.tagName.toLowerCase()
+    };
+"""
