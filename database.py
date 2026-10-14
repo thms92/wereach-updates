@@ -163,6 +163,30 @@ class DatabaseManager:
             logger.error(f"Erreur vérification profil: {e}")
             return False
 
+    def urls_connues(self) -> set:
+        """Toutes les URLs déjà au fichier, telles qu'elles sont stockées.
+
+        Sert au filtre des profils voisins : comparer une à une avec
+        `profil_existe()` demanderait autant de requêtes que de suggestions,
+        et surtout ne permettrait pas de confronter des formes canoniques —
+        la base contient les liens tels qu'ils ont été copiés, avec leurs
+        paramètres de suivi.
+
+        Rend un ensemble vide en cas d'échec, jamais None : l'appelant écrit
+        `url in connues`.
+        """
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("SELECT url FROM profiles WHERE url IS NOT NULL")
+            urls = {ligne[0] for ligne in cursor.fetchall() if ligne[0]}
+            conn.close()
+            return urls
+
+        except Exception as e:
+            logger.error(f"Erreur lecture des URLs connues: {e}")
+            return set()
+
     def invitation_envoyee(self, url: str) -> bool:
         """Vérifie si une invitation a déjà été envoyée à ce profil"""
         try:
