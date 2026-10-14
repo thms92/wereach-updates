@@ -7,6 +7,7 @@ tests vérifient ce câblage — ce qui part dans la récolte, ce que le filtre
 reçoit, ce qui reste à l'écran.
 """
 
+import logging
 from types import SimpleNamespace
 
 import pandas as pd
@@ -37,7 +38,7 @@ def recolte_espionne(monkeypatch):
     demandé.
     """
     etat = {"reponse": ([], None), "appels": [], "recoltes": 0,
-            "invitations_restantes": 1000}
+            "invitations_restantes": 1000, "erreurs": [], "etapes": []}
 
     class FauxLimites:
         """Le plafond du jour, dictée par le test."""
@@ -56,6 +57,10 @@ def recolte_espionne(monkeypatch):
         def recolter_browsemap(self, **kwargs):
             etat["appels"].append(kwargs)
             etat["recoltes"] += 1
+            # Les étapes annoncées par la vraie récolte passent par ce rappel.
+            for etape in etat["etapes"]:
+                kwargs["status_callback"](etape)
+            self.errors = list(etat["erreurs"])
             return etat["reponse"]
 
         def run_url_scraper(self, **kwargs):
@@ -421,3 +426,104 @@ def test_la_case_invitables_decochee_survit_a_un_changement_de_page(recolte_espi
     at.run()
 
     assert at.checkbox(key="sim_invitables").value is False
+
+
+# --- Les avertissements se voient, l'avancement aussi ----------------------
+
+
+def _dans_l_ordre(at):
+    """Les éléments de l'écran dans l'ordre d'affichage (parcours en profondeur)."""
+    def parcourir(noeud):
+        yield noeud
+        for enfant in getattr(noeud, "children", {}).values():
+            yield from parcourir(enfant)
+    return list(parcourir(at.main))
+
+
+def test_les_avertissements_s_affichent_juste_sous_le_bouton_trouver(recolte_espionne):
+    # Au premier essai réel, l'avertissement était rendu sous le champ
+    # entreprise et le tableau : la personne ne l'a pas vu.
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], "Thiga")
+    recolte_espionne["erreurs"] = ["Liste partielle (test) : seuls les 1 profils visibles"]
+    at = _trouver(_page_recherche())
+
+    ordre = _dans_l_ordre(at)
+
+    def position(predicat, quoi):
+        for i, n in enumerate(ordre):
+            if predicat(n):
+                return i
+        raise AssertionError(f"introuvable à l'écran : {quoi}")
+
+    bouton = position(lambda n: getattr(n, "type", None) == "button"
+                      and getattr(n, "label", None) == BOUTON_TROUVER, "bouton Trouver")
+    alerte = position(lambda n: getattr(n, "type", None) == "warning"
+                      and "Liste partielle" in str(getattr(n, "value", "")), "avertissement")
+    champ = position(lambda n: getattr(n, "type", None) == "text_input"
+                     and getattr(n, "key", None) == "sim_entreprise_exclue", "champ entreprise")
+    succes = position(lambda n: getattr(n, "type", None) == "success"
+                      and "retenu" in str(getattr(n, "value", "")), "compte des retenus")
+
+    assert bouton < alerte < champ < succes
+
+
+def test_l_avancement_de_la_recolte_reste_affiche(recolte_espionne):
+    # Le rappel d'étape écrit dans un bloc d'état qui reste à l'écran, et
+    # qui dit à la fin combien de profils ont été lus.
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand")], None
+    )
+    recolte_espionne["etapes"] = ["👤 Ouverture du profil de référence..."]
+    at = _trouver(_page_recherche())
+
+    etats = [n for n in _dans_l_ordre(at) if getattr(n, "type", None) == "status"
+             and "voisin" in str(getattr(n, "label", ""))]
+    assert etats, "aucun bloc d'avancement à l'écran"
+    assert "2 profil(s) voisin(s) lu(s)" in etats[0].label
+
+
+@pytest.fixture
+def avertissements_streamlit(monkeypatch):
+    """Capte les avertissements que Streamlit écrit dans son journal.
+
+    Ce ne sont pas des warnings Python : `-W error` ne les voit pas, et le
+    journal de Streamlit ne remonte pas jusqu'à caplog (propagate=False).
+    On s'y branche donc directement. Streamlit n'émet celui-ci qu'une fois
+    par processus : on remet son drapeau à zéro, sinon un test précédent
+    le masquerait.
+    """
+    from streamlit.elements.lib import policies
+
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)
+    messages = []
+
+    class Collecteur(logging.Handler):
+        def emit(self, record):
+            messages.append(record.getMessage())
+
+    journal = logging.getLogger("streamlit.elements.lib.policies")
+    collecteur = Collecteur(level=logging.WARNING)
+    journal.addHandler(collecteur)
+    yield messages
+    journal.removeHandler(collecteur)
+
+
+def test_aucun_widget_n_a_a_la_fois_une_valeur_par_defaut_et_une_valeur_en_session(
+        recolte_espionne, avertissements_streamlit):
+    # Vu au premier essai réel : « The widget with key "sim_invitables" was
+    # created with a default value but also had its value set via the
+    # Session State API. » — value=True plus la réaffectation qui retient
+    # les filtres d'une page à l'autre.
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _trouver(_page_recherche())
+    at.text_input(key="sim_mot").set_value("Product")
+    at.run()
+    at.session_state["page"] = "💾 Historique"
+    at.run()
+    at.session_state["page"] = "🔍 Recherche"
+    at.run()
+
+    assert not any("default value" in m for m in avertissements_streamlit), (
+        avertissements_streamlit
+    )
+    assert at.checkbox(key="sim_invitables").value is True

@@ -866,9 +866,13 @@ elif page == "🔍 Recherche":
             )
 
         with col2:
+            # Valeur initiale posée en session plutôt que par value= : la
+            # réaffectation qui retient les filtres d'une page à l'autre
+            # (en tête de script) écrit aussi cette clé, et Streamlit avertit
+            # quand un widget reçoit les deux.
+            st.session_state.setdefault("sim_invitables", True)
             sim_invitables = st.checkbox(
                 "Seulement les profils invitables",
-                value=True,
                 key="sim_invitables",
                 help="Écarte ceux qui ne proposent que « Suivre » : ils ne "
                      "peuvent pas recevoir d'invitation.",
@@ -902,13 +906,20 @@ elif page == "🔍 Recherche":
             else:
                 scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
-                status_text = st.empty()
-                with st.spinner("🔄 Lecture des profils voisins..."):
+                # Un bloc d'état plutôt qu'un spinner et un texte séparés : la
+                # récolte dure, et l'étape en cours doit rester lisible juste
+                # sous le bouton, puis le bilan une fois fini.
+                with st.status("🔄 Lecture des profils voisins...",
+                               expanded=False) as sim_statut:
                     suggestions, entreprise = scraper.recolter_browsemap(
                         cookie=st.session_state.global_cookie,
                         url_reference=sim_url,
-                        status_callback=lambda s: status_text.text(s),
+                        status_callback=lambda s: sim_statut.update(label=s),
                     )
+                sim_statut.update(
+                    label=f"👥 {len(suggestions)} profil(s) voisin(s) lu(s)",
+                    state="complete" if suggestions else "error",
+                )
 
                 # Les URLs du fichier servent de filtre, comparées sous forme
                 # canonique des deux côtés — la base contient les liens tels
@@ -932,7 +943,12 @@ elif page == "🔍 Recherche":
                 # cochées : l'envoi est irréversible et le quota rare.
                 st.session_state.pop("sim_inviter", None)
                 st.session_state.pop("sim_message", None)
-                status_text.empty()
+
+        # Juste sous le bouton, avant tout le reste : au premier essai réel,
+        # rendus sous le champ entreprise et le tableau, ils sont passés
+        # inaperçus — dont celui qui disait que la liste était partielle.
+        for erreur in st.session_state.get("sim_erreurs") or []:
+            st.warning(f"⚠️ {erreur}")
 
         sim_suggestions = st.session_state.get("sim_suggestions")
 
@@ -966,9 +982,6 @@ elif page == "🔍 Recherche":
 
         sim_retenues = st.session_state.get("sim_retenues")
         sim_ecartees = st.session_state.get("sim_ecartees") or []
-
-        for erreur in st.session_state.get("sim_erreurs") or []:
-            st.warning(f"⚠️ {erreur}")
 
         if sim_retenues is not None:
             if sim_retenues:
