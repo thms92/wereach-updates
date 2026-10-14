@@ -5,6 +5,22 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.5.0
+
+**Partez d'un profil qui a marché pour en trouver d'autres.**
+Nouvel onglet **Profils similaires** dans Recherche : collez le lien d'un
+profil qui vous a donné satisfaction, et l'outil récupère la liste « Plus de
+profils pour vous » que LinkedIn lui associe — une vingtaine de profils que
+les mêmes personnes consultent. Ceux déjà dans votre réseau ou déjà dans votre
+fichier sont écartés, et chaque profil écarté est expliqué. Vous pouvez
+resserrer la liste : un mot attendu dans l'intitulé, les seuls profils
+invitables, ou écarter l'entreprise du profil de départ en un clic.
+
+Puis, en un second clic, l'outil récupère le poste et la société de chacun,
+et envoie les invitations si vous cochez la case. L'envoi est volontairement
+séparé de la recherche : vous voyez la liste avant que quoi que ce soit ne
+parte, et l'outil refuse d'aller au-delà de votre quota d'invitations du jour.
+
 ## 1.4.9
 
 **L'annonce d'une mise à jour apparaît toute seule.**
