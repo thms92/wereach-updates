@@ -30,13 +30,19 @@ fait passer dans la chaîne de récupération et d'invitation déjà en service.
 ## 3. Le mécanisme retenu
 
 LinkedIn entretient lui-même, pour chaque profil, une liste de profils voisins :
-le panneau **« Plus de profils pour vous »**. Il est directement adressable :
+le panneau **« Plus de profils pour vous »**. On l'avait cru directement
+adressable :
 
 ```
 https://www.linkedin.com/in/<vanity>/overlay/browsemap-recommendations/
 ```
 
-Pas de clic à simuler, pas de menu à déplier : une URL, une page.
+> **Constaté à l'essai réel du 2026-10-14/15 :** LinkedIn redirige cette URL
+> vers le profil lui-même. L'outil ouvre donc le profil et clique sur
+> **« Tout afficher »** de la section ; s'il ne le trouve pas, il se rabat sur
+> les ~5 profils de la section latérale, avec un avertissement. Le panneau
+> rend au plus **20 profils par référence**, sans pagination : le défilement
+> jusqu'à stabilisation n'a rien de plus à charger.
 
 Chaque entrée du panneau porte le **nom**, le **degré de relation** (`1er`, `2e`,
 `3e`), l'**intitulé** — cette ligne libre du type « Chief Analyst, Media &
@@ -114,18 +120,27 @@ panneau.
 normalisation compte : LinkedIn sert les liens avec des paramètres de suivi
 (`?miniProfileUrn=…`), et la même personne apparaîtrait deux fois.
 
-**L'entreprise du profil de référence.** « Le même profil *ailleurs* » : celui
-qui travaille encore dans la boîte où tu as placé ton candidat n'est pas la
-cible. L'exclusion se fait sur l'intitulé, par recherche du nom de l'entreprise
-de référence — l'intitulé la mentionne la plupart du temps.
-
-Best effort assumé : qui ne met pas son employeur dans son intitulé passera le
-filtre. Le tableau de l'étape 2 affichant la société lue sur la page de profil,
-tu les verras, et tu pourras les écarter à ce moment-là.
-
 ### Au choix
 
-**Ne garder que les invitables.** Une entrée qui ne propose que « Suivre » ne
+Par défaut, rien n'est écarté d'autre que ce qui est déjà au fichier et le
+1er degré (ci-dessus). Décision prise après l'essai réel : tout le reste se
+règle à la main.
+
+**Écarter une entreprise.** « Le même profil *ailleurs* » : celui qui travaille
+encore dans la boîte où tu as placé ton candidat n'est pas forcément la cible.
+Le champ « Entreprise à écarter » arrive **vide** après « Trouver ». L'entreprise
+lue sur le profil de départ est seulement **proposée** à côté (« Entreprise du
+profil de départ : X » et un bouton « Écarter X » qui remplit le champ), jamais
+appliquée d'office. Quand elle n'a pas pu être lue, l'écran le dit et le champ
+reste à saisir.
+
+L'exclusion se fait sur l'intitulé, par recherche du nom de l'entreprise —
+l'intitulé la mentionne la plupart du temps. Best effort assumé : qui ne met pas
+son employeur dans son intitulé passera le filtre. Le tableau de l'étape 2
+affichant la société lue sur la page de profil, tu les verras, et tu pourras les
+écarter à ce moment-là.
+
+**Ne garder que les invitables** (décoché par défaut). Une entrée qui ne propose que « Suivre » ne
 pourra jamais recevoir d'invitation — compte restreint ou page suivie. Les garder
 a du sens si tu veux juste constituer un fichier ; les écarter en a si tu veux
 inviter.
@@ -151,13 +166,14 @@ Toute la logique sans navigateur, donc testable au test unitaire :
 ### `scraper_v2.py` — une méthode
 
 `recolter_browsemap_async(cookie, url_reference, status_callback)` : ouvre le
-panneau, déroule jusqu'à ce que le nombre d'entrées cesse d'augmenter, extrait
-en JavaScript, et lit au passage l'entreprise actuelle du profil de référence si
-le DOM du profil est présent sous l'overlay.
+profil de référence (l'URL du panneau n'est pas adressable, voir §3), clique sur
+« Tout afficher », déroule jusqu'à ce que le nombre d'entrées cesse
+d'augmenter, extrait en JavaScript, et lit au passage l'entreprise actuelle du
+profil de référence.
 
 Rend `(suggestions, entreprise_reference)`. `entreprise_reference` vaut `None`
-si on n'a pas pu la lire — l'exclusion §6 est alors proposée en saisie manuelle
-plutôt que silencieusement abandonnée.
+si on n'a pas pu la lire — aucune entreprise n'est alors proposée à l'écran ; la saisie
+manuelle (§6) reste possible.
 
 Plus une méthode synchrone `recolter_browsemap(...)`, comme les autres, pour
 l'appel depuis Streamlit.
