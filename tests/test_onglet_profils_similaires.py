@@ -184,3 +184,71 @@ def test_un_cookie_absent_est_signale(recolte_espionne):
 
     assert recolte_espionne["appels"] == []
     assert at.error
+
+
+# --- Étape 2 : récupérer et inviter --------------------------------------
+
+BOUTON_RECUPERER = "🚀 Récupérer les infos"
+
+
+def test_l_etape_2_n_apparait_pas_avant_d_avoir_trouve():
+    at = _page_recherche()
+    assert not [b for b in at.button if b.label == BOUTON_RECUPERER], (
+        "le bouton de récupération s'affiche alors qu'aucune liste n'existe"
+    )
+
+
+def test_les_urls_retenues_partent_dans_la_chaine_existante(recolte_espionne):
+    recolte_espionne["reponse"] = (
+        [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand")],
+        None,
+    )
+    at = _trouver(_page_recherche())
+    recolte_espionne["appels"].clear()
+
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+    assert recolte_espionne["appels"][0]["urls"] == [
+        "https://www.linkedin.com/in/marie-martin/",
+        "https://www.linkedin.com/in/paul-durand/",
+    ]
+
+
+def test_les_invitations_ne_partent_pas_sans_l_avoir_demande(recolte_espionne):
+    # Le quota d'invitations est rare et l'envoi irréversible : la case doit
+    # être décochée par défaut.
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _trouver(_page_recherche())
+    recolte_espionne["appels"].clear()
+
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+
+    assert recolte_espionne["appels"][0]["inviter"] is False
+
+
+def test_la_case_cochee_fait_partir_les_invitations(recolte_espionne):
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _trouver(_page_recherche())
+    at.checkbox(key="sim_inviter").set_value(True)
+    at.run()
+    recolte_espionne["appels"].clear()
+
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+
+    assert recolte_espionne["appels"][0]["inviter"] is True
+
+
+def test_la_liste_trouvee_survit_au_rerun_de_l_etape_2(recolte_espionne):
+    # Elle vit dans session_state justement pour ça : un clic sur l'étape 2
+    # relance le script, et la liste ne doit pas disparaître de l'écran.
+    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    at = _trouver(_page_recherche())
+
+    _bouton(at, BOUTON_RECUPERER).click()
+    at.run()
+
+    assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]

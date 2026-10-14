@@ -974,6 +974,78 @@ elif page == "🔍 Recherche":
                     for e in sim_ecartees:
                         st.markdown(f"- **{e.get('nom') or '(sans nom)'}** — {e['motif']}")
 
+            if sim_retenues:
+                st.markdown("---")
+                st.markdown("**Étape 2 — récupérer les infos de ces profils**")
+                st.caption(
+                    "Chaque profil est ouvert pour en lire le poste et la "
+                    "société. Cochez la case pour envoyer en même temps une "
+                    "invitation."
+                )
+
+                sim_inviter = st.checkbox(
+                    "Envoyer des invitations", value=False, key="sim_inviter"
+                )
+                if sim_inviter:
+                    sim_message = st.text_area(
+                        "Message d'invitation",
+                        placeholder="Message personnalisé...",
+                        max_chars=200,
+                        key="sim_message",
+                    )
+                else:
+                    sim_message = ""
+
+                if st.button("🚀 Récupérer les infos", type="primary",
+                             use_container_width=True, key="sim_btn_recuperer"):
+                    if not st.session_state.global_cookie:
+                        st.error("❌ Cookie manquant")
+                    else:
+                        scraper = LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
+
+                        urls = [p["url"] for p in sim_retenues]
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+
+                        with st.spinner(f"🔄 {len(urls)} profils en cours..."):
+                            df = scraper.run_url_scraper(
+                                cookie=st.session_state.global_cookie,
+                                urls=urls,
+                                inviter=sim_inviter,
+                                message_invitation=sim_message,
+                                progress_callback=lambda p: progress_bar.progress(min(p, 1.0)),
+                                status_callback=lambda s: status_text.text(s),
+                            )
+
+                        if not df.empty:
+                            st.success(f"✅ {len(df)} profils récupérés sur {len(urls)} !")
+                            st.dataframe(df, use_container_width=True)
+
+                            excel_data = st.session_state.export_manager.export_to_excel(df.to_dict('records'))
+                            st.download_button(
+                                label="📥 Télécharger Excel",
+                                data=excel_data,
+                                file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="sim_dl_excel",
+                            )
+
+                            csv_data = df.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                            st.download_button(
+                                label="📥 Télécharger CSV",
+                                data=csv_data,
+                                file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                key="sim_dl_csv",
+                            )
+                        else:
+                            st.warning("⚠️ Aucun profil récupéré")
+
+                        if scraper.errors:
+                            with st.expander(f"⚠️ Erreurs ({len(scraper.errors)})"):
+                                for err in scraper.errors:
+                                    st.write(f"- {err}")
+
 # ==============================================
 # PAGE 5: HISTORIQUE
 # ==============================================
