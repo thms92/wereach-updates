@@ -26,6 +26,7 @@ from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 from config import ScraperConfig, ECOLES
 from logger import logger
 from utils.dom_selectors import DOMSelectors
+from utils.browsemap import url_panneau, vanity_depuis_url
 from utils.profile_extractor import ProfileExtractor
 from utils.search_filters import equilibrer_parentheses
 from utils.network_manager import NetworkManager, RetryConfig, PermanentNetworkError
@@ -1768,6 +1769,157 @@ class LinkedInScraperV2:
             'poste': (data.get('fonction') or '').strip(),
             'entreprise': (data.get('societe') or '').strip(),
         }
+
+    # ==================================================================
+    # PROFILS VOISINS (panneau « Plus de profils pour vous »)
+    # ==================================================================
+
+    async def _derouler_panneau(self, page: Page, limite_tours: int = 12) -> int:
+        """Déroule le panneau jusqu'à ce qu'il cesse de s'allonger.
+
+        Faire défiler la fenêtre ne suffit pas : le panneau est un overlay,
+        c'est son propre conteneur qu'il faut pousser — et ce conteneur n'est
+        pas forcément le `div[role="dialog"]` lui-même, souvent un descendant.
+        On pousse donc tout ce qui peut défiler.
+
+        `limite_tours` borne la boucle : un panneau qui s'alimenterait sans
+        fin ne doit pas immobiliser l'outil.
+        """
+        precedent = -1
+        for _ in range(limite_tours):
+            actuel = await page.evaluate(
+                """() => (document.querySelector('div[role="dialog"]')
+                       || document.body).querySelectorAll('a[href*="/in/"]').length"""
+            )
+            if actuel == precedent:
+                break
+            precedent = actuel
+            await page.evaluate(
+                """() => {
+                    const d = document.querySelector('div[role="dialog"]');
+                    const cibles = d ? [d, ...d.querySelectorAll('*')] : [];
+                    let pousse = false;
+                    for (const el of cibles) {
+                        if (el.scrollHeight > el.clientHeight + 40) {
+                            el.scrollTop = el.scrollHeight;
+                            pousse = true;
+                        }
+                    }
+                    if (!pousse) window.scrollTo(0, document.body.scrollHeight);
+                }"""
+            )
+            await self.human.human_delay(1200, 300)
+
+        logger.info(f"📜 Panneau déroulé : {precedent} liens de profil visibles")
+        return max(precedent, 0)
+
+    def _dumper_panneau(self, html: str) -> None:
+        """Écrit le panneau sur disque quand on n'y a rien lu.
+
+        Même geste que `extraire_profils_page` : le jour où LinkedIn change sa
+        structure, la seule façon de la rattraper est d'avoir le HTML sous les
+        yeux — faute de quoi on cherche à l'aveugle.
+        """
+        if not html:
+            return
+        try:
+            from pathlib import Path
+            dossier = Path(__file__).parent / 'logs'
+            dossier.mkdir(exist_ok=True)
+            fichier = dossier / 'browsemap_dump.html'
+            fichier.write_text(html, encoding='utf-8')
+            logger.warning(f"⚠️ Panneau illisible — HTML enregistré dans {fichier}")
+        except Exception as err:
+            logger.warning(f"⚠️ Impossible d'enregistrer le panneau: {err}")
+
+    async def recolter_browsemap_async(
+        self,
+        cookie: str,
+        url_reference: str,
+        status_callback: Optional[Callable] = None
+    ) -> tuple:
+        """Profils voisins que LinkedIn propose pour `url_reference`.
+
+        Rend `(suggestions, entreprise_reference)`. Ne scrape rien et n'invite
+        personne : la liste d'URLs part ensuite dans `run_url_scraper`, qui
+        fait déjà les deux.
+
+        `entreprise_reference` vaut None si la page n'a pas permis de la lire
+        — le panneau est un overlay, le profil est rendu dessous mais rien ne
+        le garantit. L'appelant la demande alors à la personne plutôt que
+        d'abandonner l'exclusion « ailleurs » en silence.
+        """
+        self.errors = []
+
+        cible = url_panneau(url_reference)
+        if cible is None:
+            # Refusé avant tout lancement : ouvrir Chrome pour apprendre ça
+            # deux minutes plus tard n'aiderait personne.
+            self.errors.append(
+                "Ce lien n'est pas celui d'un profil LinkedIn "
+                "(il doit contenir « /in/ »)."
+            )
+            return [], None
+
+        reference = vanity_depuis_url(url_reference)
+
+        async with async_playwright() as p:
+            if status_callback:
+                status_callback("🚀 Lancement du navigateur...")
+
+            browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+            if page is None:
+                self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                return [], None
+
+            try:
+                if status_callback:
+                    status_callback("👥 Ouverture des profils voisins...")
+
+                if not await self.network_manager.safe_page_goto(page, cible):
+                    self.errors.append(f"Impossible d'ouvrir le panneau : {cible}")
+                    return [], None
+
+                if any(x in page.url for x in ["login", "authwall"]):
+                    self.errors.append("Redirigé vers login — cookie invalide.")
+                    return [], None
+
+                await self.human.human_delay(2000, 500)
+
+                # L'entreprise actuelle du profil de référence, lue au passage
+                # sur la même page : c'est tout ce dont le « ailleurs » a besoin.
+                entreprise = (
+                    await self.extraire_profil_depuis_page(page)
+                ).get("entreprise") or None
+
+                if status_callback:
+                    status_callback("📜 Déroulement de la liste...")
+                await self._derouler_panneau(page)
+
+                brut = await page.evaluate(DOMSelectors.extract_browsemap_js())
+                entrees = brut.get("entrees", [])
+
+                if not entrees:
+                    self._dumper_panneau(brut.get("html", ""))
+                    self.errors.append(
+                        "Aucun profil voisin lu dans le panneau. Si ce profil "
+                        "en affiche bien sur LinkedIn, sa structure a changé : "
+                        "le contenu de la page est enregistré dans logs/ pour "
+                        "analyse."
+                    )
+
+                # Le lien du profil de référence figure dans sa propre page :
+                # ce n'est pas une suggestion.
+                suggestions = [
+                    e for e in entrees
+                    if vanity_depuis_url(e.get("url")) not in (None, reference)
+                ]
+
+                logger.info(f"✅ {len(suggestions)} profils voisins retenus du panneau")
+                return suggestions, entreprise
+
+            finally:
+                await browser.close()
 
     async def run_url_scraper_async(
         self,

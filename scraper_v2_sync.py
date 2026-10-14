@@ -135,6 +135,32 @@ class LinkedInScraperV2Sync:
             self.errors.append(f"Erreur: {e}")
             return pd.DataFrame()
 
+    def recolter_browsemap(self, cookie, url_reference, status_callback=None):
+        """Version synchrone : profils voisins d'un profil de référence.
+
+        Rend `([], None)` sur échec plutôt que de lever : Streamlit
+        afficherait une trace à l'écran, là où l'utilisateur attend une
+        phrase.
+        """
+        try:
+            logger.info(f"👥 Récolte des profils voisins de {url_reference}")
+
+            result = asyncio.run(
+                self.scraper.recolter_browsemap_async(
+                    cookie=cookie,
+                    url_reference=url_reference,
+                    status_callback=status_callback,
+                )
+            )
+
+            self.errors = self.scraper.errors.copy()
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Erreur récolte profils voisins: {e}", exc_info=True)
+            self.errors.append(f"Erreur: {e}")
+            return [], None
+
     def verifier_acceptations(self, cookie, profils, max_check=30,
                               progress_callback=None, status_callback=None):
         """Version synchrone : détecte les invitations acceptées (1er degré)."""

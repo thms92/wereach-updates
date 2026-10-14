@@ -750,3 +750,80 @@ class DOMSelectors:
             return { success: false, reason: 'button_not_found' };
         }
         """
+
+    @staticmethod
+    def extract_browsemap_js() -> str:
+        """Lecture du panneau « Plus de profils pour vous ».
+
+        Le panneau est un overlay : on part de `div[role="dialog"]` plutôt
+        que de `main`, qui porte encore le profil de référence dessous.
+
+        Écrit défensivement, comme `extract_profiles_data_js` : on n'ancre sur
+        aucune classe CSS — LinkedIn les regénère — mais sur les liens `/in/`
+        et sur le texte des cartes. Quand rien n'est lu, le HTML du conteneur
+        est renvoyé pour être enregistré : c'est la seule façon de rattraper
+        un changement de structure.
+        """
+        return """() => {
+            const racine = document.querySelector('div[role="dialog"]')
+                        || document.querySelector('main')
+                        || document.body;
+
+            // Libellés de boutons et marqueurs de degré : du bruit, jamais un
+            // nom ni un intitulé.
+            const bruit = /^(se connecter|suivre|s'abonner|message|inviter|· ?(1er|2e|3e)|(1er|2e|3e) ?·?)$/i;
+
+            const vus = new Set();
+            const entrees = [];
+
+            for (const lien of racine.querySelectorAll('a[href*="/in/"]')) {
+                const href = lien.href || '';
+                const m = href.match(/\\/in\\/([^/?#]+)/);
+                if (!m) continue;
+                const vanity = m[1].toLowerCase();
+                if (vus.has(vanity)) continue;
+
+                const carte = lien.closest('li')
+                           || lien.closest('div[role="listitem"]')
+                           || lien.parentElement;
+                if (!carte) continue;
+
+                const texte = (carte.innerText || '').trim();
+                if (!texte) continue;
+                const lignes = texte.split('\\n').map(s => s.trim()).filter(Boolean);
+
+                // Nom : la première ligne qui n'est pas du bruit.
+                let nom = '';
+                for (const ligne of lignes) {
+                    if (bruit.test(ligne)) continue;
+                    if (ligne.length < 2 || ligne.length > 120) continue;
+                    nom = ligne;
+                    break;
+                }
+                if (!nom) continue;
+
+                // Degré : LinkedIn l'écrit « · 2e » à côté du nom.
+                const degre = (texte.match(/\\b(1er|2e|3e)\\b/) || [''])[0];
+
+                // Intitulé : la plus longue ligne restante. Gardé brut — il est
+                // écrit à la main, dans tous les formats imaginables, et un
+                // champ structuré faux vaut moins qu'un texte exact.
+                let intitule = '';
+                for (const ligne of lignes) {
+                    if (ligne === nom || bruit.test(ligne)) continue;
+                    if (/^(1er|2e|3e)$/.test(ligne)) continue;
+                    if (ligne.length > intitule.length) intitule = ligne;
+                }
+
+                const bas = texte.toLowerCase();
+                const invitable = bas.includes('se connecter') || bas.includes('inviter');
+
+                vus.add(vanity);
+                entrees.push({nom, url: href, degre, intitule, invitable});
+            }
+
+            return {
+                entrees: entrees,
+                html: entrees.length ? '' : racine.innerHTML.slice(0, 20000)
+            };
+        }"""
