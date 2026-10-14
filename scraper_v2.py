@@ -1786,17 +1786,38 @@ class LinkedInScraperV2:
         fin ne doit pas immobiliser l'outil.
         """
         precedent = -1
+        stables = 0
         for _ in range(limite_tours):
+            # Le dialogue le plus fourni en liens, comme dans l'extracteur :
+            # sinon on déroulerait un autre overlay que celui qu'on lit.
             actuel = await page.evaluate(
-                """() => (document.querySelector('div[role="dialog"]')
-                       || document.body).querySelectorAll('a[href*="/in/"]').length"""
+                """() => {
+                    let racine = document.body;
+                    let max = -1;
+                    for (const d of document.querySelectorAll('div[role="dialog"]')) {
+                        const n = d.querySelectorAll('a[href*="/in/"]').length;
+                        if (n > max) { max = n; racine = d; }
+                    }
+                    return racine.querySelectorAll('a[href*="/in/"]').length;
+                }"""
             )
+            # Deux lectures stables d'affilée : une seule peut tomber pendant
+            # que LinkedIn charge la suite, et couperait la liste trop tôt.
             if actuel == precedent:
-                break
+                stables += 1
+                if stables >= 2:
+                    break
+            else:
+                stables = 0
             precedent = actuel
             await page.evaluate(
                 """() => {
-                    const d = document.querySelector('div[role="dialog"]');
+                    let d = null;
+                    let max = -1;
+                    for (const c of document.querySelectorAll('div[role="dialog"]')) {
+                        const n = c.querySelectorAll('a[href*="/in/"]').length;
+                        if (n > max) { max = n; d = c; }
+                    }
                     const cibles = d ? [d, ...d.querySelectorAll('*')] : [];
                     let pousse = false;
                     for (const el of cibles) {
@@ -1944,6 +1965,9 @@ class LinkedInScraperV2:
 
                 brut = await page.evaluate(DOMSelectors.extract_browsemap_js())
                 entrees = brut.get("entrees", [])
+                # Le JS rend toujours le HTML ; c'est ici qu'on décide de
+                # l'enregistrer, chaque fois que la lecture est douteuse.
+                html = brut.get("html", "") or ""
 
                 # Le lien du profil de référence figure dans sa propre page :
                 # ce n'est pas une suggestion. Le contrôle de vide porte sur
@@ -1962,11 +1986,11 @@ class LinkedInScraperV2:
                         "portent le même nom) : sa structure a probablement "
                         "changé."
                     )
-                    self._dumper_panneau(brut.get("html", "") or "")
+                    self._dumper_panneau(html)
                     return [], entreprise
 
                 if not suggestions:
-                    enregistre = self._dumper_panneau(brut.get("html", ""))
+                    enregistre = self._dumper_panneau(html)
                     suite = (
                         "le contenu de la page est enregistré dans logs/ "
                         "pour analyse." if enregistre
@@ -1978,6 +2002,24 @@ class LinkedInScraperV2:
                         + suite
                     )
                     return [], entreprise
+
+                # Avertissements : la liste est peut-être juste, mais deux
+                # lectures à vide d'un champ entier trahissent plutôt un
+                # sélecteur périmé. On rend quand même les suggestions, avec
+                # de quoi se méfier — et le HTML pour comprendre.
+                if not any((e.get("degre") or "").strip() for e in suggestions):
+                    self.errors.append(
+                        "Degré de relation illisible : les relations de 1er "
+                        "degré n'ont pas pu être écartées. Vérifiez la liste."
+                    )
+                    self._dumper_panneau(html)
+                if not any(e.get("invitable") for e in suggestions):
+                    self.errors.append(
+                        "Aucun bouton « Se connecter » lu : la détection a "
+                        "peut-être changé ; vérifiez avant de filtrer sur les "
+                        "invitables."
+                    )
+                    self._dumper_panneau(html)
 
                 logger.info(f"✅ {len(suggestions)} profils voisins retenus du panneau")
                 return suggestions, entreprise

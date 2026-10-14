@@ -764,13 +764,24 @@ class DOMSelectors:
         Écrit défensivement, comme `extract_profiles_data_js` : on n'ancre sur
         aucune classe CSS — LinkedIn les regénère — mais sur les liens `/in/`
         et sur le texte des cartes. Quand rien n'est lu, le HTML du conteneur
-        est renvoyé pour être enregistré : c'est la seule façon de rattraper
-        un changement de structure.
+        est toujours renvoyé : c'est la seule façon de rattraper un changement
+        de structure, y compris quand la lecture « réussit » mais de travers
+        (c'est Python qui décide de l'enregistrer). Plafond d'un million de
+        caractères : un panneau déroulé dépasse largement les 20000 d'avant,
+        qui coupaient le dump avant les cartes utiles.
+
+        Plusieurs dialogues peuvent coexister (messagerie, cookies) : on prend
+        celui qui porte le plus de liens `/in/`, pas le premier du document.
         """
         return """() => {
-            const racine = document.querySelector('div[role="dialog"]');
+            let racine = null;
+            let max = -1;
+            for (const d of document.querySelectorAll('div[role="dialog"]')) {
+                const n = d.querySelectorAll('a[href*="/in/"]').length;
+                if (n > max) { max = n; racine = d; }
+            }
             if (!racine) {
-                return {entrees: [], html: document.body.innerHTML.slice(0, 20000)};
+                return {entrees: [], html: document.body.innerHTML.slice(0, 1000000)};
             }
 
             // Libellés de boutons et marqueurs de degré : du bruit, jamais un
@@ -806,6 +817,9 @@ class DOMSelectors:
                     nom = ligne;
                     break;
                 }
+                // « Marie Martin · 2e » : le marqueur de degré collé au nom
+                // n'en fait pas partie.
+                nom = nom.replace(/\\s*·\\s*(1er|2e|3e).*$/, '').trim();
                 if (!nom) continue;
 
                 // Degré : le marqueur « · 2e » d'abord ; à défaut une ligne qui
@@ -826,6 +840,8 @@ class DOMSelectors:
                 for (const ligne of lignes) {
                     if (ligne === nom || bruit.test(ligne)) continue;
                     if (/^(1er|2e|3e)$/.test(ligne)) continue;
+                    // Lignes d'interface, souvent plus longues que l'intitulé.
+                    if (/relations? en commun|Voir le profil/i.test(ligne)) continue;
                     if (ligne.length > intitule.length) intitule = ligne;
                 }
 
@@ -843,6 +859,6 @@ class DOMSelectors:
 
             return {
                 entrees: entrees,
-                html: entrees.length ? '' : racine.innerHTML.slice(0, 20000)
+                html: racine.innerHTML.slice(0, 1000000)
             };
         }"""

@@ -118,9 +118,9 @@ class FauxPlaywright:
         return False
 
 
-def entree(vanity, nom):
+def entree(vanity, nom, degre="2e", invitable=True):
     return {"nom": nom, "url": f"https://www.linkedin.com/in/{vanity}/",
-            "degre": "2e", "intitule": "Dev", "invitable": True}
+            "degre": degre, "intitule": "Dev", "invitable": invitable}
 
 
 @pytest.fixture
@@ -150,8 +150,15 @@ def faux(scraper, monkeypatch):
         monkeypatch.setattr(scraper.human, "human_delay", rien)
         monkeypatch.setattr(scraper, "_derouler_panneau", rien)
         monkeypatch.setattr(scraper, "_entreprise_reference", societe)
-        # Jamais d'écriture dans le logs/ du dépôt.
-        monkeypatch.setattr(scraper, "_dumper_panneau", lambda html: dump)
+        # Jamais d'écriture dans le logs/ du dépôt : on note ce qui aurait
+        # été enregistré, pour vérifier QUAND la récolte décide de dumper.
+        scraper.dumps_demandes = []
+
+        def dumper(html):
+            scraper.dumps_demandes.append(html)
+            return dump
+
+        monkeypatch.setattr(scraper, "_dumper_panneau", dumper)
         return recolter(scraper, REF)
 
     return installer, navigateur
@@ -230,3 +237,82 @@ def test_une_vraie_page_de_connexion_est_refusee_et_le_navigateur_ferme(scraper,
     assert suggestions == []
     assert any("login" in e for e in scraper.errors)
     assert navigateur.ferme
+
+
+# --- Lectures crédibles mais fausses : avertir et dumper ------------------
+
+
+def test_aucun_degre_lu_avertit_dumpe_et_garde_les_suggestions(scraper, faux):
+    installer, _ = faux
+
+    suggestions, _ = installer([entree("a", "Alice", degre=""), entree("b", "Bob", degre="")])
+
+    assert len(suggestions) == 2
+    assert any("Degré de relation illisible" in e for e in scraper.errors)
+    assert scraper.dumps_demandes == ["<div/>"]
+
+
+def test_aucun_bouton_se_connecter_lu_avertit_dumpe_et_garde_les_suggestions(scraper, faux):
+    installer, _ = faux
+
+    suggestions, _ = installer(
+        [entree("a", "Alice", invitable=False), entree("b", "Bob", invitable=False)]
+    )
+
+    assert len(suggestions) == 2
+    assert any("Aucun bouton « Se connecter » lu" in e for e in scraper.errors)
+    assert scraper.dumps_demandes == ["<div/>"]
+
+
+def test_une_lecture_saine_ne_dumpe_pas(scraper, faux):
+    installer, _ = faux
+
+    installer([entree("a", "Alice"), entree("b", "Bob")])
+
+    assert scraper.errors == []
+    assert scraper.dumps_demandes == []
+
+
+def test_noms_identiques_et_liste_vide_dumpent_aussi(scraper, faux):
+    installer, _ = faux
+    installer([entree("a", "Alice"), entree("b", "Alice")])
+    assert scraper.dumps_demandes == ["<div/>"]
+
+
+def test_une_liste_vide_dumpe_le_html_rendu_par_le_js(scraper, faux):
+    installer, _ = faux
+    installer([])
+    assert scraper.dumps_demandes == ["<div/>"]
+
+
+def test_l_extracteur_rend_toujours_le_html_et_choisit_le_dialogue_le_plus_fourni():
+    js = DOMSelectors.extract_browsemap_js()
+
+    assert "1000000" in js and "20000" not in js
+    assert "html: racine.innerHTML" in js          # plus conditionnel aux entrées vides
+    assert "relations? en commun" in js
+    assert """querySelectorAll('div[role="dialog"]')""" in js
+
+
+def test_le_deroulement_attend_deux_lectures_stables(scraper, monkeypatch):
+    # Un seul compte inchangé peut tomber pendant le chargement de la suite.
+    comptes = iter([5, 5, 9, 9, 9, 9, 9])
+    nb_lectures = []
+
+    class PageDefilante:
+        async def evaluate(self, js):
+            if "return racine.querySelectorAll" in js:
+                nb_lectures.append(1)
+                return next(comptes)
+            return None
+
+    async def rien(*a, **k):
+        return None
+
+    monkeypatch.setattr(scraper.human, "human_delay", rien)
+
+    lus = asyncio.run(scraper._derouler_panneau(PageDefilante()))
+
+    assert lus == 9
+    # 5, 5 (1re stable), 9 (relance), 9 (1re stable), 9 (2e stable) : arrêt.
+    assert len(nb_lectures) == 5
