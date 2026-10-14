@@ -2,7 +2,7 @@
 """Onglet « Profils similaires » : du lien de référence à la liste filtrée.
 
 L'onglet ne scrape pas et n'invite pas : il récolte le panneau de LinkedIn,
-filtre, et confie les URLs retenues à la chaîne de l'onglet Par URLs. Ces
+filtre, et confie les URLs retenues à la chaîne run_url_scraper. Ces
 tests vérifient ce câblage — ce qui part dans la récolte, ce que le filtre
 reçoit, ce qui reste à l'écran.
 """
