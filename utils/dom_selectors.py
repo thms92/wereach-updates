@@ -833,6 +833,65 @@ class DOMSelectors:
 
 # Outils communs aux scripts du panneau, injectés en tête de chacun : le choix
 # du conteneur doit être le même pour attendre, dérouler et lire.
+
+    @staticmethod
+    def extract_page_apropos_js() -> str:
+        """Lecture de la page « À propos » d'une entreprise.
+
+        Ancrée sur la structure sémantique (<dl>/<dt>/<dd>, <main>, lien
+        « voir les employés ») et jamais sur les classes CSS, que LinkedIn
+        regénère. Quand aucune rubrique n'est lue, le HTML de <main> est
+        renvoyé pour être enregistré : c'est la seule façon de rattraper un
+        changement de structure.
+        """
+        return r"""() => {
+            const net = s => (s || '').replace(/\s+/g, ' ').trim();
+            const racine = document.querySelector('main') || document.body;
+            const champs = {};
+            for (const dt of racine.querySelectorAll('dl dt')) {
+                const cle = net(dt.innerText);
+                const valeurs = [];
+                let el = dt.nextElementSibling;
+                while (el && el.tagName === 'DD') {
+                    // LinkedIn double certaines valeurs d'un texte réservé aux
+                    // lecteurs d'écran (« Le numéro est le … »), niché dans le
+                    // même lien : on le retire avant de lire la valeur.
+                    const copie = el.cloneNode(true);
+                    copie.querySelectorAll('.visually-hidden').forEach(n => n.remove());
+                    const v = net(copie.textContent);
+                    if (v) valeurs.push(v);
+                    el = el.nextElementSibling;
+                }
+                if (cle && valeurs.length) champs[cle] = valeurs;
+            }
+            let companyId = '';
+            const lien = racine.querySelector('a[href*="currentCompany"]');
+            if (lien) {
+                let href = lien.getAttribute('href') || '';
+                try { href = decodeURIComponent(href); } catch (e) {}
+                const m = href.match(/currentCompany=\["?(\d+)/);
+                if (m) companyId = m[1];
+            }
+            const h1 = racine.querySelector('h1');
+            let description = '';
+            for (const h of racine.querySelectorAll('h2')) {
+                const t = net(h.innerText).replace('’', "'");
+                if (t === "Vue d'ensemble") {
+                    const p = h.parentElement && h.parentElement.querySelector('p');
+                    if (p) description = net(p.innerText);
+                    break;
+                }
+            }
+            return {
+                nom: h1 ? net(h1.innerText) : '',
+                champs: champs,
+                company_id: companyId,
+                description: description,
+                html: Object.keys(champs).length ? '' : racine.innerHTML.slice(0, 1000000)
+            };
+        }"""
+
+
 _JS_OUTILS_PANNEAU = r"""
     const TITRE_SECTION = 'plus de profils pour vous';
     const normaliser = t => (t || '').replace(/\s+/g, ' ').trim();
