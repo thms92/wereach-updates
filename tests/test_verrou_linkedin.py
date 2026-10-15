@@ -102,3 +102,98 @@ def test_le_compteur_de_pages_veille(tmp_path):
     t.increment_pages_veille(3)
     assert DailyLimitsTracker(limits_file=fichier).pages_veille_today == 3
     assert t.profiles_today == 0  # les pages de veille ne mangent pas le quota de profils
+
+
+# ── Prise atomique : la veille en ligne de commande est un vrai second processus ──
+
+def _concurrent_vivant(chemin, activite="recherche"):
+    chemin.write_text(json.dumps({"pid": os.getpid(), "activite": activite, "debut": time.time()}))
+
+
+def test_un_verrou_pose_entre_la_lecture_et_la_creation_est_respecte(tmp_path, monkeypatch):
+    import utils.verrou_linkedin as v
+    vrai_open = os.open
+    chemin = tmp_path / "session_linkedin.lock"
+
+    def open_dispute(path, flags, *a, **k):
+        # Un autre processus prend le verrou juste avant notre création.
+        if str(path) == str(chemin) and not chemin.exists():
+            _concurrent_vivant(chemin)
+        return vrai_open(path, flags, *a, **k)
+
+    monkeypatch.setattr(v.os, "open", open_dispute)
+    with pytest.raises(VerrouOccupe) as e:
+        with session_linkedin(tmp_path, "veille"):
+            pass
+    assert e.value.activite == "recherche"
+    assert json.loads(chemin.read_text())["activite"] == "recherche"  # pas écrasé
+
+
+def test_un_verrou_mort_est_remplace_par_le_notre(tmp_path):
+    chemin = tmp_path / "session_linkedin.lock"
+    chemin.write_text(json.dumps({"pid": 999999, "activite": "veille", "debut": time.time()}))
+    with session_linkedin(tmp_path, "recherche"):
+        info = json.loads(chemin.read_text())
+        assert info["activite"] == "recherche" and info["pid"] == os.getpid()
+    assert not chemin.exists()
+
+
+def test_si_un_autre_reprend_le_verrou_mort_avant_nous_on_s_efface(tmp_path, monkeypatch):
+    import utils.verrou_linkedin as v
+    vrai_open = os.open
+    chemin = tmp_path / "session_linkedin.lock"
+    chemin.write_text(json.dumps({"pid": 999999, "activite": "veille", "debut": time.time()}))
+    appels = []
+
+    def open_dispute(path, flags, *a, **k):
+        if str(path) == str(chemin):
+            appels.append(1)
+            if len(appels) == 2:  # notre seconde tentative, après effacement du verrou mort
+                _concurrent_vivant(chemin)
+        return vrai_open(path, flags, *a, **k)
+
+    monkeypatch.setattr(v.os, "open", open_dispute)
+    with pytest.raises(VerrouOccupe):
+        with session_linkedin(tmp_path, "veille"):
+            pass
+    assert json.loads(chemin.read_text())["activite"] == "recherche"
+
+
+@pytest.mark.parametrize("pid", [0, -1])
+def test_un_pid_nul_ou_negatif_est_un_verrou_mort(tmp_path, pid):
+    # os.kill(0, 0) vise tout le groupe de processus : il « réussit » toujours.
+    (tmp_path / "session_linkedin.lock").write_text(
+        json.dumps({"pid": pid, "activite": "veille", "debut": time.time()}))
+    with session_linkedin(tmp_path, "recherche"):
+        pass
+
+
+def test_un_processus_d_un_autre_utilisateur_est_vivant(tmp_path, monkeypatch):
+    import utils.verrou_linkedin as v
+
+    def kill_refuse(pid, sig):
+        raise PermissionError("pas à nous")
+
+    monkeypatch.setattr(v.os, "kill", kill_refuse)
+    (tmp_path / "session_linkedin.lock").write_text(
+        json.dumps({"pid": 4242, "activite": "veille", "debut": time.time()}))
+    with pytest.raises(VerrouOccupe):
+        with session_linkedin(tmp_path, "recherche"):
+            pass
+
+
+def test_un_verrou_vide_tout_juste_cree_est_occupe(tmp_path):
+    # Fichier créé mais pas encore écrit par son propriétaire : ne pas le lui voler.
+    (tmp_path / "session_linkedin.lock").write_text("")
+    with pytest.raises(VerrouOccupe):
+        with session_linkedin(tmp_path, "recherche"):
+            pass
+
+
+def test_un_verrou_vide_ancien_est_libre(tmp_path):
+    chemin = tmp_path / "session_linkedin.lock"
+    chemin.write_text("")
+    vieux = time.time() - 120
+    os.utime(chemin, (vieux, vieux))
+    with session_linkedin(tmp_path, "recherche"):
+        pass
