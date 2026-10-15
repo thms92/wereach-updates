@@ -32,6 +32,49 @@ conçues ici.
 - La livraison 2 se réduit donc au lancement automatique ; l'IA (résumés)
   reste en dernière livraison, optionnelle.
 
+
+## Amendement n° 2 du 2026-10-15 (après le premier essai réel)
+
+**Constat de l'essai.** Le service interne de LinkedIn qui identifiait une
+entreprise par son nom (« typeahead ») répond désormais **HTTP 404** : aucune
+entreprise n'a pu être identifiée. Le garde-fou a joué (rien de marqué
+« introuvable » à tort). Le même service sert au filtre entreprises de
+l'onglet Candidats, qui se rabat silencieusement sur des mots-clés — à
+traiter à part.
+
+**Décisions de Thomas :**
+
+1. **L'actualité est retirée.** Google News, classement des titres, actualité
+   dans la fiche, l'en-tête et le récap : supprimés. La table déjà créée reste
+   dans les bases, inutilisée (rien n'est détruit).
+2. **Le cœur devient « les contacts des entreprises »**, dans les deux sens :
+   les **personnes** (employés Product / Data / IA, déjà construit) et leurs
+   **coordonnées**.
+3. **Identification par la recherche d'entreprises LinkedIn**
+   (`/search/results/companies/?keywords=<nom>`, 1 page, une seule fois par
+   entreprise). Un résultat n'est retenu que si son nom normalisé est
+   **exactement** celui de l'entreprise suivie ; aucun ou plusieurs → « non
+   identifiée », avec les noms proposés, et le lien est demandé. Vérifié le
+   2026-10-15 : « BNP Paribas » → un seul nom exact parmi 10 résultats
+   (les filiales sont écartées).
+4. **Coordonnées, par source :**
+
+   | Quoi | Source | Coût LinkedIn |
+   |---|---|---|
+   | Téléphone et site de l'entreprise | Page « À propos » (déjà lue) | — |
+   | Email et téléphone généraux de l'entreprise | Pages d'accueil, Contact et Mentions légales **de son site**, lues sans IA (liens `mailto:`/`tel:` et motifs d'email/téléphone) ; emails gardés **seulement sur le domaine de l'entreprise** | aucun |
+   | Email / téléphone d'une **personne en relation** (1er degré, ou invitation acceptée) | Sa rubrique « Coordonnées » LinkedIn, ouverte **par un clic** sur le profil (l'adresse directe `…/overlay/contact-info/` est redirigée — vérifié le 2026-10-15) ; ce sont les coordonnées que la personne a choisi de partager | 1 page par personne, dans le budget |
+   | Email d'une personne **hors relation** | **Hors périmètre** : pas de devinette (prenom.nom@ serait souvent faux — donnée plausible mais fausse) ; un service spécialisé (ex. Dropcontact) pourra être branché plus tard | — |
+
+   Le circuit visé : trouver les personnes → les inviter → à l'acceptation,
+   récupérer leurs coordonnées.
+5. **Export** : depuis la fiche, les contacts d'une entreprise avec leurs
+   coordonnées, en Excel/CSV.
+
+Le site de l'entreprise est relu tous les 30 jours, comme la fiche. Les
+coordonnées d'une personne sont lues une fois, puis relues au plus tous les
+90 jours.
+
 ---
 
 ## 1. Le besoin
