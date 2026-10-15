@@ -101,6 +101,15 @@ def test_la_fiche_se_lit_dans_les_champs_a_propos():
     }
 
 
+def test_les_membres_se_lisent_malgre_une_infobulle_collee():
+    # Sur la vraie page, le texte d'une infobulle masquée suit le nombre.
+    champs = {"Taille de l’entreprise": [
+        "201-500 employés",
+        "198 membres associés Membres LinkedIn ayant indiqué Orbique sur leur profil.",
+    ]}
+    assert fiche_depuis_apropos(champs)["membres"] == "198"
+
+
 def test_l_apostrophe_droite_est_aussi_reconnue():
     assert fiche_depuis_apropos({"Taille de l'entreprise": ["11-50 employés"]}) == {
         "taille": "11-50 employés"

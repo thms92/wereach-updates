@@ -831,9 +831,6 @@ class DOMSelectors:
         )
 
 
-# Outils communs aux scripts du panneau, injectés en tête de chacun : le choix
-# du conteneur doit être le même pour attendre, dérouler et lire.
-
     @staticmethod
     def extract_page_apropos_js() -> str:
         """Lecture de la page « À propos » d'une entreprise.
@@ -864,14 +861,25 @@ class DOMSelectors:
                 }
                 if (cle && valeurs.length) champs[cle] = valeurs;
             }
-            let companyId = '';
-            const lien = racine.querySelector('a[href*="currentCompany"]');
-            if (lien) {
+            // Plusieurs entreprises ont un lien « employés » dans <main> (la
+            // page réelle y met aussi le bloc « Des personnes suivent
+            // également »). Le premier lien peut donc être celui d'une autre :
+            // on retient l'identifiant le plus fréquent, et en cas d'égalité on
+            // renvoie vide plutôt que de ranger des inconnus sous cette entreprise.
+            const compte = {};
+            for (const lien of racine.querySelectorAll('a[href*="currentCompany"]')) {
                 let href = lien.getAttribute('href') || '';
                 try { href = decodeURIComponent(href); } catch (e) {}
                 const m = href.match(/currentCompany=\["?(\d+)/);
-                if (m) companyId = m[1];
+                if (m) compte[m[1]] = (compte[m[1]] || 0) + 1;
             }
+            let companyId = '';
+            let meilleur = 0, egalite = false;
+            for (const [id, n] of Object.entries(compte)) {
+                if (n > meilleur) { meilleur = n; companyId = id; egalite = false; }
+                else if (n === meilleur) egalite = true;
+            }
+            if (egalite) companyId = '';
             const h1 = racine.querySelector('h1');
             let description = '';
             for (const h of racine.querySelectorAll('h2')) {
@@ -892,6 +900,8 @@ class DOMSelectors:
         }"""
 
 
+# Outils communs aux scripts du panneau, injectés en tête de chacun : le choix
+# du conteneur doit être le même pour attendre, dérouler et lire.
 _JS_OUTILS_PANNEAU = r"""
     const TITRE_SECTION = 'plus de profils pour vous';
     const normaliser = t => (t || '').replace(/\s+/g, ' ').trim();

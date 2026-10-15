@@ -16,8 +16,10 @@ playwright = pytest.importorskip("playwright.sync_api")
 PAGE = """<!doctype html><html><body>
 <header><h1>0 notification au total</h1></header>
 <main>
+  <aside><a href="http://www.linkedin.com/search/results/people/?origin=COMPANY_PAGE_CANNED_SEARCH&currentCompany=%5B%22227766%22%5D">Autre société</a></aside>
   <section><h1>Orbique</h1>
     <a href="https://www.linkedin.com/search/results/people/?currentCompany=%5B%227654321%22%5D&origin=COMPANY_PAGE_CANNED_SEARCH">Voir les 198 employés</a>
+    <a href="/search/results/people/?origin=X&currentCompany=%5B%227654321%22%5D&pastCompany=%5B%22166%22%5D">12 anciens employés</a>
   </section>
   <section><h2>Vue d’ensemble</h2><p>Orbique conseille   les entreprises
   sur le produit.</p>
@@ -73,8 +75,16 @@ def test_le_nom_vient_de_main_et_pas_de_l_en_tete(navigateur):
     assert lire(navigateur, PAGE)["nom"] == "Orbique"
 
 
-def test_l_identifiant_vient_du_premier_lien_employes_de_main(navigateur):
+def test_l_identifiant_est_celui_de_la_majorite_des_liens_de_main(navigateur):
+    # Un lien d'une autre société précède les deux liens propres.
     assert lire(navigateur, PAGE)["company_id"] == "7654321"
+
+
+def test_une_egalite_entre_deux_identifiants_donne_vide(navigateur):
+    html = """<main><h1>Orbique</h1>
+    <a href="/x?currentCompany=%5B%22111%22%5D">a</a>
+    <a href="/x?currentCompany=%5B%22222%22%5D">b</a></main>"""
+    assert lire(navigateur, html)["company_id"] == ""
 
 
 def test_la_description(navigateur):
