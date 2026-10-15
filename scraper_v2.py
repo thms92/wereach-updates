@@ -1806,19 +1806,20 @@ class LinkedInScraperV2:
         logger.info(f"📜 Panneau déroulé : {precedent} profils visibles")
         return max(precedent, 0)
 
-    def _dumper_panneau(self, html: str) -> bool:
+    def _dumper_panneau(self, html: str, nom_fichier: str = 'browsemap_dump.html') -> bool:
         """Écrit le panneau sur disque quand on n'y a rien lu.
 
         Même geste que `extraire_profils_page` : le jour où LinkedIn change sa
         structure, la seule façon de la rattraper est d'avoir le HTML sous les
-        yeux — faute de quoi on cherche à l'aveugle.
+        yeux — faute de quoi on cherche à l'aveugle. `nom_fichier` : la veille
+        a son propre dump, pour ne pas écraser celui des Profils similaires.
         """
         if not html:
             return False
         try:
             dossier = Path(__file__).parent / 'logs'
             dossier.mkdir(exist_ok=True)
-            fichier = dossier / 'browsemap_dump.html'
+            fichier = dossier / nom_fichier
             fichier.write_text(html, encoding='utf-8')
             logger.warning(f"⚠️ Panneau illisible — HTML enregistré dans {fichier}")
             return True
