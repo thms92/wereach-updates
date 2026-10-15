@@ -7,6 +7,31 @@
 situées (§3) pour que la livraison 1 ne les empêche pas, mais ne sont pas
 conçues ici.
 
+
+## Amendement du 2026-10-15 (décisions de Thomas, après relecture)
+
+- **L'actualité entre dans la livraison 1** (elle était prévue en livraison 2).
+  Source : flux RSS de Google News, gratuit, sans clé, sans coût LinkedIn.
+  Requête : `"<nom>" (rachat OR acquisition OR fusion OR licenciement OR "plan
+  social" OR restructuration OR "levée de fonds" OR lève OR nomme) when:1y`.
+  Vérifié le 2026-10-15 : pour Decathlon, le rachat de 50 % de Sport 2000 et
+  l'entrée au capital de Brompton ; pour une petite société (Thiga), rien —
+  et sans ces mots-clés, des homonymes sans rapport. D'où deux filtres : la
+  requête ne demande que ces événements, et un titre n'est gardé que s'il
+  contient le nom de l'entreprise. Chaque titre est classé par mots-clés —
+  *Rachat / fusion*, *Licenciements / restructuration*, *Levée de fonds*,
+  *Nomination* — classement **approximatif**, affiché avec lien, source et
+  date pour que la personne juge. Relue **une fois par jour pour toutes les
+  entreprises suivies** (gratuite), indépendamment de la rotation LinkedIn.
+  Aucune actualité → la fiche le dit, datée.
+- **Le recrutement est hors périmètre** : « on s'en fiche » (Thomas).
+- **En-tête « en un coup d'œil »** en tête de chaque fiche : taille, secteur,
+  siège, effectif, dernière actualité marquante, nombre de contacts Product /
+  Data / IA dont nouveaux. Pour lire une fiche en quelques secondes.
+- Le récap « Nouveau aujourd'hui » inclut les nouvelles actualités.
+- La livraison 2 se réduit donc au lancement automatique ; l'IA (résumés)
+  reste en dernière livraison, optionnelle.
+
 ---
 
 ## 1. Le besoin

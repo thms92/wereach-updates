@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal :** Une page **🏢 Veille** où chacun suit 20 à 50 entreprises : un moteur lit la page « À propos » LinkedIn de chacune, la recoupe avec l'annuaire officiel de l'État, cherche ses employés Product / Data / IA, et un récap « Nouveau aujourd'hui » montre ce qui est apparu depuis la dernière visite.
+**Goal :** Une page **🏢 Veille** où chacun suit 20 à 50 entreprises : un moteur lit la page « À propos » LinkedIn de chacune, la recoupe avec l'annuaire officiel de l'État, cherche ses employés Product / Data / IA, relève son actualité (rachat, licenciements, levée de fonds, nomination) par Google News, et un récap « Nouveau aujourd'hui » montre ce qui est apparu depuis la dernière visite.
 
-**Architecture :** Un **moteur de veille sans Streamlit** (`veille.py`) appelé par un bouton de l'application — et, en livraison 3, par un réveil programmé. Toute la logique de décision vit dans deux modules purs testables sans navigateur ni réseau (`utils/veille_regles.py`, `utils/annuaire.py`) ; le stockage dans `veille_store.py` (mêmes fichier SQLite que le reste) ; un verrou empêche deux sessions LinkedIn simultanées. La page est écrite dans son propre module (`ui/page_veille.py`).
+**Architecture :** Un **moteur de veille sans Streamlit** (`veille.py`) appelé par un bouton de l'application — et, en livraison 3, par un réveil programmé. Toute la logique de décision vit dans trois modules purs testables sans navigateur ni réseau (`utils/veille_regles.py`, `utils/annuaire.py`, `utils/actualite.py`) ; le stockage dans `veille_store.py` (mêmes fichier SQLite que le reste) ; un verrou empêche deux sessions LinkedIn simultanées. La page est écrite dans son propre module (`ui/page_veille.py`).
 
 **Tech Stack :** Python 3.10+, Playwright (Chromium canal `chrome`), Streamlit 1.58, SQLite, `urllib` (pas de dépendance nouvelle), pytest, `streamlit.testing.v1.AppTest`.
 
@@ -26,6 +26,7 @@
 
 1. **Une seule recherche par entreprise**, mots-clés de toutes les familles cochées en OU, puis classement de chaque contact dans sa famille d'après son intitulé — au lieu d'une recherche par famille. Trois fois moins de pages LinkedIn. Conséquence : **un curseur de reprise par entreprise**, remis à zéro quand les familles cochées changent (spec §7 disait « par famille »).
 2. **Le budget se compte en pages LinkedIn chargées**, dans un compteur à part (`pages_veille`) du fichier de limites quotidiennes : page « À propos » = 1, page de résultats = 1. **Par défaut 20 pages par jour**, réglable de 5 à 40 — et non « 50 % du quota de 80 profils » (spec §6). Motif : la spec demandait de « ne pas solliciter LinkedIn davantage qu'aujourd'hui » ; 80 profils récupérés par recherche représentent ~8 pages de résultats, et les comptes gratuits ont une limite mensuelle de recherches (« commercial use limit »). 20 pages ≈ 6 entreprises par jour ≈ une entreprise revue tous les 4 à 8 jours pour 25 à 50 suivies. Les contacts trouvés en veille n'incrémentent pas le compteur de profils.
+4. **Amendement du 2026-10-15** (spec, section « Amendement ») : l'**actualité** (Google News) entre dans cette livraison, relue une fois par jour pour toutes les entreprises suivies, sans coût LinkedIn ; un **en-tête « en un coup d'œil »** ouvre chaque fiche ; le **recrutement** est hors périmètre.
 3. **La fiche LinkedIn et l'annuaire ne sont relus que tous les 30 jours** : une fiche ne change pas chaque matin, et chaque relecture coûte une page. Les recherches de personnes, elles, ont lieu à chaque passage.
 
 ## Ce qu'on sait de la vraie page (capture du 2026-10-15, hors dépôt)
@@ -42,6 +43,7 @@ L'annuaire (`https://recherche-entreprises.api.gouv.fr/search?q=<nom>&per_page=2
 2. **Entreprise sans `company_id` lisible** (page « À propos » illisible ou entreprise introuvable par son nom) : état « non identifiée » ou « illisible », aucune recherche de personnes lancée avec un identifiant vide (qui renverrait tout LinkedIn). → tests Task 2 (url) et Task 6.
 3. **Budget épuisé au milieu d'une entreprise** : la page suivante n'est pas chargée, le curseur garde la dernière page lue, le rapport dit « budget ». → test Task 6.
 4. **Recherche manuelle pendant la veille** : refusée avec un message clair, pas d'exception à l'écran ; verrou abandonné par un processus mort → considéré libre. → tests Task 4.
+6. **Actualité d'un homonyme** (« Thiga » → articles sans rapport) : un titre qui ne contient pas le nom de l'entreprise est écarté ; Google News injoignable → la veille LinkedIn continue, un seul message. → tests Task 2b et Task 6.
 5. **Contact déjà au fichier** (URL écrite autrement : `http://`, majuscules, `?miniProfileUrn=`) : relié à l'entreprise mais **pas** compté « nouveau ». → test Task 3.
 
 ---
@@ -52,6 +54,7 @@ L'annuaire (`https://recherche-entreprises.api.gouv.fr/search?q=<nom>&per_page=2
 |---|---|---|
 | `utils/veille_regles.py` | Familles de postes, expression de recherche, URL de recherche, classement d'un intitulé, lecture des champs « À propos », réglages (lecture/écriture JSON), sélection du lot | Créer |
 | `utils/annuaire.py` | Appel de l'annuaire officiel, normalisation des noms/communes, choix du candidat, tranches d'effectif, dirigeants utiles | Créer |
+| `utils/actualite.py` | Flux Google News : URL, lecture RSS, filtre homonymes, catégorie d'un titre | Créer |
 | `veille_store.py` | Tables et requêtes de la veille dans la base SQLite de l'utilisateur | Créer |
 | `utils/verrou_linkedin.py` | Verrou « une seule session LinkedIn à la fois » par utilisateur | Créer |
 | `utils/human_behavior.py` | Compteur quotidien `pages_veille` | Modifier |
@@ -61,7 +64,7 @@ L'annuaire (`https://recherche-entreprises.api.gouv.fr/search?q=<nom>&per_page=2
 | `ui/__init__.py`, `ui/invitations.py` | Bloc « récupérer et inviter » partagé (Profils similaires + Veille) | Créer |
 | `ui/page_veille.py` | La page 🏢 Veille | Créer |
 | `app_advanced.py` | Menu, branche de page, Profils similaires branché sur `ui/invitations.py` | Modifier |
-| `tests/test_veille_regles.py`, `tests/test_annuaire.py`, `tests/test_veille_store.py`, `tests/test_verrou_linkedin.py`, `tests/test_extracteur_apropos.py`, `tests/test_moteur_veille.py`, `tests/test_page_veille.py` | Tests | Créer |
+| `tests/test_actualite.py`, `tests/test_veille_regles.py`, `tests/test_annuaire.py`, `tests/test_veille_store.py`, `tests/test_verrou_linkedin.py`, `tests/test_extracteur_apropos.py`, `tests/test_moteur_veille.py`, `tests/test_page_veille.py` | Tests | Créer |
 | `NOUVEAUTES.md`, `VERSION` | 1.6.0 | Modifier |
 
 ---
@@ -82,6 +85,7 @@ L'annuaire (`https://recherche-entreprises.api.gouv.fr/search?q=<nom>&per_page=2
   - `signature_familles(familles, intitules_libres) -> str`
   - `fiche_depuis_apropos(champs: dict[str, list[str]]) -> dict[str, str]` — clés possibles : `site`, `telephone`, `secteur`, `taille`, `membres`, `siege`, `fondee`, `specialisations`.
   - `@dataclass ReglagesVeille(familles: list[str], intitules_libres: list[str], pages_par_jour: int)` ; `charger_reglages(config_dir) -> ReglagesVeille` ; `sauver_reglages(config_dir, reglages) -> None` ; constantes `PAGES_PAR_JOUR_DEFAUT = 20`, `PAGES_MIN = 5`, `PAGES_MAX = 40`, `PAGES_MAX_PAR_ENTREPRISE = 2`, `RELECTURE_FICHE_JOURS = 30`.
+  - `resume_fiche(fiche: dict, contacts: list[dict], actualites: list[dict], depuis: str | None) -> str` — l'en-tête « en un coup d'œil » (format défini par le test).
   - `ordre_du_lot(entreprises: list[dict]) -> list[dict]` — entreprises identifiables triées : jamais passées d'abord, puis `derniere_veille` croissante ; exclut l'état `"non_identifiee"` sans `url_linkedin`.
 
 - [ ] **Step 1 : Écrire les tests qui échouent**
@@ -237,6 +241,32 @@ def test_le_lot_commence_par_les_jamais_passees_puis_les_plus_anciennes():
 def test_une_entreprise_non_identifiee_avec_un_lien_colle_revient_dans_le_lot():
     entreprises = [{"id": 4, "etat": "non_identifiee", "url_linkedin": "https://www.linkedin.com/company/x/", "derniere_veille": None}]
     assert [e["id"] for e in ordre_du_lot(entreprises)] == [4]
+
+
+# --- En-tête « en un coup d'œil » ------------------------------------------
+
+from utils.veille_regles import resume_fiche
+
+FICHE = {
+    "linkedin.taille": {"valeur": "201-500 employés"}, "linkedin.secteur": {"valeur": "Conseil"},
+    "linkedin.siege": {"valeur": "Paris, Paris"}, "annuaire.effectif": {"valeur": "100 à 199 salariés (2024)"},
+}
+CONTACTS = [{"famille": "Product", "decouvert_le": "2026-10-01"}, {"famille": "Data", "decouvert_le": "2026-10-15T08:00:00"},
+            {"famille": "Autre", "decouvert_le": "2026-10-15T08:00:00"}]
+ACTUS = [{"categorie": "Rachat / fusion", "titre": "Orbique rachète Zéphyr", "publie_le": "2026-08-31"},
+         {"categorie": "Nomination", "titre": "Orbique nomme une DG", "publie_le": "2026-06-01"}]
+
+
+def test_l_en_tete_resume_la_fiche_en_une_ligne():
+    assert resume_fiche(FICHE, CONTACTS, ACTUS, "2026-10-10") == (
+        "201-500 employés · Conseil · Paris · 100 à 199 salariés (2024) · "
+        "📰 Rachat / fusion : Orbique rachète Zéphyr (31/08/2026) · "
+        "2 contacts Product/Data/IA, dont 1 nouveau"
+    )
+
+
+def test_l_en_tete_d_une_fiche_vide():
+    assert resume_fiche({}, [], [], None) == "Fiche pas encore remplie · aucune actualité · aucun contact Product/Data/IA"
 ```
 
 - [ ] **Step 2 : Vérifier qu'ils échouent**
@@ -419,6 +449,39 @@ def sauver_reglages(config_dir, reglages: ReglagesVeille) -> None:
     )
 
 
+def resume_fiche(fiche: dict, contacts: list, actualites: list, depuis) -> str:
+    """La fiche en une ligne : ce qu'on lit avant de décider d'ouvrir le reste.
+
+    Actualité : la plus récente seulement — c'est un signal, pas une revue de
+    presse. Contacts : les familles « Autre » ne comptent pas, ce ne sont pas
+    les postes visés.
+    """
+    morceaux = [fiche[c]["valeur"] for c in ("linkedin.taille", "linkedin.secteur") if c in fiche]
+    if "linkedin.siege" in fiche:
+        morceaux.append(fiche["linkedin.siege"]["valeur"].split(",")[0].strip())
+    if "annuaire.effectif" in fiche:
+        morceaux.append(fiche["annuaire.effectif"]["valeur"])
+    if not morceaux:
+        morceaux.append("Fiche pas encore remplie")
+    if actualites:
+        a = max(actualites, key=lambda x: x.get("publie_le") or "")
+        j = (a.get("publie_le") or "")[:10]
+        date_fr = f"{j[8:10]}/{j[5:7]}/{j[:4]}" if len(j) == 10 else j
+        morceaux.append(f"📰 {a['categorie']} : {a['titre']} ({date_fr})")
+    else:
+        morceaux.append("aucune actualité")
+    vises = [c for c in contacts if c.get("famille") != "Autre"]
+    if vises:
+        nouveaux = sum(1 for c in vises if depuis and (c.get("decouvert_le") or "") > depuis)
+        texte = f"{len(vises)} contact{'s' if len(vises) > 1 else ''} Product/Data/IA"
+        if nouveaux:
+            texte += f", dont {nouveaux} nouveau{'x' if nouveaux > 1 else ''}"
+        morceaux.append(texte)
+    else:
+        morceaux.append("aucun contact Product/Data/IA")
+    return " · ".join(morceaux)
+
+
 def ordre_du_lot(entreprises: list) -> list:
     """Les entreprises à passer, les plus en retard d'abord.
 
@@ -436,7 +499,7 @@ def ordre_du_lot(entreprises: list) -> list:
 - [ ] **Step 4 : Vérifier qu'ils passent**
 
 Run: `venv/bin/python -m pytest tests/test_veille_regles.py -q`
-Expected: PASS (23 tests)
+Expected: PASS (25 tests)
 
 - [ ] **Step 5 : Commit**
 
@@ -753,6 +816,250 @@ git commit -m "feat(veille): annuaire officiel, retenu seulement s'il recoupe Li
 
 ---
 
+## Task 2b : Actualité par Google News (module pur)
+
+**Files:**
+- Create: `utils/actualite.py`
+- Test: `tests/test_actualite.py`
+
+**Interfaces:**
+- Consumes: rien.
+- Produces:
+  - `class ActualiteIndisponible(Exception)`
+  - `url_flux(nom: str) -> str`
+  - `categorie_du_titre(titre: str) -> str | None` — `"Rachat / fusion"`, `"Licenciements / restructuration"`, `"Levée de fonds"`, `"Nomination"`, ou None
+  - `lire_flux(xml: bytes, nom: str) -> list[dict]` — articles `{titre, lien, source, publie_le (YYYY-MM-DD), categorie}`, plus récents d'abord, 20 au plus
+  - `interroger(nom: str, transport=None, delai: float = 8.0) -> list[dict]` — `transport(url, delai) -> bytes` injectable ; lève `ActualiteIndisponible`
+
+- [ ] **Step 1 : Écrire les tests qui échouent**
+
+Créer `tests/test_actualite.py` :
+
+```python
+# -*- coding: utf-8 -*-
+"""Actualité d'une entreprise par Google News : rachat, licenciements, levée.
+
+Constaté le 2026-10-15 : un nom seul ramène des homonymes ; avec les mots des
+événements et une fenêtre d'un an, les vrais signaux sortent (« Decathlon » →
+rachat de 50 % de Sport 2000). Flux inventé ci-dessous, même structure RSS.
+"""
+
+import urllib.parse
+
+import pytest
+
+from utils.actualite import (
+    ActualiteIndisponible, categorie_du_titre, interroger, lire_flux, url_flux,
+)
+
+
+def item(titre, source="Les Échos", date="Mon, 31 Aug 2026 07:00:00 GMT", lien="https://news.example/a"):
+    return (f"<item><title>{titre} - {source}</title><link>{lien}</link>"
+            f"<pubDate>{date}</pubDate><source url=\"https://x\">{source}</source></item>")
+
+
+def flux(*items):
+    return ("<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss version=\"2.0\"><channel><title>G</title>"
+            + "".join(items) + "</channel></rss>").encode("utf-8")
+
+
+def test_l_url_ne_demande_que_les_evenements_de_l_annee():
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(url_flux("Orbique")).query)
+    assert url_flux("Orbique").startswith("https://news.google.com/rss/search?")
+    assert q["q"][0].startswith('"Orbique" (') and q["q"][0].endswith(") when:1y")
+    assert "licenciement" in q["q"][0] and '"plan social"' in q["q"][0]
+    assert q["hl"] == ["fr"] and q["gl"] == ["FR"]
+
+
+@pytest.mark.parametrize("titre,categorie", [
+    ("Orbique rachète 50 % de Zéphyr", "Rachat / fusion"),
+    ("Zéphyr annonce l'acquisition d'Orbique", "Rachat / fusion"),
+    ("Orbique prépare un plan social", "Licenciements / restructuration"),
+    ("Orbique : 200 suppressions de postes", "Licenciements / restructuration"),
+    ("Orbique lève 12 millions d'euros", "Levée de fonds"),
+    ("Orbique nomme une nouvelle directrice générale", "Nomination"),
+    ("Orbique ouvre un magasin à Lyon", None),
+])
+def test_la_categorie_d_un_titre(titre, categorie):
+    assert categorie_du_titre(titre) == categorie
+
+
+def test_le_flux_est_lu_trie_et_nettoye():
+    articles = lire_flux(flux(
+        item("Orbique lève 12 M€", source="Maddyness", date="Mon, 01 Jun 2026 07:00:00 GMT", lien="https://n/1"),
+        item("Orbique rachète Zéphyr", source="Les Échos", date="Mon, 31 Aug 2026 07:00:00 GMT", lien="https://n/2"),
+    ), "Orbique")
+    assert articles == [
+        {"titre": "Orbique rachète Zéphyr", "lien": "https://n/2", "source": "Les Échos",
+         "publie_le": "2026-08-31", "categorie": "Rachat / fusion"},
+        {"titre": "Orbique lève 12 M€", "lien": "https://n/1", "source": "Maddyness",
+         "publie_le": "2026-06-01", "categorie": "Levée de fonds"},
+    ]
+
+
+def test_un_titre_sans_le_nom_de_l_entreprise_est_ecarte():
+    # Le cas « Thiga » : la requête ramène des homonymes et des articles voisins.
+    assert lire_flux(flux(item("Thi*ga : un chanteur lève les foules")), "Thiga") == []
+
+
+def test_le_nom_doit_etre_un_mot_entier():
+    assert lire_flux(flux(item("Orbiquement parlant, la fusion avance")), "Orbique") == []
+
+
+def test_le_nom_est_reconnu_sans_tenir_compte_des_accents_ni_de_la_casse():
+    assert len(lire_flux(flux(item("ÉLAN rachète un concurrent")), "Élan")) == 1
+
+
+def test_un_titre_sans_evenement_est_ecarte():
+    assert lire_flux(flux(item("Orbique ouvre un magasin")), "Orbique") == []
+
+
+def test_les_doublons_de_titre_sont_fusionnes():
+    a = item("Orbique rachète Zéphyr", source="Les Échos", lien="https://n/1")
+    b = item("Orbique rachète Zéphyr", source="Les Échos", lien="https://n/2")
+    assert len(lire_flux(flux(a, b), "Orbique")) == 1
+
+
+def test_un_flux_vide_ne_rend_rien():
+    assert lire_flux(flux(), "Orbique") == []
+
+
+def test_interroger_et_ses_pannes():
+    assert interroger("Orbique", transport=lambda url, delai: flux(item("Orbique rachète Zéphyr")))[0]["categorie"] == "Rachat / fusion"
+    with pytest.raises(ActualiteIndisponible):
+        interroger("Orbique", transport=lambda url, delai: (_ for _ in ()).throw(OSError("réseau")))
+    with pytest.raises(ActualiteIndisponible):
+        interroger("Orbique", transport=lambda url, delai: b"<html>pas du rss")
+```
+
+- [ ] **Step 2 : Vérifier qu'ils échouent**
+
+Run: `venv/bin/python -m pytest tests/test_actualite.py -q`
+Expected: FAIL — `ModuleNotFoundError: No module named 'utils.actualite'`
+
+- [ ] **Step 3 : Écrire le module**
+
+Créer `utils/actualite.py` :
+
+```python
+# -*- coding: utf-8 -*-
+"""Actualité d'une entreprise : flux RSS public de Google News, sans clé.
+
+Constaté le 2026-10-15 : le nom seul ramène des homonymes (« Thiga » → des
+articles sans rapport) ; avec les mots des événements qui comptent et une
+fenêtre d'un an, « Decathlon » ramène le rachat de 50 % de Sport 2000. Deux
+filtres, donc : la requête ne demande que ces événements, et un titre n'est
+gardé que s'il contient le nom de l'entreprise comme mot entier.
+
+Le classement par mots-clés est approximatif (« recrute un biathlète »…) :
+chaque titre est montré avec son lien, sa source et sa date pour que la
+personne juge. Un résumé par IA pourra venir plus tard.
+"""
+
+import re
+import unicodedata
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+
+CATEGORIES = {
+    "Rachat / fusion": ("rachat", "rachete", "acquisition", "acquiert", "fusion", "cede ",
+                        "cession", "entre au capital", "prend le controle", "reprise de"),
+    "Licenciements / restructuration": ("licenciement", "plan social", "pse", "suppression de postes",
+                                        "suppressions de postes", "supprime", "restructuration",
+                                        "redressement judiciaire", "liquidation", "plan de departs",
+                                        "rupture conventionnelle collective"),
+    "Levée de fonds": ("leve ", "levee de fonds", "tour de table", "financement de", "serie a", "serie b",
+                       "series a", "series b"),
+    "Nomination": ("nomme", "nouveau directeur", "nouvelle directrice", "nouveau pdg", "nouveau ceo",
+                   "prend la tete"),
+}
+_MOTS_REQUETE = ("rachat", "acquisition", "fusion", "licenciement", '"plan social"', "restructuration",
+                 '"levée de fonds"', "lève", "nomme")
+_MAX = 20
+
+
+class ActualiteIndisponible(Exception):
+    """Google News n'a pas répondu de façon exploitable."""
+
+
+def _plat(texte: str) -> str:
+    decompose = unicodedata.normalize("NFKD", texte or "")
+    return "".join(c for c in decompose if not unicodedata.combining(c)).lower()
+
+
+def url_flux(nom: str) -> str:
+    q = f'"{nom}" (' + " OR ".join(_MOTS_REQUETE) + ") when:1y"
+    return "https://news.google.com/rss/search?" + urllib.parse.urlencode(
+        {"q": q, "hl": "fr", "gl": "FR", "ceid": "FR:fr"})
+
+
+def categorie_du_titre(titre: str):
+    plat = _plat(titre) + " "
+    for categorie, mots in CATEGORIES.items():
+        if any(re.search(r"\b" + re.escape(m.strip()) + (r"\b" if not m.endswith(" ") else r"\s"), plat)
+               for m in mots):
+            return categorie
+    return None
+
+
+def _contient_le_nom(titre: str, nom: str) -> bool:
+    return re.search(r"(?<!\w)" + re.escape(_plat(nom).strip()) + r"(?!\w)", _plat(titre)) is not None
+
+
+def lire_flux(xml: bytes, nom: str) -> list:
+    racine = ET.fromstring(xml)
+    articles, vus = [], set()
+    for it in racine.iter("item"):
+        brut = (it.findtext("title") or "").strip()
+        source = (it.findtext("source") or "").strip()
+        titre = brut[: -len(" - " + source)] if source and brut.endswith(" - " + source) else brut
+        if not titre or titre.lower() in vus or not _contient_le_nom(titre, nom):
+            continue
+        categorie = categorie_du_titre(titre)
+        if categorie is None:
+            continue
+        try:
+            publie = parsedate_to_datetime(it.findtext("pubDate") or "").date().isoformat()
+        except Exception:
+            publie = ""
+        vus.add(titre.lower())
+        articles.append({"titre": titre, "lien": (it.findtext("link") or "").strip(), "source": source,
+                         "publie_le": publie, "categorie": categorie})
+    articles.sort(key=lambda a: a["publie_le"], reverse=True)
+    return articles[:_MAX]
+
+
+def _transport_http(url: str, delai: float) -> bytes:
+    requete = urllib.request.Request(url, headers={"User-Agent": "We.Reach"})
+    with urllib.request.urlopen(requete, timeout=delai) as reponse:
+        return reponse.read()
+
+
+def interroger(nom: str, transport=None, delai: float = 8.0) -> list:
+    try:
+        return lire_flux((transport or _transport_http)(url_flux(nom), delai), nom)
+    except Exception as e:
+        raise ActualiteIndisponible(str(e)) from e
+```
+
+Note : dans `categorie_du_titre`, un mot-clé terminé par une espace (`"leve "`, `"cede "`) exige un mot entier suivi d'une espace, pour que « lève » ne capture pas « levée » ni « élève », et que « cède » ne capture pas « cèdre ».
+
+- [ ] **Step 4 : Vérifier**
+
+Run: `venv/bin/python -m pytest tests/test_actualite.py -q`
+Expected: PASS (16 tests)
+
+- [ ] **Step 5 : Commit**
+
+```bash
+git add utils/actualite.py tests/test_actualite.py
+git commit -m "feat(veille): actualite des entreprises par Google News"
+```
+
+---
+
 ## Task 3 : Stockage de la veille
 
 **Files:**
@@ -764,7 +1071,7 @@ git commit -m "feat(veille): annuaire officiel, retenu seulement s'il recoupe Li
 - Produces: `class VeilleStore(db_file: str)` avec :
   - `ajouter_entreprise(nom: str, quand: str, url_linkedin: str | None = None) -> int` (doublon de nom, casse ignorée → id existant)
   - `retirer_entreprise(entreprise_id: int) -> None` (supprime aussi fiche et contacts)
-  - `entreprises() -> list[dict]` — clés `id, nom, url_linkedin, company_id, etat, ajoutee_le, derniere_veille, curseur_page, signature_familles, nb_contacts`
+  - `entreprises() -> list[dict]` — clés `id, nom, url_linkedin, company_id, etat, ajoutee_le, derniere_veille, curseur_page, signature_familles, derniere_actualite, nb_contacts`
   - `maj_identification(entreprise_id, etat: str, company_id: str | None = None, url_linkedin: str | None = None) -> None` — états : `a_identifier`, `identifiee`, `non_identifiee`, `illisible`
   - `maj_curseur(entreprise_id, page: int, signature: str) -> None`
   - `marquer_passage(entreprise_id, quand: str) -> None`
@@ -773,7 +1080,8 @@ git commit -m "feat(veille): annuaire officiel, retenu seulement s'il recoupe Li
   - `age_fiche_jours(entreprise_id, source: str, aujourd_hui: str) -> int | None`
   - `relier_contact(entreprise_id, contact: dict, famille: str, quand: str, urls_au_fichier: set) -> bool` — `contact` a `nom, poste, url, connexions` ; renvoie True si **nouveau**
   - `contacts(entreprise_id) -> list[dict]`
-  - `nouveautes_depuis(quand: str | None) -> dict` — `{"contacts": [...], "changements": [...]}` ; chaque contact porte `entreprise` ; chaque changement `entreprise, champ, source, avant, apres, releve_le`
+  - `enregistrer_actualites(entreprise_id, articles: list[dict], quand: str) -> int` (nouveaux ; met à jour `derniere_actualite`) ; `actualites(entreprise_id) -> list[dict]`
+  - `nouveautes_depuis(quand: str | None) -> dict` — `{"contacts": [...], "changements": [...], "actualites": [...]}` ; chaque contact porte `entreprise` ; chaque changement `entreprise, champ, source, avant, apres, releve_le`
   - `enregistrer_passage(debut, fin, entreprises: list[str], pages: int, cause: str, erreurs: list[str]) -> None` ; `dernier_passage() -> dict | None`
   - `societes_du_fichier() -> list[str]` — sociétés distinctes de la table `profiles`
 
@@ -811,7 +1119,7 @@ def test_les_tables_de_la_base_existante_sont_intactes(tmp_path):
     s, db = store(tmp_path)
     tables = {r[0] for r in sqlite3.connect(db).execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"profiles", "invitations", "recherches", "entreprises_suivies",
-            "fiche_entreprise", "contacts_veille", "passages_veille"} <= tables
+            "fiche_entreprise", "contacts_veille", "passages_veille", "actualites"} <= tables
 
 
 def test_ajout_et_doublon_insensible_a_la_casse(tmp_path):
@@ -920,6 +1228,36 @@ def test_les_societes_du_fichier(tmp_path):
     dbm.ajouter_profil("C", "PM", "", "", "https://www.linkedin.com/in/c/")
     dbm.ajouter_profil("D", "PM", "Zéphyr", "", "https://www.linkedin.com/in/d/")
     assert s.societes_du_fichier() == ["Orbique", "Zéphyr"]
+
+
+ARTICLE = {"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source": "Les Échos",
+           "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}
+
+
+def test_une_actualite_n_est_nouvelle_qu_une_fois(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    assert s.enregistrer_actualites(i, [ARTICLE], "2026-10-15T08:00:00") == 1
+    assert s.enregistrer_actualites(i, [ARTICLE], "2026-10-16T08:00:00") == 0
+    assert s.entreprises()[0]["derniere_actualite"] == "2026-10-16T08:00:00"
+    assert [a["titre"] for a in s.actualites(i)] == ["Orbique rachète Zéphyr"]
+
+
+def test_le_recap_inclut_les_actualites(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.enregistrer_actualites(i, [ARTICLE], "2026-10-15T08:00:00")
+    [a] = s.nouveautes_depuis("2026-10-15T00:00:00")["actualites"]
+    assert (a["entreprise"], a["categorie"]) == ("Orbique", "Rachat / fusion")
+    assert s.nouveautes_depuis("2026-10-16T00:00:00")["actualites"] == []
+
+
+def test_retirer_supprime_aussi_l_actualite(tmp_path):
+    s, db = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.enregistrer_actualites(i, [ARTICLE], "2026-10-15")
+    s.retirer_entreprise(i)
+    assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM actualites").fetchone()[0] == 0
 ```
 
 - [ ] **Step 2 : Vérifier qu'ils échouent**
@@ -958,7 +1296,19 @@ CREATE TABLE IF NOT EXISTS entreprises_suivies (
     ajoutee_le TEXT NOT NULL,
     derniere_veille TEXT,
     curseur_page INTEGER NOT NULL DEFAULT 0,
-    signature_familles TEXT
+    signature_familles TEXT,
+    derniere_actualite TEXT
+);
+CREATE TABLE IF NOT EXISTS actualites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entreprise_id INTEGER NOT NULL,
+    lien TEXT NOT NULL,
+    titre TEXT NOT NULL,
+    source TEXT,
+    publie_le TEXT,
+    categorie TEXT NOT NULL,
+    trouve_le TEXT NOT NULL,
+    UNIQUE (entreprise_id, lien)
 );
 CREATE TABLE IF NOT EXISTS fiche_entreprise (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1029,6 +1379,7 @@ class VeilleStore:
         with self._con() as con:
             for table, colonne in (("fiche_entreprise", "entreprise_id"),
                                    ("contacts_veille", "entreprise_id"),
+                                   ("actualites", "entreprise_id"),
                                    ("entreprises_suivies", "id")):
                 con.execute(f"DELETE FROM {table} WHERE {colonne} = ?", (entreprise_id,))
 
@@ -1147,7 +1498,33 @@ class VeilleStore:
                 JOIN entreprises_suivies e ON e.id = f.entreprise_id
                 WHERE f.precedente IS NOT NULL AND f.releve_le > ?
                 ORDER BY e.nom COLLATE NOCASE""", (borne,)).fetchall()]
-        return {"contacts": contacts, "changements": changements}
+            actualites = [dict(l) for l in con.execute("""
+                SELECT a.*, e.nom AS entreprise FROM actualites a
+                JOIN entreprises_suivies e ON e.id = a.entreprise_id
+                WHERE a.trouve_le > ? ORDER BY a.publie_le DESC""", (borne,)).fetchall()]
+        return {"contacts": contacts, "changements": changements, "actualites": actualites}
+
+    # ── Actualité ──────────────────────────────────────────────────────
+
+    def enregistrer_actualites(self, entreprise_id, articles: list, quand: str) -> int:
+        """Enregistre les articles inconnus ; renvoie combien sont nouveaux."""
+        nouveaux = 0
+        with self._con() as con:
+            for a in articles:
+                cur = con.execute("""INSERT OR IGNORE INTO actualites
+                    (entreprise_id, lien, titre, source, publie_le, categorie, trouve_le)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (entreprise_id, a["lien"], a["titre"], a.get("source"), a.get("publie_le"),
+                     a["categorie"], quand))
+                nouveaux += cur.rowcount
+            con.execute("UPDATE entreprises_suivies SET derniere_actualite = ? WHERE id = ?", (quand, entreprise_id))
+        return nouveaux
+
+    def actualites(self, entreprise_id) -> list:
+        with self._con() as con:
+            return [dict(l) for l in con.execute(
+                "SELECT * FROM actualites WHERE entreprise_id = ? ORDER BY publie_le DESC",
+                (entreprise_id,)).fetchall()]
 
     # ── Passages ───────────────────────────────────────────────────────
 
@@ -1187,7 +1564,7 @@ class VeilleStore:
 - [ ] **Step 4 : Vérifier qu'ils passent**
 
 Run: `venv/bin/python -m pytest tests/test_veille_store.py -q`
-Expected: PASS (13 tests)
+Expected: PASS (16 tests)
 
 - [ ] **Step 5 : Commit**
 
@@ -1670,13 +2047,14 @@ git commit -m "feat(veille): lire la page A propos d'une entreprise LinkedIn"
 - Consumes:
   - Task 1 : `charger_reglages`, `expression_mots_cles`, `url_recherche_personnes`, `famille_de_l_intitule`, `signature_familles`, `fiche_depuis_apropos`, `ordre_du_lot`, `PAGES_MAX_PAR_ENTREPRISE`, `RELECTURE_FICHE_JOURS`
   - Task 2 : `interroger`, `choisir_candidat`, `fiche_depuis_annuaire`, `AnnuaireIndisponible`
+  - Task 2b : `utils.actualite.interroger` (importé sous le nom `interroger_actualite`), `ActualiteIndisponible`
   - Task 3 : `VeilleStore` (toutes les méthodes listées)
   - Task 4 : `session_linkedin`, `VerrouOccupe`, `DailyLimitsTracker.pages_veille_today`, `.increment_pages_veille`
   - Task 5 : `DOMSelectors.extract_page_apropos_js()`
   - Existant : `LinkedInScraperV2(use_database, proxy, db_file, profiles_csv, config_dir)`, `._open_linkedin_page(p, cookie, status_callback) -> (browser, page)`, `.network_manager.safe_page_goto(page, url) -> bool`, `.human.human_delay(ms, std)`, `.human.daily_limits`, `.extraire_profils_page(page) -> list[dict]` (clés `nom, poste, entreprise, url, localisation, connexions`), `._resoudre_company_urn_via_typeahead(nom, page) -> str | None`, `._est_page_de_connexion(url) -> bool` (ajouté au correctif Profils similaires ; s'il n'existe pas sous ce nom, utiliser le test de chemin de `recolter_browsemap_async`), `._dumper_panneau` pour modèle de dump ; `DatabaseManager.urls_connues() -> set`, `DatabaseManager.ajouter_profil(nom, poste, entreprise, ecole, url, localisation="")`.
 - Produces:
-  - `@dataclass RapportPassage(debut: str, fin: str, entreprises: list[str], pages: int, cause: str, erreurs: list[str], nouveaux_contacts: int)` ; causes : `"termine"`, `"budget"`, `"cookie"`, `"deconnecte"`, `"occupe"`, `"rien_a_faire"`, `"erreur"`
-  - `async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger) -> RapportPassage`
+  - `@dataclass RapportPassage(debut: str, fin: str, entreprises: list[str], pages: int, cause: str, erreurs: list[str], nouveaux_contacts: int, nouvelles_actualites: int)` ; causes : `"termine"`, `"budget"`, `"cookie"`, `"deconnecte"`, `"occupe"`, `"rien_a_faire"`, `"erreur"`
+  - `async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger, actualite=interroger_actualite) -> RapportPassage` — l'actualité est relue d'abord, pour **toutes** les entreprises suivies non relues aujourd'hui, avant tout budget ou cookie : elle ne coûte rien à LinkedIn.
   - `def lancer_passage(chemins, cookie, proxy=None, status=None) -> RapportPassage` — synchrone, prend le verrou, enregistre le passage
   - `python -m veille --email <email>` (ligne de commande ; la livraison 3 l'appellera)
 
@@ -1820,10 +2198,15 @@ def base(tmp_path):
     return VeilleStore(db), DatabaseManager(db_file=db)
 
 
-def passer(store, db, scraper, reglages=None, annuaire=lambda nom: ANNUAIRE_OK, maintenant="2026-10-15T08:00:00"):
+ARTICLE = {"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source": "Les Échos",
+           "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}
+
+
+def passer(store, db, scraper, reglages=None, annuaire=lambda nom: ANNUAIRE_OK, maintenant="2026-10-15T08:00:00",
+           actualite=lambda nom: []):
     return asyncio.run(veille.passage_async(
         scraper, store, db, reglages or ReglagesVeille(["Product", "Data", "IA"], [], 20),
-        "COOKIE", maintenant, annuaire=annuaire))
+        "COOKIE", maintenant, annuaire=annuaire, actualite=actualite))
 
 
 def test_premier_passage_complet(base):
@@ -1993,6 +2376,48 @@ def test_le_navigateur_est_toujours_ferme(base):
     assert s.navigateur.ferme
 
 
+def test_l_actualite_est_relue_pour_toutes_meme_sans_budget(base):
+    store, db = base
+    a = store.ajouter_entreprise("Orbique", "2026-10-14")
+    b = store.ajouter_entreprise("Zéphyr", "2026-10-14")
+    demandees = []
+
+    def actu(nom):
+        demandees.append(nom)
+        return [dict(ARTICLE, lien=f"https://n/{nom}")]
+
+    page = FaussePage()
+    r = passer(store, db, FauxScraper(page, FauxLimites(deja=20)), actualite=actu)
+    assert sorted(demandees) == ["Orbique", "Zéphyr"]
+    assert r.nouvelles_actualites == 2 and r.cause == "budget" and page.visites == []
+    assert len(store.actualites(a)) == len(store.actualites(b)) == 1
+
+
+def test_l_actualite_n_est_relue_qu_une_fois_par_jour(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    demandees = []
+    actu = lambda nom: demandees.append(nom) or []
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites(deja=20)), actualite=actu, maintenant="2026-10-15T08:00:00")
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites(deja=20)), actualite=actu, maintenant="2026-10-15T14:00:00")
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites(deja=20)), actualite=actu, maintenant="2026-10-16T08:00:00")
+    assert demandees == ["Orbique", "Orbique"]
+
+
+def test_google_news_injoignable_un_seul_message_et_la_veille_continue(base):
+    from utils.actualite import ActualiteIndisponible
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.ajouter_entreprise("Zéphyr", "2026-10-14")
+
+    def panne(nom):
+        raise ActualiteIndisponible("délai dépassé")
+
+    r = passer(store, db, FauxScraper(FaussePage(resultats={1: [personne("a", "PM")]}), FauxLimites()), actualite=panne)
+    assert sum("actualité" in e.lower() for e in r.erreurs) == 1
+    assert r.nouveaux_contacts >= 1
+
+
 def test_lancer_passage_respecte_le_verrou_et_enregistre(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from utils.verrou_linkedin import session_linkedin
@@ -2040,6 +2465,8 @@ from playwright.async_api import async_playwright
 
 from database import DatabaseManager
 from logger import logger
+from utils.actualite import ActualiteIndisponible
+from utils.actualite import interroger as interroger_actualite
 from utils.annuaire import AnnuaireIndisponible, choisir_candidat, fiche_depuis_annuaire, interroger
 from utils.dom_selectors import DOMSelectors
 from utils.veille_regles import (
@@ -2060,6 +2487,7 @@ class RapportPassage:
     cause: str = "termine"
     erreurs: list = field(default_factory=list)
     nouveaux_contacts: int = 0
+    nouvelles_actualites: int = 0
 
 
 class _Arret(Exception):
@@ -2076,7 +2504,8 @@ def _url_apropos(entreprise) -> str:
     return f"https://www.linkedin.com/company/{entreprise['company_id']}/about/"
 
 
-async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger):
+async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger,
+                        actualite=interroger_actualite):
     rapport = RapportPassage(debut=maintenant)
     limites = scraper.human.daily_limits
 
@@ -2084,6 +2513,20 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         logger.info(f"🏢 {texte}")
         if status:
             status(texte)
+
+    # 0. Actualité : gratuite pour LinkedIn, donc pour toutes les entreprises
+    # suivies, une fois par jour — la rotation LinkedIn ne la retarde pas.
+    pannes = 0
+    for e in store.entreprises():
+        if (e.get("derniere_actualite") or "")[:10] == maintenant[:10]:
+            continue
+        dire(f"Actualité de {e['nom']}…")
+        try:
+            rapport.nouvelles_actualites += store.enregistrer_actualites(e["id"], actualite(e["nom"]), maintenant)
+        except ActualiteIndisponible:
+            pannes += 1
+    if pannes:
+        rapport.erreurs.append(f"Google News injoignable : actualité non relue pour {pannes} entreprise(s).")
 
     def restant():
         return reglages.pages_par_jour - limites.pages_veille_today
@@ -2245,7 +2688,7 @@ if __name__ == "__main__":
 - [ ] **Step 4 : Vérifier**
 
 Run: `venv/bin/python -m pytest tests/test_moteur_veille.py -q`
-Expected: PASS (17 tests)
+Expected: PASS (20 tests)
 
 Si `LinkedInScraperV2._est_page_de_connexion` n'existe pas sous ce nom (`grep -n "_est_page_de_connexion" scraper_v2.py`), utiliser le nom réel du test de chemin introduit par le correctif post-essai des Profils similaires, et l'adapter dans `FauxScraper`.
 
@@ -2402,6 +2845,7 @@ def store():
     for e in s.entreprises():
         s.retirer_entreprise(e["id"])
     return s
+# (retirer_entreprise supprime aussi fiche, contacts et actualités)
 
 
 @pytest.fixture
@@ -2481,6 +2925,21 @@ def test_le_recap_montre_les_nouveaux_contacts(store):
     assert any("Jeanne Exemple" in df.to_string() for df in tableaux)
 
 
+def test_le_recap_montre_les_actualites(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_actualites(i, [{"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source": "Les Échos",
+                                      "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}], "2999-01-01T08:00:00")
+    at = _page()
+    assert any("Orbique rachète Zéphyr" in m.value for m in at.markdown)
+
+
+def test_la_fiche_s_ouvre_sur_le_coup_d_oeil(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_fiche(i, {"taille": "201-500 employés", "secteur": "Conseil"}, "linkedin", "2026-10-14")
+    at = _page()
+    assert any(m.value.startswith("**En un coup d'œil** — 201-500 employés · Conseil") for m in at.markdown)
+
+
 def test_le_recap_vide_le_dit(store):
     at = _page()
     assert any("Rien de nouveau" in i.value for i in at.info)
@@ -2522,7 +2981,8 @@ import streamlit as st
 
 import veille
 from ui.invitations import bloc_recuperer_inviter
-from utils.veille_regles import FAMILLES, PAGES_MAX, PAGES_MIN, ReglagesVeille, charger_reglages, sauver_reglages
+from utils.veille_regles import (FAMILLES, PAGES_MAX, PAGES_MIN, ReglagesVeille, charger_reglages,
+                                 resume_fiche, sauver_reglages)
 from veille_store import VeilleStore
 
 _VISITE = "derniere_visite_veille.txt"
@@ -2579,7 +3039,7 @@ def afficher_page_veille() -> None:
     # ── Nouveau aujourd'hui ────────────────────────────────────────────
     st.subheader("Nouveau depuis votre dernière visite")
     nouveautes = store.nouveautes_depuis(_visite_precedente(chemins.config_dir))
-    if not nouveautes["contacts"] and not nouveautes["changements"]:
+    if not nouveautes["contacts"] and not nouveautes["changements"] and not nouveautes["actualites"]:
         st.info("Rien de nouveau depuis votre dernière visite.")
     if nouveautes["contacts"]:
         df = pd.DataFrame(nouveautes["contacts"])[["entreprise", "famille", "nom", "poste", "degre", "url"]]
@@ -2593,6 +3053,9 @@ def afficher_page_veille() -> None:
         urls = list(choix.loc[choix["Inviter"], "Lien"])
         if urls:
             bloc_recuperer_inviter(urls, "veille")
+    for a in nouveautes["actualites"]:
+        st.markdown(f"- 📰 **{a['entreprise']}** — {a['categorie']} : [{a['titre']}]({a['lien']}) "
+                    f"· {a.get('source') or ''} · {(a.get('publie_le') or '')[:10]}")
     for c in nouveautes["changements"]:
         st.markdown(f"- **{c['entreprise']}** — {c['champ']} : {c['avant']} → **{c['apres']}** "
                     f"({c['source']}, {c['releve_le'][:10]})")
@@ -2664,6 +3127,9 @@ def afficher_page_veille() -> None:
         nom = st.selectbox("Entreprise", [e["nom"] for e in entreprises], key="veille_fiche")
         e = next(x for x in entreprises if x["nom"] == nom)
         fiche = store.fiche(e["id"])
+        contacts = store.contacts(e["id"])
+        actualites = store.actualites(e["id"])
+        st.markdown(f"**En un coup d'œil** — {resume_fiche(fiche, contacts, actualites, st.session_state.get('veille_visite_precedente'))}")
         if not fiche:
             st.info("Pas encore de fiche : elle sera remplie au prochain passage de la veille.")
         else:
@@ -2672,7 +3138,14 @@ def afficher_page_veille() -> None:
                 "Source": "LinkedIn" if v["source"] == "linkedin" else "Annuaire officiel",
                 "Relevé le": v["releve_le"][:10]} for cle, v in fiche.items()]),
                 hide_index=True, use_container_width=True)
-        contacts = store.contacts(e["id"])
+        st.markdown("**Actualité (12 derniers mois)**")
+        if actualites:
+            for a in actualites:
+                st.markdown(f"- {a['categorie']} — [{a['titre']}]({a['lien']}) · {a.get('source') or ''} "
+                            f"· {(a.get('publie_le') or '')[:10]}")
+            st.caption("Classement par mots-clés, approximatif : ouvrez l'article pour juger.")
+        elif e.get("derniere_actualite"):
+            st.caption(f"Aucune actualité marquante trouvée (relevé du {e['derniere_actualite'][:10]}).")
         if contacts:
             st.dataframe(pd.DataFrame(contacts)[["famille", "nom", "poste", "degre", "decouvert_le", "url"]]
                          .rename(columns={"famille": "Famille", "nom": "Nom", "poste": "Intitulé",
@@ -2745,7 +3218,7 @@ git commit -m "feat(veille): page Veille — entreprises suivies, recap, fiche, 
 cd "/Users/thxms/Desktop/Projets Dev/LinkedIn Scraper Pro" && SCRAPER_HEADLESS=false SCRAPER_STEALTH=false venv/bin/python -m streamlit run app_advanced.py --server.headless=true --server.port=8502
 ```
 
-Ajouter trois entreprises : une par son lien LinkedIn, deux depuis le fichier (dont une au nom ambigu). Lancer la veille. Vérifier : identification, fiche (8 rubriques LinkedIn, annuaire rapproché ou motif clair), contacts classés par famille, pages consommées (lire `daily_limits.json` du dossier de config), récap au rechargement. Si une étape échoue : capture de la page (script jetable hors dépôt, comme pour les Profils similaires), correction **avec test** sur fixture synthétique.
+Ajouter trois entreprises : une par son lien LinkedIn, deux depuis le fichier (dont une au nom ambigu). Lancer la veille. Vérifier : identification, fiche (8 rubriques LinkedIn, annuaire rapproché ou motif clair), actualité (pertinente ou « aucune » pour une petite société, jamais d'homonyme), en-tête « en un coup d'œil », contacts classés par famille, pages consommées (lire `daily_limits.json` du dossier de config), récap au rechargement. Si une étape échoue : capture de la page (script jetable hors dépôt, comme pour les Profils similaires), correction **avec test** sur fixture synthétique.
 
 - [ ] **Step 2 : Notes de version** — insérer avant la section la plus récente de `NOUVEAUTES.md` :
 
@@ -2756,8 +3229,10 @@ Ajouter trois entreprises : une par son lien LinkedIn, deux depuis le fichier (d
 Nouvelle page **🏢 Veille** : ajoutez les entreprises que vous suivez — depuis
 votre fichier ou par le lien de leur page LinkedIn. En un clic, l'outil
 remplit leur fiche (site, taille, secteur, siège, et, pour les sociétés
-françaises, dirigeants et SIREN depuis l'annuaire officiel) et cherche leurs
-Product, Data et IA. Chaque visite de la page montre ce qui est nouveau
+françaises, dirigeants et SIREN depuis l'annuaire officiel), relève leur
+actualité de l'année — rachat, licenciements, levée de fonds, nomination — et
+cherche leurs Product, Data et IA. Chaque fiche s'ouvre sur un résumé en une
+ligne. Chaque visite de la page montre ce qui est nouveau
 depuis la précédente ; vous choisissez qui inviter, rien ne part tout seul.
 La veille avance un peu chaque jour, pour ménager votre compte LinkedIn :
 une vingtaine de pages par jour, réglable.
