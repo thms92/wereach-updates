@@ -91,6 +91,13 @@ def test_sans_titre_designe_le_nom_vient_du_lien_de_la_carte(navigateur):
     assert lire(navigateur, sans_titre)["resultats"][3]["nom"] == "Orbique Immobilier"
 
 
+def test_sans_main_rien_n_est_lu_et_le_corps_est_renvoye(navigateur):
+    sans_main = PAGE.replace('<main id="workspace">', "<div>").replace("</main>", "</div>")
+    r = lire(navigateur, sans_main)
+    assert r["resultats"] == []
+    assert "Groupe Orbique Leasing" in r["html"]
+
+
 def test_une_page_sans_carte_renvoie_son_html(navigateur):
     r = lire(navigateur, PAGE_SANS_CARTE)
     assert r["resultats"] == []

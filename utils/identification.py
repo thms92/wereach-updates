@@ -18,6 +18,8 @@ def url_recherche_entreprises(nom: str) -> str:
 
 
 def choisir_entreprise(resultats, nom_suivi: str):
+    """URL retenue et "", ou None et un motif complet (consigne comprise) :
+    l'appelant l'affiche tel quel, sans l'analyser."""
     cible = normaliser_nom(nom_suivi)
     exacts = [r for r in resultats or [] if cible and normaliser_nom(r.get("nom", "")) == cible]
     urls = list(dict.fromkeys(r["url"] for r in exacts))
@@ -28,4 +30,5 @@ def choisir_entreprise(resultats, nom_suivi: str):
     # Coupé sur la liste et non sur le texte : un nom peut contenir « , ».
     noms = list(dict.fromkeys(r.get("nom", "") for r in resultats or [] if r.get("nom")))[:3]
     proposees = ", ".join(noms) if noms else "aucune"
-    return None, f"aucune entreprise « {nom_suivi} » sur LinkedIn (proposées : {proposees})"
+    return None, (f"aucune entreprise « {nom_suivi} » sur LinkedIn (proposées : {proposees}) "
+                  "— collez le lien de sa page entreprise")

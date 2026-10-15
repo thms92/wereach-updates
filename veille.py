@@ -183,6 +183,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         # paresseux des résultats et garde une allure humaine.
         await scraper.human.browse_page_naturally(page)
 
+    # Page de recherche d'entreprises illisible (aucune carte lue) : sans doute
+    # une mise en page changée. On n'y dépense plus de page pour les noms
+    # suivants de ce passage, et on ne déclare personne « introuvable ».
+    suspension = {"ligne": None, "reportees": []}
+
     async def traiter(page, entreprise, connus) -> bool:
         """Une entreprise ; False si elle n'a pas pu être passée.
 
@@ -196,25 +201,30 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         devine = trouvee = False
         if not entreprise.get("company_id") and not entreprise.get("url_linkedin"):
             devine = True
+            if suspension["ligne"] is not None:
+                suspension["reportees"].append(nom)
+                return False
             await charger(page, url_recherche_entreprises(nom))
             lu = await page.evaluate(DOMSelectors.extract_recherche_entreprises_js()) or {}
             resultats = lu.get("resultats") or []
             url, motif = choisir_entreprise(resultats, nom)
+            html = lu.get("html") or ""
+            if not resultats and html.strip():
+                # Page affichée mais aucune carte lue : panne de lecture, pas
+                # absence. Elle reste « à identifier », passe en fin de rotation
+                # (sinon elle rouvrirait la même page en tête de chaque passage).
+                enregistree = scraper._dumper_panneau(html, nom_fichier="recherche_entreprises_dump.html")
+                ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
+                store.marquer_passage(eid, maintenant)
+                suspension["ligne"] = len(rapport.erreurs)
+                rapport.erreurs.append(
+                    f"{nom} : aucune entreprise lue sur la page de recherche LinkedIn — sa structure a peut-être "
+                    f"changé ({ou}) ; nouvel essai au prochain passage.")
+                return False
             if not url:
+                # Cartes lues, mais aucun nom exact, ou plusieurs : on ne devine pas.
                 store.maj_identification(eid, "non_identifiee")
-                html = lu.get("html") or ""
-                if not resultats and html.strip():
-                    # Aucune carte lue sur une page pourtant affichée : vraie
-                    # absence, ou structure changée — on ne sait pas, on le dit.
-                    enregistree = scraper._dumper_panneau(html, nom_fichier="recherche_entreprises_dump.html")
-                    ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
-                    rapport.erreurs.append(
-                        f"{nom} : aucune entreprise lue sur la recherche LinkedIn — aucun résultat, ou page dont "
-                        f"la structure a changé ({ou}) ; collez le lien de sa page entreprise.")
-                elif "collez le lien" in motif:
-                    rapport.erreurs.append(f"{nom} : {motif}.")
-                else:
-                    rapport.erreurs.append(f"{nom} : {motif} — collez le lien de sa page entreprise.")
+                rapport.erreurs.append(f"{nom} : {motif}.")
                 return False
             # Le lien sert à lire « À propos » ; il n'est enregistré qu'une fois
             # le nom de la page confirmé (plus bas) : enregistré avant, un
@@ -367,6 +377,10 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 rapport.erreurs.append(arret.message)
         finally:
             await navigateur.close()
+    if suspension["reportees"]:
+        rapport.erreurs[suspension["ligne"]] += (
+            f" Recherche par nom suspendue pour ce passage : {', '.join(suspension['reportees'])} "
+            "attend(ent) le prochain.")
     rapport.fin = _maintenant()
     return rapport
 

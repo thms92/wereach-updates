@@ -580,6 +580,8 @@ def test_une_erreur_inattendue_sur_une_entreprise_n_arrete_pas_le_passage(base):
     r = passer(store, db, s)
     assert r.cause == "termine" and r.entreprises == ["Orbique"]
     assert any("Bombe" in x and "RuntimeError" in x for x in r.erreurs)
+    bombe = next(e for e in store.entreprises() if e["nom"] == "Bombe")
+    assert bombe["etat"] == "a_identifier" and bombe["url_linkedin"] is None
 
 
 def test_le_budget_est_verifie_avant_d_identifier_l_entreprise_suivante(base):
@@ -831,16 +833,41 @@ def test_la_page_de_recherche_est_parcourue_comme_un_humain(base):
     assert s.human.parcours == 1 and s.human.delais >= 1
 
 
-def test_une_recherche_sans_carte_lue_est_enregistree_et_dite(base):
+def test_une_recherche_illisible_ne_declare_personne_introuvable(base):
+    # Aucune carte lue sur une page affichée : LinkedIn a sans doute changé sa
+    # mise en page. Ce n'est pas « introuvable » : on garde la page, on
+    # n'insiste pas sur les autres noms, et les liens connus continuent.
     store, db = base
-    store.ajouter_entreprise("Orbique", "2026-10-14")
-    s = FauxScraper(FaussePage(recherche=recherche_de(html="<main>nouvelle mise en page</main>")), FauxLimites())
+    store.ajouter_entreprise("Alpha", "2026-10-14")
+    store.ajouter_entreprise("Bêta", "2026-10-14")
+    store.ajouter_entreprise("Orbique", "2026-10-14", url_linkedin="https://www.linkedin.com/company/orbique/")
+    store.ajouter_entreprise("Gamma", "2026-10-14")
+    page = FaussePage(recherche=recherche_de(html="<main>nouvelle mise en page</main>"))
+    s = FauxScraper(page, FauxLimites())
     r = passer(store, db, s)
+    etats = {e["nom"]: (e["etat"], e["url_linkedin"], e["derniere_veille"]) for e in store.entreprises()}
+    assert etats["Alpha"] == ("a_identifier", None, "2026-10-15T08:00:00")  # en fin de rotation
+    assert etats["Bêta"] == ("a_identifier", None, None) and etats["Gamma"] == ("a_identifier", None, None)
+    assert etats["Orbique"][0] == "identifiee"  # un lien collé ne dépend pas de la recherche par nom
+    assert page.recherches == ["Alpha"]
+    assert len([v for v in page.visites if "results/companies" in v]) == 1
     assert s.dumps == ["<main>nouvelle mise en page</main>"]
     assert s.noms_dumps == ["recherche_entreprises_dump.html"]
-    assert store.entreprises()[0]["etat"] == "non_identifiee"
-    assert len(r.erreurs) == 1
-    assert "aucune entreprise lue" in r.erreurs[0] and "structure" in r.erreurs[0] and "logs/" in r.erreurs[0]
+    lignes = [x for x in r.erreurs if "Alpha" in x]
+    assert len(lignes) == 1 and "Bêta" in lignes[0] and "Gamma" in lignes[0]
+    assert "structure" in lignes[0] and "logs/" in lignes[0]
+    assert not any("aucune entreprise « " in x for x in r.erreurs)
+    assert r.entreprises == ["Orbique"]
+
+
+def test_une_recherche_illisible_non_enregistree_ne_le_pretend_pas(base):
+    store, db = base
+    store.ajouter_entreprise("Alpha", "2026-10-14")
+    s = FauxScraper(FaussePage(recherche=recherche_de(html="<main>?</main>")), FauxLimites())
+    s._dumper_panneau = lambda html, nom_fichier=None: False
+    r = passer(store, db, s)
+    assert any("Alpha" in x and "page non enregistrée" in x for x in r.erreurs)
+    assert not any("enregistrée dans logs/" in x for x in r.erreurs)
 
 
 def test_une_recherche_sans_carte_ni_html_n_enregistre_rien(base):

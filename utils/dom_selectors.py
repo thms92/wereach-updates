@@ -917,10 +917,13 @@ class DOMSelectors:
         exact. Les liens hors carte (en-tête, publicité, liens vides laissés
         par les <a> imbriqués que le navigateur défait) sont ignorés.
         Aucune carte lue : le HTML de <main> est renvoyé pour être enregistré.
+        Sans <main>, aucune carte n'est lue (le reste de la page — en-tête,
+        publicités — n'est pas un résultat) et le HTML du corps est renvoyé.
         """
         return r"""() => {
             const net = s => (s || '').replace(/\s+/g, ' ').trim();
-            const racine = document.querySelector('main') || document.body;
+            const racine = document.querySelector('main');
+            if (!racine) return {resultats: [], html: document.body.innerHTML.slice(0, 1000000)};
             const slugDe = a => {
                 const m = (a.getAttribute('href') || '').match(/\/company\/([^\/?#]+)/);
                 return m ? m[1] : '';

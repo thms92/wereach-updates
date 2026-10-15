@@ -47,18 +47,19 @@ def test_aucun_nom_exact_cite_trois_propositions_au_plus():
                                     + [carte("Orbique Conseil", "orbique-conseil")], "Orbique")
     assert url is None
     assert motif == ("aucune entreprise « Orbique » sur LinkedIn "
-                     "(proposées : Orbique Assurances, Groupe Orbique Leasing, Orbique Immobilier)")
+                     "(proposées : Orbique Assurances, Groupe Orbique Leasing, Orbique Immobilier) "
+                     "— collez le lien de sa page entreprise")
 
 
 def test_un_nom_avec_une_virgule_reste_entier_dans_les_propositions():
     _, motif = choisir_entreprise([carte("Orbique, Conseil & Cie", "oc"), carte("Zorbique", "z"),
                                    carte("Morbique", "m"), carte("Corbique", "c")], "Orbique")
-    assert motif.endswith("(proposées : Orbique, Conseil & Cie, Zorbique, Morbique)")
+    assert "(proposées : Orbique, Conseil & Cie, Zorbique, Morbique)" in motif
 
 
 def test_aucune_carte():
     assert choisir_entreprise([], "Orbique") == (
-        None, "aucune entreprise « Orbique » sur LinkedIn (proposées : aucune)")
+        None, "aucune entreprise « Orbique » sur LinkedIn (proposées : aucune) — collez le lien de sa page entreprise")
 
 
 def test_un_nom_suivi_vide_ne_retient_rien():
