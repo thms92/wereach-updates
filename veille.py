@@ -31,7 +31,7 @@ from utils.annuaire import (
     normaliser_nom,
 )
 from utils.browsemap import normaliser_url
-from utils.coordonnees_site import SiteInjoignable, lire_site
+from utils.coordonnees_site import SiteInjoignable, lire_site, motif_inutilisable
 from utils.dom_selectors import DOMSelectors
 from utils.identification import choisir_entreprise, url_recherche_entreprises
 from utils.veille_regles import (
@@ -40,7 +40,7 @@ from utils.veille_regles import (
     url_recherche_personnes,
 )
 from utils.verrou_linkedin import VerrouOccupe, session_linkedin
-from veille_store import VeilleStore
+from veille_store import NOUVEL_ESSAI_COORDONNEES_JOURS, VeilleStore
 
 
 # Profils dont on lit les coordonnées, par entreprise et par passage : chacun
@@ -49,10 +49,7 @@ COORDONNEES_PAR_ENTREPRISE = 3
 # Attente de la fenêtre « Coordonnées » après le clic.
 ATTENTE_FENETRE_MS = 8000
 _SELECTEUR_LIEN_COORDONNEES = 'a[href*="overlay/contact-info"]'
-# On attend LA fenêtre « Coordonnées », lue par l'extracteur lui-même : le
-# profil garde d'autres fenêtres (menus fermés, messagerie) qu'un simple
-# sélecteur `[role=dialog]` prendrait pour elle.
-_JS_FENETRE_OUVERTE = f"() => ({DOMSelectors.extract_coordonnees_js()})().dialogue"
+_REPRISE_COORDONNEES = f"nouvel essai dans {NOUVEL_ESSAI_COORDONNEES_JOURS} jours."
 
 
 @dataclass
@@ -211,6 +208,14 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         age = store.age_fiche_jours(eid, "site", maintenant)
         if not site or (age is not None and age < RELECTURE_FICHE_JOURS):
             return
+        motif = motif_inutilisable(site)
+        if motif:
+            # Refus durable (réseau social, adresse locale…) : dit une fois dans
+            # la fiche et daté, revu dans 30 jours, plutôt qu'une ligne d'erreur
+            # à chaque passage pour une adresse qui ne changera pas d'elle-même.
+            store.enregistrer_fiche(eid, {"lecture": f"site non lisible ({motif})"}, "site", maintenant)
+            store.marquer_lecture(eid, "site", maintenant)
+            return
         dire(f"{nom} : lecture de son site…")
         try:
             # Hors de la boucle d'événements : un site lent (plusieurs pages à
@@ -222,7 +227,8 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             return
         emails, telephones = (lu.get("emails") or [])[:3], (lu.get("telephones") or [])[:3]
         # Rien trouvé est un constat daté, pas un champ vide muet.
-        store.enregistrer_fiche(eid, {"email": ", ".join(emails) or "non publié",
+        # « lecture » remplace un ancien « site non lisible » si l'adresse a changé.
+        store.enregistrer_fiche(eid, {"lecture": "site lu", "email": ", ".join(emails) or "non publié",
                                       "telephone": ", ".join(telephones)}, "site", maintenant)
         store.marquer_lecture(eid, "site", maintenant)
 
@@ -234,20 +240,27 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         Seule une fenêtre lue est enregistrée (« rien » compris) : un lien
         absent ou une fenêtre fermée ne disent rien de ce que la personne
         partage, et un faux « rien » empêcherait de relire pendant 90 jours.
+        Ces échecs sont datés à part (nouvel essai dans 7 jours), pour qu'une
+        même personne ne reprenne pas la tête de la file à chaque passage.
         """
         nom = entreprise["nom"]
         qui = contact.get("nom") or contact["url"]
-        reprise = "nouvel essai au prochain passage."
+        reprise = _REPRISE_COORDONNEES
         await charger(page, contact["url"])
         lien = page.locator(_SELECTEUR_LIEN_COORDONNEES).first
         if not await lien.count():
             rapport.erreurs.append(f"{nom} : {qui} — lien « Coordonnées » absent du profil ; {reprise}")
+            store.noter_echec_coordonnees(contact["url"], maintenant)
             return
         await scraper.human.human_hover_and_click(page, lien)
         try:
-            await page.wait_for_function(_JS_FENETRE_OUVERTE, timeout=ATTENTE_FENETRE_MS)
+            # Un petit test sondé à chaque image, qui ne reconnaît que LA fenêtre
+            # « Coordonnées » : le profil garde d'autres fenêtres (menus fermés,
+            # messagerie) qu'un sélecteur `[role=dialog]` prendrait pour elle.
+            await page.wait_for_function(DOMSelectors.fenetre_coordonnees_ouverte_js(), timeout=ATTENTE_FENETRE_MS)
         except Exception:
             rapport.erreurs.append(f"{nom} : {qui} — la fenêtre « Coordonnées » ne s'est pas ouverte ; {reprise}")
+            store.noter_echec_coordonnees(contact["url"], maintenant)
             return
         await scraper.human.human_delay(1200, 300)  # le temps de lire la fenêtre
         lu = await page.evaluate(DOMSelectors.extract_coordonnees_js()) or {}
@@ -256,6 +269,7 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
             rapport.erreurs.append(f"{nom} : {qui} — fenêtre « Coordonnées » illisible, sa structure a peut-être "
                                    f"changé ({ou}) ; rien n'est enregistré.")
+            store.noter_echec_coordonnees(contact["url"], maintenant)
             return
         store.enregistrer_coordonnees(contact["url"], lu.get("email"), lu.get("telephone"), maintenant)
 
@@ -397,7 +411,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             # la recherche) : un second passage sur la même page, sans coût.
             # Rien de lu n'est pas une erreur : la relation viendra alors des
             # seules invitations acceptées.
-            degres = await page.evaluate(DOMSelectors.extract_degres_js())
+            try:
+                degres = await page.evaluate(DOMSelectors.extract_degres_js())
+            except Exception as e:
+                logger.warning(f"⚠️ Veille, degrés illisibles sur {page.url} : {type(e).__name__} : {e}")
+                degres = {}
             degres = {normaliser_url(f"https://www.linkedin.com/in/{v}/"): d
                       for v, d in (degres.items() if isinstance(degres, dict) else ())}
             if not trouves:
@@ -442,14 +460,16 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             except _PageInjoignable as e:
                 _fenetre_fermee(page)
                 rapport.erreurs.append(f"{nom} : {contact.get('nom') or contact['url']} — {e.motif} ; "
-                                       "nouvel essai au prochain passage.")
+                                       f"{_REPRISE_COORDONNEES}")
+                store.noter_echec_coordonnees(contact["url"], maintenant)
             except Exception as e:
                 # Une personne en échec ne prive pas l'entreprise de son passage :
                 # ses employés sont déjà lus, elle sortirait sinon de la rotation.
                 _fenetre_fermee(page)
                 logger.error(f"❌ Veille, coordonnées de {contact['url']} : {type(e).__name__} : {e}", exc_info=True)
                 rapport.erreurs.append(f"{nom} : {contact.get('nom') or contact['url']} — erreur inattendue "
-                                       f"({type(e).__name__}) en lisant ses coordonnées ; nouvel essai au prochain passage.")
+                                       f"({type(e).__name__}) en lisant ses coordonnées ; {_REPRISE_COORDONNEES}")
+                store.noter_echec_coordonnees(contact["url"], maintenant)
         store.marquer_passage(eid, maintenant)
         return True
 

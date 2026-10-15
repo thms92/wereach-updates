@@ -94,6 +94,15 @@ def domaine_de(site):
     return _motif_refus(site)[0]
 
 
+def motif_inutilisable(site) -> str:
+    """Pourquoi l'adresse ne sera jamais lue (pas du http(s), locale, réseau social) ; "" si elle peut l'être.
+
+    Distingue un refus durable — qui ne changera qu'avec la fiche — d'une
+    panne réseau passagère, pour que l'appelant ne le redise pas à chaque fois.
+    """
+    return _motif_refus(site)[1]
+
+
 def pages_a_lire(site: str) -> list:
     """Accueil puis pages de contact probables, sur la même origine que `site`."""
     site = _avec_schema(site)

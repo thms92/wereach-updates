@@ -345,3 +345,47 @@ def test_coordonnees_table_creee_sans_rien_detruire(tmp_path):
     s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "j@o.example", "", "2026-10-15")
     VeilleStore(db)  # rouverte : la table existe, rien n'est effacé
     assert VeilleStore(db).coordonnees("https://www.linkedin.com/in/jeanne/")["email"] == "j@o.example"
+
+
+def test_un_essai_en_echec_ne_bloque_pas_la_file(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    for v in ("a", "b", "c", "d"):
+        s.relier_contact(i, contact(v, connexions="1er"), "Product", "2026-10-01", set())
+    s.noter_echec_coordonnees("https://www.linkedin.com/in/b/", "2026-10-15T08:00:00")
+    s.noter_echec_coordonnees("http://linkedin.com/in/A?trk=x", "2026-10-14T08:00:00")
+    s.noter_echec_coordonnees("https://www.linkedin.com/in/c/", "2026-10-13T08:00:00")
+    url = "https://www.linkedin.com/in/{}/".format
+    # Jamais essayé d'abord ; un échec n'est retenté qu'après 7 jours.
+    assert [c["url"] for c in s.contacts_en_relation(i, "2026-10-16")] == [url("d")]
+    assert [c["url"] for c in s.contacts_en_relation(i, "2026-10-21")] == [url("d"), url("c"), url("a")]
+    assert [c["url"] for c in s.contacts_en_relation(i, "2026-10-22")] == [url("d"), url("c"), url("a"), url("b")]
+    # Un échec n'est pas une lecture : rien à afficher pour lui.
+    assert s.coordonnees(url("a")) is None
+
+
+def test_une_lecture_reussie_efface_l_echec(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("a", connexions="1er"), "Product", "2026-10-01", set())
+    s.noter_echec_coordonnees("https://www.linkedin.com/in/a/", "2026-10-01")
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/a/", "", "", "2026-10-15")
+    assert s.contacts_en_relation(i, "2026-10-20") == []
+    assert len(s.contacts_en_relation(i, "2027-01-20")) == 1  # 90 jours, pas 7
+
+
+def test_retirer_une_entreprise_efface_les_coordonnees_de_ses_seuls_contacts(tmp_path):
+    s, db = store(tmp_path)
+    a = s.ajouter_entreprise("Orbique", "2026-10-15")
+    b = s.ajouter_entreprise("Zéphyr", "2026-10-15")
+    s.relier_contact(a, contact("jeanne"), "Product", "2026-10-15", set())
+    s.relier_contact(a, contact("paul"), "Product", "2026-10-15", set())
+    s.relier_contact(b, contact("paul"), "Product", "2026-10-15", set())
+    for v in ("jeanne", "paul"):
+        s.enregistrer_coordonnees(f"https://www.linkedin.com/in/{v}/", f"{v}@o.example", "", "2026-10-15")
+    s.noter_echec_coordonnees("https://www.linkedin.com/in/jeanne/", "2026-10-15")
+    s.retirer_entreprise(a)
+    # Donnée personnelle : plus suivie par aucune entreprise, elle ne reste pas.
+    assert s.coordonnees("https://www.linkedin.com/in/jeanne/") is None
+    assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM essais_coordonnees").fetchone()[0] == 0
+    assert s.coordonnees("https://www.linkedin.com/in/paul/")["email"] == "paul@o.example"

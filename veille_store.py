@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS coordonnees_contacts (
     partage TEXT NOT NULL,
     releve_le TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS essais_coordonnees (
+    url TEXT PRIMARY KEY,
+    essai_le TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS passages_veille (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     debut TEXT NOT NULL,
@@ -82,6 +86,9 @@ CHANGEMENTS_SIGNALES = {("linkedin", "taille"), ("linkedin", "siege"), ("linkedi
 # Coordonnées d'une personne relues au plus tous les 90 jours : elles changent
 # peu, et chaque lecture coûte une page LinkedIn du budget.
 RELECTURE_COORDONNEES_JOURS = 90
+# Après un essai manqué (lien absent, fenêtre fermée) : assez long pour ne pas
+# repayer une page à chaque passage, assez court pour une panne passagère.
+NOUVEL_ESSAI_COORDONNEES_JOURS = 7
 
 # Degré lu sur une carte de résultats, quelle que soit la langue de LinkedIn.
 _DEGRES = {"1er": "1er", "1st": "1er", "2e": "2e", "2nd": "2e", "3e": "3e", "3rd": "3e"}
@@ -181,6 +188,11 @@ class VeilleStore:
                 tables.insert(3, ("actualites", "entreprise_id"))
             for table, colonne in tables:
                 con.execute(f"DELETE FROM {table} WHERE {colonne} = ?", (entreprise_id,))
+            # Coordonnées et essais sont rangés par personne : on ne garde que
+            # ceux d'une personne encore suivie sous une autre entreprise. Une
+            # donnée personnelle sans usage ne reste pas dans la base.
+            for table in ("coordonnees_contacts", "essais_coordonnees"):
+                con.execute(f"DELETE FROM {table} WHERE url NOT IN (SELECT url FROM contacts_veille)")
 
     def entreprises(self) -> list:
         with self._con() as con:
@@ -354,6 +366,19 @@ class VeilleStore:
         with self._con() as con:
             con.execute("""INSERT OR REPLACE INTO coordonnees_contacts (url, email, telephone, partage, releve_le)
                            VALUES (?, ?, ?, ?, ?)""", (url, email, telephone, partage, quand))
+            con.execute("DELETE FROM essais_coordonnees WHERE url = ?", (url,))
+
+    def noter_echec_coordonnees(self, url, quand: str) -> None:
+        """Essai manqué : la fenêtre n'a pas pu être lue (lien absent, fermée…).
+
+        À part des coordonnées : ce n'est pas une lecture (rien à afficher,
+        « non lu »), mais sans date, cette personne repasserait en tête à
+        chaque passage et prendrait les places des autres.
+        """
+        url = normaliser_url(url)
+        if url:
+            with self._con() as con:
+                con.execute("INSERT OR REPLACE INTO essais_coordonnees (url, essai_le) VALUES (?, ?)", (url, quand))
 
     def coordonnees(self, url):
         url = normaliser_url(url)
@@ -377,23 +402,31 @@ class VeilleStore:
 
         En relation = 1er degré lu sur la carte, ou invitation acceptée : seuls
         ceux-là montrent leurs coordonnées, une visite à quelqu'un d'autre
-        coûterait une page pour rien. Jamais lus d'abord, puis les plus anciens.
+        coûterait une page pour rien.
+
+        Ordre : jamais essayés (jamais lus, puis lus il y a longtemps), puis
+        ceux dont le dernier essai a échoué, le plus ancien d'abord — un échec
+        répété ne doit pas occuper les places à chaque passage.
         """
         jour = date.fromisoformat(aujourd_hui[:10])
+        age = lambda d: (jour - date.fromisoformat(d[:10])).days
         with self._con() as con:
             acceptees = self._urls_invitation_acceptee(con)
             lignes = [dict(l) for l in con.execute("""
-                SELECT c.*, k.releve_le AS coordonnees_le FROM contacts_veille c
+                SELECT c.*, k.releve_le AS coordonnees_le, e.essai_le AS echec_le FROM contacts_veille c
                 LEFT JOIN coordonnees_contacts k ON k.url = c.url
+                LEFT JOIN essais_coordonnees e ON e.url = c.url
                 WHERE c.entreprise_id = ? ORDER BY c.id""", (entreprise_id,)).fetchall()]
         retenus = []
         for c in lignes:
             if normaliser_degre(c["degre"]) != "1er" and c["url"] not in acceptees:
                 continue
-            lu = c.pop("coordonnees_le")
-            if lu and (jour - date.fromisoformat(lu[:10])).days < max_age_jours:
+            lu, echec = c.pop("coordonnees_le"), c.pop("echec_le")
+            if lu and age(lu) < max_age_jours:
                 continue
-            retenus.append((lu or "", c))
+            if echec and age(echec) < NOUVEL_ESSAI_COORDONNEES_JOURS:
+                continue
+            retenus.append(((1, echec) if echec else (0, lu or ""), c))
         return [c for _, c in sorted(retenus, key=lambda r: r[0])]
 
     # ── Passages ───────────────────────────────────────────────────────

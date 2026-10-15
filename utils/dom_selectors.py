@@ -959,7 +959,8 @@ class DOMSelectors:
         """Degré de relation par carte de résultats de personnes : `{vanity: "1er"|"2e"|"3e"}`.
 
         Le vanity est décodé et en minuscules (même clé que `vanity_depuis_url`).
-        Le degré est lu dans le texte de la carte, sous la forme « · 1er » —
+        Le degré est lu dans le texte de la carte, sous la forme « · 1er » seul
+        en fin de ligne (pas « · 1er cabinet » dans un titre) —
         vue sur d'autres listes LinkedIn, pas encore sur cette page : on
         accepte aussi « • » et l'anglais (« 1st »). Une carte sans degré
         lisible est absente du résultat ; rien de lu → `{}`, et la relation
@@ -967,7 +968,10 @@ class DOMSelectors:
         """
         return r"""() => {
             const DEGRES = {'1er': '1er', '1st': '1er', '2e': '2e', '2nd': '2e', '3e': '3e', '3rd': '3e'};
-            const motif = /[·•]\s*(1er|2e|3e|1st|2nd|3rd)(?![a-z])/i;
+            // Le badge est seul en fin de ligne (« Jeanne Exemple · 1er », « · 3e et + ») :
+            // sans cette ancre, un titre « Consultante · 1er cabinet » ou « · 1st time
+            // founder » ferait passer une inconnue pour une relation de 1er degré.
+            const motif = /[·•]\s*(1er|2e|3e|1st|2nd|3rd)(?:\s*(?:et\s*)?\+)?[ \t]*$/im;
             const vanityDe = href => {
                 const m = (href || '').match(/\/in\/([^/?#]+)/);
                 if (!m || /\/in\/[^/?#]+\/overlay\//.test(href)) return null;
@@ -981,12 +985,27 @@ class DOMSelectors:
                     .find(a => vanityDe(a.getAttribute('href')));
                 if (!lien) continue;
                 const vanity = vanityDe(lien.getAttribute('href'));
-                const m = (carte.innerText || carte.textContent || '').match(motif);
+                // innerText seul : il garde les retours à la ligne entre blocs, dont
+                // dépend l'ancre ; textContent collerait le badge au titre suivant.
+                const m = (carte.innerText || '').match(motif);
                 if (!m || vanity in degres) continue;
                 degres[vanity] = DEGRES[m[1].toLowerCase()];
             }
             return degres;
         }"""
+
+    @staticmethod
+    def fenetre_coordonnees_ouverte_js() -> str:
+        """Vrai dès que la fenêtre « Coordonnées » est ouverte.
+
+        Sondé à chaque image pendant l'attente du clic : rien qu'un test, pas
+        l'extracteur entier, qui copierait le HTML de la page à chaque fois.
+        Même choix de fenêtre que `extract_coordonnees_js`.
+        """
+        return r"""() => [...document.querySelectorAll('dialog[open], [role="dialog"], [aria-modal="true"]')]
+            .some(el => (el.tagName === 'DIALOG' ? el.open
+                         : !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length))
+                        && /coordonn[ée]es|contact info/i.test(el.innerText || el.textContent || ''))"""
 
     @staticmethod
     def extract_coordonnees_js() -> str:
@@ -1016,10 +1035,25 @@ class DOMSelectors:
                 const racine = document.querySelector('main') || document.body;
                 return {dialogue: false, email: '', telephone: '', html: racine.innerHTML.slice(0, 1000000)};
             }
-            const RUBRIQUES = /^(votre profil|your profile|profil|profile|e-mail|email|telephone|phone|site web|sites web|website|websites|adresse|address|anniversaire|birthday|messagerie instantanee|im|en relation depuis|connected)$/;
+            // Libellés de son propre profil (« Votre profil ») ET de celui d'autrui
+            // (« Profil de Jeanne », « Jeanne’s Profile », « Relation depuis »,
+            // « Connected since ») : la veille lit surtout les seconds.
+            const RUBRIQUES = [
+                /^(votre profil|your profile|profil|profile)\b/, /^profil de /, /['’]s profile$/,
+                /^(e-mail|email|telephone|phone|site web|sites web|website|websites|adresse|address)$/,
+                /^(anniversaire|birthday|messagerie instantanee|im)$/, /relation/, /^connected\b/,
+            ];
             const TELEPHONE = /^(telephone|phone)$/;
-            const libelles = [...fenetre.querySelectorAll('p, span, h3, dt, header')]
-                .filter(el => RUBRIQUES.test(sansAccents(el.innerText || el.textContent)));
+            const libelles = [...fenetre.querySelectorAll('p, span, h3, dt, header')].filter(el => {
+                const t = sansAccents(el.innerText || el.textContent);
+                return t.length <= 60 && RUBRIQUES.some(r => r.test(t));
+            });
+            // Le lien du profil de la personne, présent dans toute fenêtre
+            // « Coordonnées » : il suffit à dire la fenêtre lue, même si aucun
+            // libellé n'est reconnu — sans email ni téléphone, c'est « rien de
+            // partagé », pas une structure inconnue.
+            const lienProfil = [...fenetre.querySelectorAll('a[href*="/in/"]')].some(a =>
+                /\/in\/[^\/?#]+\/?(?:[?#]|$)/.test(a.getAttribute('href') || ''));
             const mail = fenetre.querySelector('a[href^="mailto:"]');
             let email = '';
             if (mail) {
@@ -1040,7 +1074,7 @@ class DOMSelectors:
                     suivant = suivant.nextElementSibling;
                 }
             }
-            const lisible = libelles.length || email || telephone;
+            const lisible = libelles.length || lienProfil || email || telephone;
             return {dialogue: true, email: email, telephone: telephone,
                     html: lisible ? '' : fenetre.outerHTML.slice(0, 1000000)};
         }"""

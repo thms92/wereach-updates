@@ -284,3 +284,11 @@ def test_hotes_locaux_refuses(site):
     assert cs.domaine_de(site) is None
     with pytest.raises(cs.SiteInjoignable):
         cs.lire_site(site, transport=_transport({}))
+
+
+def test_un_refus_durable_est_distingue_d_une_panne():
+    from utils.coordonnees_site import motif_inutilisable
+    assert motif_inutilisable("https://www.facebook.com/orbique") == "le site indiqué est une page de réseau social"
+    assert motif_inutilisable("http://192.168.1.10/") == "adresse IP privée ou locale refusée"
+    assert motif_inutilisable("ftp://orbique.example") == "pas d'adresse de site http(s)"
+    assert motif_inutilisable("www.orbique.example") == ""
