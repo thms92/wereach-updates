@@ -9,6 +9,7 @@ aucun appel à l'annuaire réel.
 
 import asyncio
 import json
+import re
 import urllib.parse
 
 import pytest
@@ -64,6 +65,9 @@ class FauxHumain:
     async def browse_page_naturally(self, page):
         self.parcours += 1
 
+    async def human_hover_and_click(self, page, locator):
+        await locator.click()
+
 
 class FauxReseau:
     def __init__(self, page):
@@ -76,6 +80,31 @@ class FauxReseau:
 
 
 RECHERCHE_JS = DOMSelectors.extract_recherche_entreprises_js()
+DEGRES_JS = DOMSelectors.extract_degres_js()
+COORDONNEES_JS = DOMSelectors.extract_coordonnees_js()
+RIEN_PARTAGE = {"dialogue": True, "email": "", "telephone": "", "html": ""}
+
+
+def vanity_de(url):
+    m = re.search(r"/in/([^/?#]+)", url or "")
+    return m.group(1) if m else None
+
+
+class FauxLien:
+    """Le lien « Coordonnées » d'un profil : présent ou non, un clic ouvre la fenêtre."""
+
+    def __init__(self, page, present):
+        self.page, self.present = page, present
+
+    @property
+    def first(self):
+        return self
+
+    async def count(self):
+        return 1 if self.present else 0
+
+    async def click(self):
+        self.page.clics.append(self.page.url)
 
 
 def carte(nom, slug):
@@ -101,11 +130,32 @@ class FaussePage:
         self.explose = set()  # noms dont la lecture de la recherche lève une erreur Playwright
         self.recherches = []  # noms cherchés, dans l'ordre
         self.ferme_pendant = set()  # noms pendant la lecture desquels la fenêtre se ferme
+        self.degres = {}  # ce que lit `extract_degres_js` sur chaque page de résultats
+        self.fenetres = {}  # vanity → lecture de la fenêtre « Coordonnées » (défaut : rien de partagé)
+        self.sans_lien = set()  # vanity dont le profil n'a pas de lien « Coordonnées »
+        self.sans_fenetre = set()  # vanity dont la fenêtre ne s'ouvre jamais
+        self.clics = []  # profils sur lesquels « Coordonnées » a été cliqué
+        self.fenetre_explose = set()  # vanity dont la lecture de la fenêtre lève une erreur Playwright
+
+    def locator(self, selecteur):
+        assert selecteur == 'a[href*="overlay/contact-info"]'
+        return FauxLien(self, vanity_de(self.url) not in self.sans_lien)
+
+    async def wait_for_function(self, js, **k):
+        assert COORDONNEES_JS in js and k.get("timeout", 30000) <= 8000
+        if vanity_de(self.url) in self.sans_fenetre:
+            raise TimeoutError("Timeout 8000ms exceeded.")
 
     def is_closed(self):
         return self.fermee
 
     async def evaluate(self, js):
+        if js == DEGRES_JS:
+            return dict(self.degres)
+        if js == COORDONNEES_JS:
+            if vanity_de(self.url) in self.fenetre_explose:
+                raise RuntimeError("Execution context was destroyed")
+            return self.fenetres.get(vanity_de(self.url), RIEN_PARTAGE)
         if js == RECHERCHE_JS:
             nom = urllib.parse.parse_qs(urllib.parse.urlparse(self.url).query)["keywords"][0]
             self.recherches.append(nom)
@@ -190,10 +240,16 @@ ARTICLE = {"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source":
            "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}
 
 
-def passer(store, db, scraper, reglages=None, annuaire=lambda nom: ANNUAIRE_OK, maintenant="2026-10-15T08:00:00"):
+def site_muet(site):
+    # Aucun site réel n'est lu en test : par défaut, le site ne publie rien.
+    return {"emails": [], "telephones": [], "pages_lues": [site]}
+
+
+def passer(store, db, scraper, reglages=None, annuaire=lambda nom: ANNUAIRE_OK, maintenant="2026-10-15T08:00:00",
+           site_web=site_muet):
     return asyncio.run(veille.passage_async(
         scraper, store, db, reglages or ReglagesVeille(["Product", "Data", "IA"], [], 20),
-        "COOKIE", maintenant, annuaire=annuaire))
+        "COOKIE", maintenant, annuaire=annuaire, site_web=site_web))
 
 
 def test_premier_passage_complet(base):
@@ -916,3 +972,210 @@ def test_une_fenetre_fermee_arrete_le_passage(base):
     assert any("fenêtre LinkedIn s'est fermée" in x for x in r.erreurs)
     assert {e["etat"] for e in store.entreprises()} == {"a_identifier"}
     assert s.navigateur.ferme
+
+
+# ── Coordonnées : site de l'entreprise, personnes en relation ─────────
+
+PROFIL = "https://www.linkedin.com/in/{}/"
+
+
+def test_le_site_de_l_entreprise_est_lu_et_garde_dans_la_fiche(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    lus = []
+
+    def site_web(site):
+        lus.append(site)
+        return {"emails": ["contact@orbique.example", "rh@orbique.example"],
+                "telephones": ["01 23 45 67 89"], "pages_lues": [site]}
+
+    r = passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=site_web)
+    assert lus == ["https://www.orbique.example"] and r.cause == "termine"
+    fiche = store.fiche(i)
+    assert fiche["site.email"]["valeur"] == "contact@orbique.example, rh@orbique.example"
+    assert fiche["site.telephone"]["valeur"] == "01 23 45 67 89"
+    assert store.lectures(i)["site"] == "2026-10-15T08:00:00"
+    # Relu tous les 30 jours, pas à chaque passage.
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=site_web, maintenant="2026-10-20T08:00:00")
+    assert len(lus) == 1
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=site_web, maintenant="2026-11-15T08:00:00")
+    assert len(lus) == 2
+
+
+def test_un_site_qui_ne_publie_rien_est_dit_et_date(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
+    assert store.fiche(i)["site.email"]["valeur"] == "non publié"
+    assert "site.telephone" not in store.fiche(i)
+    assert store.lectures(i)["site"] == "2026-10-15T08:00:00"
+
+
+def test_un_site_injoignable_est_signale_sans_arreter_la_veille(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+
+    def site_web(site):
+        raise veille.SiteInjoignable("délai dépassé")
+
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    r = passer(store, db, FauxScraper(page, FauxLimites()), site_web=site_web)
+    assert r.cause == "termine" and r.entreprises == ["Orbique"] and r.nouveaux_contacts == 1
+    assert r.erreurs == ["Orbique : site https://www.orbique.example injoignable (délai dépassé) "
+                         "— coordonnées générales non relues."]
+    assert "site" not in store.lectures(i)  # nouvel essai au prochain passage
+
+
+def test_sans_site_sur_la_fiche_rien_n_est_lu(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    about = dict(ABOUT_OK, champs={k: v for k, v in ABOUT_OK["champs"].items() if k != "Site web"})
+
+    def site_web(site):
+        raise AssertionError("aucun site à lire")
+
+    assert passer(store, db, FauxScraper(FaussePage(about=about), FauxLimites()), site_web=site_web).cause == "termine"
+
+
+def test_les_coordonnees_des_personnes_en_relation_sont_lues(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM"), personne("paul-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er", "paul-exemple": "2e"}
+    page.fenetres = {"jeanne-exemple": {"dialogue": True, "email": "jeanne@orbique.example",
+                                        "telephone": "+33 6 12 34 56 78", "html": ""}}
+    limites = FauxLimites()
+    r = passer(store, db, FauxScraper(page, limites))
+    assert r.cause == "termine" and r.erreurs == []
+    # Paul (2e degré, sans invitation acceptée) n'est jamais visité.
+    assert page.visites[-1] == PROFIL.format("jeanne-exemple")
+    assert PROFIL.format("paul-exemple") not in page.visites
+    assert page.clics == [PROFIL.format("jeanne-exemple")]
+    assert r.pages == limites.pages_veille_today == 5  # 4 + le profil
+    c = store.coordonnees(PROFIL.format("jeanne-exemple"))
+    assert c["email"] == "jeanne@orbique.example" and c["partage"] == "oui"
+    assert {x["url"]: x["degre"] for x in store.contacts(i)}[PROFIL.format("paul-exemple")] == "2e"
+    # Lues : pas relues au passage suivant.
+    page.visites.clear()
+    passer(store, db, FauxScraper(page, FauxLimites()), maintenant="2026-10-16T08:00:00")
+    assert PROFIL.format("jeanne-exemple") not in page.visites
+
+
+def test_une_invitation_acceptee_ouvre_les_coordonnees(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    pid = db.ajouter_profil("Paul", "PM", "Orbique", "", "http://linkedin.com/in/Paul-Exemple?trk=x")
+    db.ajouter_invitation(pid)
+    db.marquer_acceptee("http://linkedin.com/in/Paul-Exemple?trk=x")
+    page = FaussePage(resultats={1: [personne("paul-exemple", "PM"), personne("lea-exemple", "PM")]})
+    passer(store, db, FauxScraper(page, FauxLimites()))
+    assert page.clics == [PROFIL.format("paul-exemple")]
+
+
+def test_une_fenetre_sans_email_est_rien_de_partage(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er"}
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert r.erreurs == []
+    c = store.coordonnees(PROFIL.format("jeanne-exemple"))
+    assert c["partage"] == "rien" and c["releve_le"] == "2026-10-15T08:00:00"
+
+
+def test_sans_lien_coordonnees_rien_n_est_enregistre(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er"}
+    page.sans_lien = {"jeanne-exemple"}
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert r.cause == "termine" and r.entreprises == ["Orbique"]
+    assert r.erreurs == ["Orbique : Jeanne-Exemple — lien « Coordonnées » absent du profil ; "
+                         "nouvel essai au prochain passage."]
+    assert store.coordonnees(PROFIL.format("jeanne-exemple")) is None
+
+
+def test_une_fenetre_qui_ne_s_ouvre_pas_n_enregistre_rien(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er"}
+    page.sans_fenetre = {"jeanne-exemple"}
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert r.erreurs == ["Orbique : Jeanne-Exemple — la fenêtre « Coordonnées » ne s'est pas ouverte ; "
+                         "nouvel essai au prochain passage."]
+    assert store.coordonnees(PROFIL.format("jeanne-exemple")) is None
+
+
+def test_une_fenetre_illisible_est_enregistree_pour_diagnostic(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er"}
+    page.fenetres = {"jeanne-exemple": {"dialogue": True, "email": "", "telephone": "", "html": "<dialog>?</dialog>"}}
+    s = FauxScraper(page, FauxLimites())
+    r = passer(store, db, s)
+    assert s.noms_dumps == ["coordonnees_dump.html"] and s.dumps == ["<dialog>?</dialog>"]
+    assert r.erreurs == ["Orbique : Jeanne-Exemple — fenêtre « Coordonnées » illisible, sa structure a peut-être "
+                         "changé (page enregistrée dans logs/) ; rien n'est enregistré."]
+    assert store.coordonnees(PROFIL.format("jeanne-exemple")) is None
+
+
+def test_au_plus_trois_profils_par_entreprise_et_par_passage(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    gens = [f"p{n}-exemple" for n in range(5)]
+    page = FaussePage(resultats={1: [personne(v, "PM") for v in gens]})
+    page.degres = {v: "1er" for v in gens}
+    passer(store, db, FauxScraper(page, FauxLimites()))
+    assert len(page.clics) == veille.COORDONNEES_PAR_ENTREPRISE == 3
+
+
+def test_budget_epuise_avant_les_coordonnees_arret_propre(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er"}
+    limites = FauxLimites(deja=16)  # 4 pages : recherche, « À propos », page 1, page 2 vide
+    r = passer(store, db, FauxScraper(page, limites))
+    assert r.cause == "budget" and r.pages == 4 and limites.pages_veille_today == 20
+    assert PROFIL.format("jeanne-exemple") not in page.visites and page.clics == []
+    # Ce qui a été lu est gardé.
+    assert [c["url"] for c in store.contacts(i)] == [PROFIL.format("jeanne-exemple")]
+    assert store.fiche(i)["site.email"]["valeur"] == "non publié"
+
+
+def test_degres_illisibles_la_relation_vient_des_seules_invitations(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {}
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert r.cause == "termine" and r.erreurs == [] and page.clics == []
+
+
+def test_une_erreur_sur_une_personne_n_empeche_ni_les_suivantes_ni_le_passage(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM"), personne("paul-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er", "paul-exemple": "1er"}
+    page.fenetre_explose = {"jeanne-exemple"}
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert r.entreprises == ["Orbique"] and store.entreprises()[0]["derniere_veille"] == "2026-10-15T08:00:00"
+    assert len(r.erreurs) == 1 and "Jeanne-Exemple" in r.erreurs[0] and "RuntimeError" in r.erreurs[0]
+    assert store.coordonnees(PROFIL.format("jeanne-exemple")) is None
+    assert store.coordonnees(PROFIL.format("paul-exemple"))["partage"] == "rien"
+
+
+def test_un_profil_injoignable_est_dit_et_reessaye(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er"}
+    s = FauxScraper(page, FauxLimites())
+    s.network_manager = ReseauEnPanne(page, "/in/jeanne-exemple")
+    r = passer(store, db, s)
+    assert r.entreprises == ["Orbique"] and page.clics == []
+    assert r.erreurs == ["Orbique : Jeanne-Exemple — page LinkedIn injoignable ; nouvel essai au prochain passage."]
+    assert store.coordonnees(PROFIL.format("jeanne-exemple")) is None

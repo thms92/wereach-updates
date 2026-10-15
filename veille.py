@@ -10,7 +10,9 @@ de pages du jour le permet : identifie l'entreprise sur LinkedIn, relit sa
 fiche si elle a plus de 30 jours (page « À propos » + annuaire officiel
 recoupé), puis parcourt quelques pages de la recherche de
 ses employés Product / Data / IA, en reprenant là où le passage précédent
-s'était arrêté.
+s'était arrêté. Il relève aussi les coordonnées : générales, sur le site de
+l'entreprise (sans coût LinkedIn), et celles que partagent les personnes en
+relation, dans leur fenêtre « Coordonnées » (une page du budget chacune).
 """
 
 import argparse
@@ -29,6 +31,7 @@ from utils.annuaire import (
     normaliser_nom,
 )
 from utils.browsemap import normaliser_url
+from utils.coordonnees_site import SiteInjoignable, lire_site
 from utils.dom_selectors import DOMSelectors
 from utils.identification import choisir_entreprise, url_recherche_entreprises
 from utils.veille_regles import (
@@ -38,6 +41,18 @@ from utils.veille_regles import (
 )
 from utils.verrou_linkedin import VerrouOccupe, session_linkedin
 from veille_store import VeilleStore
+
+
+# Profils dont on lit les coordonnées, par entreprise et par passage : chacun
+# coûte une page du budget, la recherche d'employés ne doit pas en manquer.
+COORDONNEES_PAR_ENTREPRISE = 3
+# Attente de la fenêtre « Coordonnées » après le clic.
+ATTENTE_FENETRE_MS = 8000
+_SELECTEUR_LIEN_COORDONNEES = 'a[href*="overlay/contact-info"]'
+# On attend LA fenêtre « Coordonnées », lue par l'extracteur lui-même : le
+# profil garde d'autres fenêtres (menus fermés, messagerie) qu'un simple
+# sélecteur `[role=dialog]` prendrait pour elle.
+_JS_FENETRE_OUVERTE = f"() => ({DOMSelectors.extract_coordonnees_js()})().dialogue"
 
 
 @dataclass
@@ -131,7 +146,8 @@ def _url_apropos(entreprise) -> str:
     return f"https://www.linkedin.com/company/{entreprise['company_id']}/about/"
 
 
-async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger, rapport=None):
+async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger, rapport=None,
+                        site_web=lire_site):
     # `rapport` fourni par l'appelant : si le passage est interrompu, ce qui a
     # été fait jusque-là reste lisible et s'enregistre (voir `lancer_passage`).
     rapport = rapport if rapport is not None else RapportPassage(debut=maintenant)
@@ -187,6 +203,61 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
     # une mise en page changée. On n'y dépense plus de page pour les noms
     # suivants de ce passage, et on ne déclare personne « introuvable ».
     suspension = {"ligne": None, "reportees": []}
+
+    async def relire_site(entreprise):
+        """Coordonnées générales, sur le site de l'entreprise : aucune page LinkedIn."""
+        eid, nom = entreprise["id"], entreprise["nom"]
+        site = (store.fiche(eid).get("linkedin.site") or {}).get("valeur")
+        age = store.age_fiche_jours(eid, "site", maintenant)
+        if not site or (age is not None and age < RELECTURE_FICHE_JOURS):
+            return
+        dire(f"{nom} : lecture de son site…")
+        try:
+            # Hors de la boucle d'événements : un site lent (plusieurs pages à
+            # quelques secondes chacune) ne doit pas figer le navigateur ouvert.
+            lu = await asyncio.to_thread(site_web, site)
+        except SiteInjoignable as e:
+            # Pas de date de lecture : nouvel essai au prochain passage.
+            rapport.erreurs.append(f"{nom} : site {site} injoignable ({e}) — coordonnées générales non relues.")
+            return
+        emails, telephones = (lu.get("emails") or [])[:3], (lu.get("telephones") or [])[:3]
+        # Rien trouvé est un constat daté, pas un champ vide muet.
+        store.enregistrer_fiche(eid, {"email": ", ".join(emails) or "non publié",
+                                      "telephone": ", ".join(telephones)}, "site", maintenant)
+        store.marquer_lecture(eid, "site", maintenant)
+
+    async def lire_coordonnees(page, entreprise, contact):
+        """La fenêtre « Coordonnées » d'une personne en relation.
+
+        L'adresse directe `…/overlay/contact-info/` est redirigée vers le
+        profil : on charge le profil et on clique le lien, comme à la main.
+        Seule une fenêtre lue est enregistrée (« rien » compris) : un lien
+        absent ou une fenêtre fermée ne disent rien de ce que la personne
+        partage, et un faux « rien » empêcherait de relire pendant 90 jours.
+        """
+        nom = entreprise["nom"]
+        qui = contact.get("nom") or contact["url"]
+        reprise = "nouvel essai au prochain passage."
+        await charger(page, contact["url"])
+        lien = page.locator(_SELECTEUR_LIEN_COORDONNEES).first
+        if not await lien.count():
+            rapport.erreurs.append(f"{nom} : {qui} — lien « Coordonnées » absent du profil ; {reprise}")
+            return
+        await scraper.human.human_hover_and_click(page, lien)
+        try:
+            await page.wait_for_function(_JS_FENETRE_OUVERTE, timeout=ATTENTE_FENETRE_MS)
+        except Exception:
+            rapport.erreurs.append(f"{nom} : {qui} — la fenêtre « Coordonnées » ne s'est pas ouverte ; {reprise}")
+            return
+        await scraper.human.human_delay(1200, 300)  # le temps de lire la fenêtre
+        lu = await page.evaluate(DOMSelectors.extract_coordonnees_js()) or {}
+        if not lu.get("dialogue") or lu.get("html"):
+            enregistree = scraper._dumper_panneau(lu.get("html") or "", nom_fichier="coordonnees_dump.html")
+            ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
+            rapport.erreurs.append(f"{nom} : {qui} — fenêtre « Coordonnées » illisible, sa structure a peut-être "
+                                   f"changé ({ou}) ; rien n'est enregistré.")
+            return
+        store.enregistrer_coordonnees(contact["url"], lu.get("email"), lu.get("telephone"), maintenant)
 
     async def traiter(page, entreprise, connus) -> bool:
         """Une entreprise ; False si elle n'a pas pu être passée.
@@ -305,6 +376,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                         store.enregistrer_fiche(eid, {"rapprochement": motif}, "annuaire", maintenant)
                     store.marquer_lecture(eid, "annuaire", maintenant)
 
+        # 3 bis. Coordonnées générales sur son site : après la fiche, qui donne
+        # l'adresse du site, et avant toute page du budget — un budget épuisé
+        # plus loin ne les fait pas perdre.
+        await relire_site(entreprise)
+
         # 4. Employés, à partir du curseur (dernière page réellement lue)
         curseur = entreprise.get("curseur_page") or 0
         if entreprise.get("signature_familles") != signature:
@@ -317,6 +393,13 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 # `extraire_profils_page` avale ses erreurs et rend [] : ce
                 # n'est pas une fin de liste, le curseur ne bouge pas.
                 raise _PageInjoignable("résultats de recherche illisibles")
+            # Le degré n'est pas lu par l'extracteur des résultats (partagé avec
+            # la recherche) : un second passage sur la même page, sans coût.
+            # Rien de lu n'est pas une erreur : la relation viendra alors des
+            # seules invitations acceptées.
+            degres = await page.evaluate(DOMSelectors.extract_degres_js())
+            degres = {normaliser_url(f"https://www.linkedin.com/in/{v}/"): d
+                      for v, d in (degres.items() if isinstance(degres, dict) else ())}
             if not trouves:
                 if numero == 1:
                     rapport.erreurs.append(f"{nom} : aucun profil {cibles} trouvé.")
@@ -329,9 +412,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             for personne in trouves:
                 famille = famille_de_l_intitule(personne.get("poste", ""), reglages.familles,
                                                 reglages.intitules_libres)
+                canonique = normaliser_url(personne.get("url"))
                 if store.relier_contact(eid, personne, famille, maintenant, connus):
                     rapport.nouveaux_contacts += 1
-                canonique = normaliser_url(personne.get("url"))
+                if degres.get(canonique):
+                    store.maj_degre(eid, canonique, degres[canonique])
                 # Seulement les inconnus : pour un profil déjà au fichier,
                 # `ajouter_profil` réécrirait sa fiche (école, connexions
                 # effacées) ou, sous une autre écriture du lien, la doublerait.
@@ -342,6 +427,29 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             curseur = numero
             store.maj_curseur(eid, curseur, signature)
         store.maj_curseur(eid, curseur, signature)
+
+        # 5. Coordonnées des personnes en relation, après la recherche (qui
+        # vient de lire les degrés) et avant de marquer le passage : un budget
+        # épuisé ici arrête le passage (ce qui est lu reste), et l'entreprise
+        # reste en tête du lot pour finir au passage suivant. Jamais personne
+        # hors relation : la fenêtre ne montrerait rien, pour une page dépensée.
+        for contact in store.contacts_en_relation(eid, maintenant)[:COORDONNEES_PAR_ENTREPRISE]:
+            dire(f"{nom} : coordonnées de {contact.get('nom') or contact['url']}…")
+            try:
+                await lire_coordonnees(page, entreprise, contact)
+            except _Arret:
+                raise
+            except _PageInjoignable as e:
+                _fenetre_fermee(page)
+                rapport.erreurs.append(f"{nom} : {contact.get('nom') or contact['url']} — {e.motif} ; "
+                                       "nouvel essai au prochain passage.")
+            except Exception as e:
+                # Une personne en échec ne prive pas l'entreprise de son passage :
+                # ses employés sont déjà lus, elle sortirait sinon de la rotation.
+                _fenetre_fermee(page)
+                logger.error(f"❌ Veille, coordonnées de {contact['url']} : {type(e).__name__} : {e}", exc_info=True)
+                rapport.erreurs.append(f"{nom} : {contact.get('nom') or contact['url']} — erreur inattendue "
+                                       f"({type(e).__name__}) en lisant ses coordonnées ; nouvel essai au prochain passage.")
         store.marquer_passage(eid, maintenant)
         return True
 

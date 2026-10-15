@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS fiche_lectures (
     lue_le TEXT NOT NULL,
     PRIMARY KEY (entreprise_id, source)
 );
+CREATE TABLE IF NOT EXISTS coordonnees_contacts (
+    url TEXT PRIMARY KEY,
+    email TEXT,
+    telephone TEXT,
+    partage TEXT NOT NULL,
+    releve_le TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS passages_veille (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     debut TEXT NOT NULL,
@@ -71,6 +78,20 @@ CREATE TABLE IF NOT EXISTS passages_veille (
 # à chaque relecture sans rien dire de l'entreprise : ils noieraient le reste.
 CHANGEMENTS_SIGNALES = {("linkedin", "taille"), ("linkedin", "siege"), ("linkedin", "secteur"),
                         ("annuaire", "dirigeants"), ("annuaire", "effectif")}
+
+# Coordonnées d'une personne relues au plus tous les 90 jours : elles changent
+# peu, et chaque lecture coûte une page LinkedIn du budget.
+RELECTURE_COORDONNEES_JOURS = 90
+
+# Degré lu sur une carte de résultats, quelle que soit la langue de LinkedIn.
+_DEGRES = {"1er": "1er", "1st": "1er", "2e": "2e", "2nd": "2e", "3e": "3e", "3rd": "3e"}
+
+
+def normaliser_degre(brut) -> str:
+    """« · 1er », « 1st », « 3e+ » → « 1er » / « 2e » / « 3e » ; inconnu → ""."""
+    t = (brut or "").replace("·", " ").replace("•", " ").replace("+", " ").strip().lower()
+    return _DEGRES.get(t.split()[0] if t else "", "")
+
 
 # Passages refusés avant tout travail : ils ne remplacent pas le résumé du
 # dernier vrai passage, que la personne a encore besoin de lire.
@@ -302,6 +323,78 @@ class VeilleStore:
                 ORDER BY e.nom COLLATE NOCASE""", (borne,)).fetchall()
                            if (l["source"], l["champ"]) in CHANGEMENTS_SIGNALES]
         return {"contacts": contacts, "changements": changements}
+
+    def maj_degre(self, entreprise_id, url, degre) -> None:
+        """Degré de relation lu sur la carte de résultats.
+
+        Un degré illisible n'efface pas celui qu'on connaît : une carte mal
+        lue ne doit pas faire oublier qu'une personne est en relation.
+        """
+        url, degre = normaliser_url(url), normaliser_degre(degre)
+        if not url or not degre:
+            return
+        with self._con() as con:
+            con.execute("UPDATE contacts_veille SET degre = ? WHERE entreprise_id = ? AND url = ?",
+                        (degre, entreprise_id, url))
+
+    # ── Coordonnées des personnes ──────────────────────────────────────
+
+    def enregistrer_coordonnees(self, url, email, telephone, quand: str) -> None:
+        """Coordonnées lues dans la fenêtre « Coordonnées » d'un profil.
+
+        Ni email ni téléphone : la fenêtre a été lue et la personne ne partage
+        rien — c'est un constat daté (`partage = "rien"`), pas une absence de
+        lecture, et il n'est pas relu avant 90 jours.
+        """
+        url = normaliser_url(url)
+        if not url:
+            return
+        email, telephone = (email or "").strip(), (telephone or "").strip()
+        partage = "oui" if email or telephone else "rien"
+        with self._con() as con:
+            con.execute("""INSERT OR REPLACE INTO coordonnees_contacts (url, email, telephone, partage, releve_le)
+                           VALUES (?, ?, ?, ?, ?)""", (url, email, telephone, partage, quand))
+
+    def coordonnees(self, url):
+        url = normaliser_url(url)
+        with self._con() as con:
+            l = con.execute("SELECT * FROM coordonnees_contacts WHERE url = ?", (url,)).fetchone()
+        return dict(l) if l else None
+
+    def _urls_invitation_acceptee(self, con) -> set:
+        # Canonisées ici : `profiles.url` garde le lien tel qu'il a été copié
+        # (paramètres de suivi, casse), une égalité SQL manquerait la personne.
+        try:
+            brutes = con.execute("""SELECT p.url FROM invitations i JOIN profiles p ON p.id = i.profile_id
+                                    WHERE i.statut = 'acceptee'""").fetchall()
+        except sqlite3.OperationalError:
+            return set()  # base sans table d'invitations : personne n'a accepté
+        return {u for u in (normaliser_url(l[0]) for l in brutes) if u}
+
+    def contacts_en_relation(self, entreprise_id, aujourd_hui: str,
+                             max_age_jours: int = RELECTURE_COORDONNEES_JOURS) -> list:
+        """Contacts en relation dont les coordonnées sont à lire.
+
+        En relation = 1er degré lu sur la carte, ou invitation acceptée : seuls
+        ceux-là montrent leurs coordonnées, une visite à quelqu'un d'autre
+        coûterait une page pour rien. Jamais lus d'abord, puis les plus anciens.
+        """
+        jour = date.fromisoformat(aujourd_hui[:10])
+        with self._con() as con:
+            acceptees = self._urls_invitation_acceptee(con)
+            lignes = [dict(l) for l in con.execute("""
+                SELECT c.*, k.releve_le AS coordonnees_le FROM contacts_veille c
+                LEFT JOIN coordonnees_contacts k ON k.url = c.url
+                WHERE c.entreprise_id = ? ORDER BY c.id""", (entreprise_id,)).fetchall()]
+        retenus = []
+        for c in lignes:
+            if normaliser_degre(c["degre"]) != "1er" and c["url"] not in acceptees:
+                continue
+            lu = c.pop("coordonnees_le")
+            if lu and (jour - date.fromisoformat(lu[:10])).days < max_age_jours:
+                continue
+            retenus.append((lu or "", c))
+        return [c for _, c in sorted(retenus, key=lambda r: r[0])]
 
     # ── Passages ───────────────────────────────────────────────────────
 

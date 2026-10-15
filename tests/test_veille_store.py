@@ -269,3 +269,79 @@ def test_un_refus_ne_remplace_pas_le_dernier_vrai_passage(tmp_path):
     s.enregistrer_passage("2026-10-15T09:00", "2026-10-15T09:00", [], 0, "occupe", ["occupé"])
     s.enregistrer_passage("2026-10-15T10:00", "2026-10-15T10:00", [], 0, "rien_a_faire", [])
     assert s.dernier_passage()["cause"] == "budget"
+
+
+# ── Degré de relation et coordonnées des contacts ─────────────────────
+
+def _invitation_acceptee(db, url):
+    base = DatabaseManager(db_file=db)
+    pid = base.ajouter_profil("Paul", "PM", "Orbique", "", url)
+    base.ajouter_invitation(pid)
+    assert base.marquer_acceptee(url)
+
+
+def test_le_degre_lu_sur_la_carte_est_garde(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("jeanne", connexions=""), "Product", "2026-10-15", set())
+    s.maj_degre(i, "http://linkedin.com/in/Jeanne?trk=x", "1er")
+    assert s.contacts(i)[0]["degre"] == "1er"
+
+
+def test_relation_par_degre_ou_par_invitation_acceptee(tmp_path):
+    s, db = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    for v in ("jeanne", "paul", "lea"):
+        s.relier_contact(i, contact(v, connexions=""), "Product", "2026-10-15", set())
+    s.maj_degre(i, "https://www.linkedin.com/in/jeanne/", "1er")
+    s.maj_degre(i, "https://www.linkedin.com/in/lea/", "2e")
+    # Au fichier sous une autre écriture du même lien.
+    _invitation_acceptee(db, "http://linkedin.com/in/Paul?miniProfileUrn=x")
+    urls = [c["url"] for c in s.contacts_en_relation(i, "2026-10-15T09:00:00")]
+    assert sorted(urls) == ["https://www.linkedin.com/in/jeanne/", "https://www.linkedin.com/in/paul/"]
+
+
+def test_une_invitation_seulement_envoyee_ne_met_pas_en_relation(tmp_path):
+    s, db = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("paul", connexions=""), "Product", "2026-10-15", set())
+    base = DatabaseManager(db_file=db)
+    base.ajouter_invitation(base.ajouter_profil("Paul", "PM", "Orbique", "", "https://www.linkedin.com/in/paul/"))
+    assert s.contacts_en_relation(i, "2026-10-15") == []
+
+
+def test_coordonnees_relues_au_plus_tous_les_90_jours(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("jeanne", connexions="1er"), "Product", "2026-01-01", set())
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "jeanne@orbique.example", "", "2026-07-20T10:00:00")
+    assert s.contacts_en_relation(i, "2026-10-15") == []          # 87 jours
+    assert len(s.contacts_en_relation(i, "2026-10-18")) == 1      # 90 jours
+
+
+def test_rien_de_partage_est_enregistre_et_date(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("jeanne", connexions="1er"), "Product", "2026-10-15", set())
+    s.enregistrer_coordonnees("http://linkedin.com/in/Jeanne/", "", None, "2026-10-15T10:00:00")
+    assert s.coordonnees("https://www.linkedin.com/in/jeanne/") == {
+        "url": "https://www.linkedin.com/in/jeanne/", "email": "", "telephone": "",
+        "partage": "rien", "releve_le": "2026-10-15T10:00:00"}
+    # « Rien de partagé » compte comme une lecture : pas relue avant 90 jours.
+    assert s.contacts_en_relation(i, "2026-10-16") == []
+
+
+def test_coordonnees_partagees(tmp_path):
+    s, _ = store(tmp_path)
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "jeanne@orbique.example",
+                              "+33 6 12 34 56 78", "2026-10-15T10:00:00")
+    c = s.coordonnees("https://www.linkedin.com/in/jeanne/")
+    assert c["partage"] == "oui" and c["email"] == "jeanne@orbique.example"
+    assert s.coordonnees("https://www.linkedin.com/in/inconnu/") is None
+
+
+def test_coordonnees_table_creee_sans_rien_detruire(tmp_path):
+    s, db = store(tmp_path)
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "j@o.example", "", "2026-10-15")
+    VeilleStore(db)  # rouverte : la table existe, rien n'est effacé
+    assert VeilleStore(db).coordonnees("https://www.linkedin.com/in/jeanne/")["email"] == "j@o.example"
