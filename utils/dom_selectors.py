@@ -901,6 +901,56 @@ class DOMSelectors:
             };
         }"""
 
+    @staticmethod
+    def extract_recherche_entreprises_js() -> str:
+        """Lecture de la recherche d'entreprises : `{resultats: [{nom, url}], html}`.
+
+        Une carte `role="listitem"` = une entreprise, dans l'ordre de la page,
+        dédoublonnées par slug ; `url` est le lien canonique
+        `https://www.linkedin.com/company/<slug>/` (sans `?trk=`).
+
+        Le nom vient du titre que la carte désigne par `aria-labelledby`, à
+        défaut du premier lien non vide de la carte vers cette entreprise.
+        Pas du texte le plus long : la capture réelle montre un lien
+        « Jeanne et 3 autres relations suivent cette page » vers la même
+        entreprise, plus long que « BNP Paribas » — il ferait manquer le nom
+        exact. Les liens hors carte (en-tête, publicité, liens vides laissés
+        par les <a> imbriqués que le navigateur défait) sont ignorés.
+        Aucune carte lue : le HTML de <main> est renvoyé pour être enregistré.
+        """
+        return r"""() => {
+            const net = s => (s || '').replace(/\s+/g, ' ').trim();
+            const racine = document.querySelector('main') || document.body;
+            const slugDe = a => {
+                const m = (a.getAttribute('href') || '').match(/\/company\/([^\/?#]+)/);
+                return m ? m[1] : '';
+            };
+            const resultats = [];
+            const vus = new Set();
+            for (const carte of racine.querySelectorAll('[role="listitem"]')) {
+                const liens = [...carte.querySelectorAll('a[href*="/company/"]')].filter(slugDe);
+                let slug = '', nom = '';
+                for (const id of (carte.getAttribute('aria-labelledby') || '').split(/\s+/)) {
+                    const titre = id && document.getElementById(id);
+                    const lien = titre && (titre.matches('a[href*="/company/"]') ? titre
+                                           : titre.querySelector('a[href*="/company/"]'));
+                    if (lien && slugDe(lien) && net(lien.innerText)) {
+                        slug = slugDe(lien); nom = net(lien.innerText); break;
+                    }
+                }
+                if (!slug && liens.length) slug = slugDe(liens[0]);
+                if (!slug || vus.has(slug)) continue;
+                if (!nom) {
+                    const lien = liens.find(a => slugDe(a) === slug && net(a.innerText));
+                    nom = lien ? net(lien.innerText) : '';
+                }
+                if (!nom) continue;
+                vus.add(slug);
+                resultats.push({nom: nom, url: 'https://www.linkedin.com/company/' + slug + '/'});
+            }
+            return {resultats: resultats, html: resultats.length ? '' : racine.innerHTML.slice(0, 1000000)};
+        }"""
+
 
 # Outils communs aux scripts du panneau, injectés en tête de chacun : le choix
 # du conteneur doit être le même pour attendre, dérouler et lire.

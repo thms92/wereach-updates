@@ -9,12 +9,14 @@ aucun appel à l'annuaire réel.
 
 import asyncio
 import json
+import urllib.parse
 
 import pytest
 
 import veille
 from database import DatabaseManager
 from utils.annuaire import AnnuaireIndisponible
+from utils.dom_selectors import DOMSelectors
 from utils.veille_regles import ReglagesVeille
 from veille_store import VeilleStore
 
@@ -73,19 +75,49 @@ class FauxReseau:
         return True
 
 
+RECHERCHE_JS = DOMSelectors.extract_recherche_entreprises_js()
+
+
+def carte(nom, slug):
+    return {"nom": nom, "url": f"https://www.linkedin.com/company/{slug}/"}
+
+
+def recherche_de(*cartes, html=""):
+    return {"resultats": list(cartes), "html": html}
+
+
 class FaussePage:
-    def __init__(self, about=ABOUT_OK, resultats=None, url_apres_goto=None):
+    """`recherche` : ce que lit la recherche d'entreprises ; par défaut, la
+    carte du nom cherché au milieu d'une filiale, comme sur la vraie page."""
+
+    def __init__(self, about=ABOUT_OK, resultats=None, url_apres_goto=None, recherche=None):
         self.about = about
         self.resultats = resultats or {}
+        self.recherche = recherche
         self.visites = []
         self.url = ""
         self.url_apres_goto = url_apres_goto
         self.fermee = False
+        self.explose = set()  # noms dont la lecture de la recherche lève une erreur Playwright
+        self.recherches = []  # noms cherchés, dans l'ordre
+        self.ferme_pendant = set()  # noms pendant la lecture desquels la fenêtre se ferme
 
     def is_closed(self):
         return self.fermee
 
     async def evaluate(self, js):
+        if js == RECHERCHE_JS:
+            nom = urllib.parse.parse_qs(urllib.parse.urlparse(self.url).query)["keywords"][0]
+            self.recherches.append(nom)
+            if nom in self.explose:
+                raise RuntimeError("Execution context was destroyed")
+            if nom in self.ferme_pendant:
+                self.fermee = True
+                raise RuntimeError("Target page, context or browser has been closed")
+            if self.recherche is not None:
+                return self.recherche
+            slug = nom.lower().replace(" ", "-")
+            return recherche_de(carte(f"{nom} Assurances", f"{slug}-assurances"), carte(nom, slug))
         return self.about
 
 
@@ -98,34 +130,20 @@ class FauxNavigateur:
 
 
 class FauxScraper:
-    def __init__(self, page, limites, typeahead="7654321", cookie_ok=True):
+    def __init__(self, page, limites, cookie_ok=True):
         self.page = page
         self.navigateur = FauxNavigateur()
         self.human = FauxHumain(limites)
         self.network_manager = FauxReseau(page)
-        self.typeahead = typeahead
         self.cookie_ok = cookie_ok
         self.dumps = []
         self.noms_dumps = []
         self.errors = []
-        self.typeahead_appels = []
-        self.explose = set()           # noms dont l'identification lève une erreur Playwright
         self.extraction_en_echec = False
-        self.typeahead_en_panne = None  # motif d'échec technique, comme le vrai via `echecs`
-        self.ferme_la_page = False      # la fenêtre se ferme pendant la recherche par nom
 
     async def _resoudre_company_urn_via_typeahead(self, nom, page, echecs=None):
-        self.typeahead_appels.append(nom)
-        if nom in self.explose:
-            raise RuntimeError("Execution context was destroyed")
-        if self.ferme_la_page:
-            page.fermee = True
-            echecs.append("TargetClosedError")
-            return None
-        if self.typeahead_en_panne:
-            echecs.append(self.typeahead_en_panne)
-            return None
-        return self.typeahead
+        # Le service répond 404 depuis le 2026-10-15 : la veille ne doit plus l'appeler.
+        raise AssertionError("la veille n'appelle plus le typeahead")
 
     async def _open_linkedin_page(self, p, cookie, status_callback=None):
         return (self.navigateur, self.page) if self.cookie_ok else (None, None)
@@ -193,8 +211,12 @@ def test_premier_passage_complet(base):
     assert fiche["linkedin.taille"]["valeur"] == "201-500 employés"
     assert fiche["annuaire.siren"]["valeur"] == "333333333"
     assert {c["famille"] for c in store.contacts(i)} == {"Product", "Data"}
-    assert limites.pages_veille_today == r.pages == 3  # « À propos » + page 1 + page 2 vide
-    assert page.visites[0] == "https://www.linkedin.com/company/7654321/about/"
+    # recherche d'entreprises + « À propos » + page 1 + page 2 vide
+    assert limites.pages_veille_today == r.pages == 4
+    assert page.visites[:2] == ["https://www.linkedin.com/search/results/companies/?keywords=Orbique",
+                                "https://www.linkedin.com/company/orbique/about/"]
+    # Le lien trouvé est gardé : les passages suivants ne cherchent plus.
+    assert e["url_linkedin"] == "https://www.linkedin.com/company/orbique/" and e["nom"] == "Orbique"
 
 
 def test_les_contacts_entrent_au_fichier(base):
@@ -216,10 +238,10 @@ def test_budget_epuise_au_milieu(base):
     store, db = base
     i = store.ajouter_entreprise("Orbique", "2026-10-14")
     page = FaussePage(resultats={1: [personne("a", "PM")], 2: [personne("b", "PM")]})
-    limites = FauxLimites(deja=18)  # 2 pages restantes sur 20
+    limites = FauxLimites(deja=17)  # 3 pages restantes sur 20
     r = passer(store, db, FauxScraper(page, limites))
     assert r.cause == "budget"
-    assert len(page.visites) == 2  # « À propos » + page 1, pas de page 2
+    assert len(page.visites) == 3  # recherche + « À propos » + page 1, pas de page 2
     assert store.entreprises()[0]["curseur_page"] == 1
 
 
@@ -258,11 +280,14 @@ def test_changer_de_familles_remet_le_curseur_a_zero(base):
 def test_entreprise_introuvable_par_son_nom(base):
     store, db = base
     store.ajouter_entreprise("Inconnue", "2026-10-14")
-    page = FaussePage()
-    r = passer(store, db, FauxScraper(page, FauxLimites(), typeahead=None))
-    assert store.entreprises()[0]["etat"] == "non_identifiee"
-    assert page.visites == []  # aucune recherche lancée sans identifiant
-    assert any("Inconnue" in e for e in r.erreurs)
+    page = FaussePage(recherche=recherche_de(carte("Inconnue Assurances", "ia"), carte("Inconnue Lab", "il")))
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    e = store.entreprises()[0]
+    assert e["etat"] == "non_identifiee" and e["url_linkedin"] is None
+    # La seule page lue : la recherche d'entreprises, pas de recherche d'employés.
+    assert page.visites == ["https://www.linkedin.com/search/results/companies/?keywords=Inconnue"]
+    assert r.erreurs == ["Inconnue : aucune entreprise « Inconnue » sur LinkedIn "
+                         "(proposées : Inconnue Assurances, Inconnue Lab) — collez le lien de sa page entreprise."]
 
 
 def test_page_a_propos_illisible(base):
@@ -275,14 +300,14 @@ def test_page_a_propos_illisible(base):
     assert s.dumps == ["<main>?</main>"]
     assert s.noms_dumps == ["apropos_dump.html"]  # n'écrase pas le dump des Profils similaires
     assert any("illisible" in e for e in r.erreurs)
-    assert [v for v in page.visites if "search" in v] == []
+    assert [v for v in page.visites if "results/people" in v] == []
 
 
 def test_un_lien_colle_est_utilise_au_lieu_du_nom(base):
     store, db = base
     store.ajouter_entreprise("Orbique", "2026-10-14", url_linkedin="https://www.linkedin.com/company/orbique/")
     page = FaussePage()
-    passer(store, db, FauxScraper(page, FauxLimites(), typeahead=None))
+    passer(store, db, FauxScraper(page, FauxLimites()))
     assert page.visites[0] == "https://www.linkedin.com/company/orbique/about/"
 
 
@@ -390,7 +415,7 @@ def test_page_a_propos_injoignable_rien_n_est_lu_sur_la_page_precedente(base):
     e = store.entreprises()[0]
     assert e["etat"] == "a_identifier" and e["derniere_veille"] is None
     assert store.fiche(i) == {} and store.contacts(i) == []
-    assert [v for v in page.visites if "search" in v] == []
+    assert [v for v in page.visites if "results/people" in v] == []
     assert any("Orbique" in x and "injoignable" in x for x in r.erreurs)
     assert s.navigateur.ferme
 
@@ -410,7 +435,8 @@ def test_un_nom_trop_court_n_interroge_pas_l_annuaire(base):
     store, db = base
     i = store.ajouter_entreprise("AB", "2026-10-14")
     appels = []
-    passer(store, db, FauxScraper(FaussePage(about=dict(ABOUT_OK, nom="AB")), FauxLimites()),
+    passer(store, db, FauxScraper(FaussePage(about=dict(ABOUT_OK, nom="AB"),
+                                             recherche=recherche_de(carte("AB", "ab"))), FauxLimites()),
            annuaire=lambda nom: appels.append(nom) or ANNUAIRE_OK)
     assert appels == []
     assert store.fiche(i)["annuaire.rapprochement"]["valeur"] == "nom trop court pour l'annuaire"
@@ -421,7 +447,7 @@ def test_un_lien_colle_avec_sa_sous_page_n_est_pas_double(base):
     store.ajouter_entreprise("Orbique", "2026-10-14",
                              url_linkedin="https://www.linkedin.com/company/orbique/about/?trk=x")
     page = FaussePage()
-    passer(store, db, FauxScraper(page, FauxLimites(), typeahead=None))
+    passer(store, db, FauxScraper(page, FauxLimites()))
     assert page.visites[0] == "https://www.linkedin.com/company/orbique/about/"
 
 
@@ -469,14 +495,14 @@ def test_un_homonyme_propose_par_linkedin_est_refuse(base):
     e = store.entreprises()[0]
     assert e["etat"] == "non_identifiee" and e["company_id"] is None
     assert store.fiche(i) == {} and store.contacts(i) == []
-    assert [v for v in page.visites if "search" in v] == []
+    assert [v for v in page.visites if "results/people" in v] == []
     assert any("Orbital Conseil" in x and "collez le lien" in x for x in r.erreurs)
 
 
 def test_le_nom_suivi_contenu_dans_le_nom_de_la_page_est_accepte(base):
     store, db = base
     i = store.ajouter_entreprise("Décathlon", "2026-10-14")
-    page = FaussePage(about=dict(ABOUT_OK, nom="DECATHLON France"))
+    page = FaussePage(about=dict(ABOUT_OK, nom="DECATHLON France"), recherche=recherche_de(carte("Decathlon", "dk")))
     passer(store, db, FauxScraper(page, FauxLimites()))
     assert store.entreprises()[0]["etat"] == "identifiee"
     assert "linkedin.taille" in store.fiche(i)
@@ -485,7 +511,7 @@ def test_le_nom_suivi_contenu_dans_le_nom_de_la_page_est_accepte(base):
 def test_un_lien_colle_n_est_pas_soumis_a_la_comparaison_des_noms(base):
     store, db = base
     store.ajouter_entreprise("Mon client", "2026-10-14", url_linkedin="https://www.linkedin.com/company/orbique/")
-    passer(store, db, FauxScraper(FaussePage(), FauxLimites(), typeahead=None))
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
     assert store.entreprises()[0]["etat"] == "identifiee"
 
 
@@ -542,7 +568,7 @@ def test_chaque_page_lue_est_parcourue_comme_un_humain(base):
     store.ajouter_entreprise("Orbique", "2026-10-14")
     s = FauxScraper(FaussePage(resultats={1: [personne("a", "PM")]}), FauxLimites())
     r = passer(store, db, s)
-    assert s.human.parcours == r.pages == 3  # « À propos », page 1, page 2
+    assert s.human.parcours == r.pages == 4  # recherche d'entreprises, « À propos », page 1, page 2
 
 
 def test_une_erreur_inattendue_sur_une_entreprise_n_arrete_pas_le_passage(base):
@@ -550,7 +576,7 @@ def test_une_erreur_inattendue_sur_une_entreprise_n_arrete_pas_le_passage(base):
     store.ajouter_entreprise("Bombe", "2026-10-14")
     store.ajouter_entreprise("Orbique", "2026-10-14")
     s = FauxScraper(FaussePage(resultats={1: [personne("a", "PM")]}), FauxLimites())
-    s.explose = {"Bombe"}
+    s.page.explose = {"Bombe"}
     r = passer(store, db, s)
     assert r.cause == "termine" and r.entreprises == ["Orbique"]
     assert any("Bombe" in x and "RuntimeError" in x for x in r.erreurs)
@@ -562,16 +588,17 @@ def test_le_budget_est_verifie_avant_d_identifier_l_entreprise_suivante(base):
     store.ajouter_entreprise("Zorbique", "2026-10-14")
     s = FauxScraper(FaussePage(about=dict(ABOUT_OK, nom="Orbique Zorbique"),
                                resultats={1: [personne("a", "PM")], 2: [personne("b", "PM")]}),
-                    FauxLimites(deja=17))
+                    FauxLimites(deja=16))
     r = passer(store, db, s)
-    assert r.cause == "budget" and s.typeahead_appels == ["Orbique"]
+    # 4 pages pour Orbique (recherche, « À propos », pages 1 et 2) : plus rien pour Zorbique.
+    assert r.cause == "budget" and s.page.recherches == ["Orbique"]
 
 
 def test_l_annuaire_est_interroge_avec_le_nom_de_la_page_linkedin(base):
     store, db = base
     store.ajouter_entreprise("Mon client", "2026-10-14", url_linkedin="https://www.linkedin.com/company/orbique/")
     appels = []
-    passer(store, db, FauxScraper(FaussePage(), FauxLimites(), typeahead=None),
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()),
            annuaire=lambda nom: appels.append(nom) or ANNUAIRE_OK)
     assert appels == ["Orbique"]
 
@@ -597,48 +624,6 @@ def test_une_fiche_relue_a_l_identique_n_est_pas_relue_le_lendemain(base):
     page.visites.clear()
     passer(store, db, FauxScraper(page, FauxLimites()), maintenant="2026-11-30T08:00:00")  # jour 46
     assert [v for v in page.visites if "about" in v] == []
-
-
-def test_une_panne_de_la_recherche_par_nom_ne_declare_personne_introuvable(base):
-    store, db = base
-    store.ajouter_entreprise("Alpha", "2026-10-14")
-    store.ajouter_entreprise("Bêta", "2026-10-14")
-    store.ajouter_entreprise("Orbique", "2026-10-14",
-                             url_linkedin="https://www.linkedin.com/company/orbique/")
-    page = FaussePage()
-    s = FauxScraper(page, FauxLimites())
-    s.typeahead_en_panne = "réponse HTTP 429"
-    r = passer(store, db, s)
-    etats = {e["nom"]: (e["etat"], e["derniere_veille"]) for e in store.entreprises()}
-    assert etats["Alpha"] == ("a_identifier", None) and etats["Bêta"] == ("a_identifier", None)
-    assert s.typeahead_appels == ["Alpha"]  # on n'insiste pas après la première panne
-    assert etats["Orbique"][0] == "identifiee"  # un lien collé ne dépend pas de la recherche par nom
-    lignes = [x for x in r.erreurs if "429" in x]
-    assert len(lignes) == 1 and "Alpha" in lignes[0] and "Bêta" in lignes[0]
-    assert not any("introuvable" in x for x in r.erreurs)
-
-
-def test_une_vraie_absence_de_resultat_reste_non_identifiee(base):
-    store, db = base
-    store.ajouter_entreprise("Inconnue", "2026-10-14")
-    s = FauxScraper(FaussePage(), FauxLimites(), typeahead=None)
-    r = passer(store, db, s)
-    assert store.entreprises()[0]["etat"] == "non_identifiee"
-    assert any("introuvable" in x for x in r.erreurs)
-    assert s.human.delais >= 1  # une pause après chaque appel à la recherche par nom
-
-
-def test_une_fenetre_fermee_arrete_le_passage(base):
-    store, db = base
-    store.ajouter_entreprise("Alpha", "2026-10-14")
-    store.ajouter_entreprise("Bêta", "2026-10-14")
-    s = FauxScraper(FaussePage(), FauxLimites())
-    s.ferme_la_page = True
-    r = passer(store, db, s)
-    assert r.cause == "erreur" and s.typeahead_appels == ["Alpha"]
-    assert any("fenêtre LinkedIn s'est fermée" in x for x in r.erreurs)
-    assert {e["etat"] for e in store.entreprises()} == {"a_identifier"}
-    assert s.navigateur.ferme
 
 
 def _profil_du_fichier(db, vanity):
@@ -794,3 +779,113 @@ def test_le_vrai_typeahead_distingue_la_panne_de_l_absence(monkeypatch):
     assert essai(Page(None, cookies=()))[1] and essai(Page(RuntimeError("Target closed")))[1] == ["RuntimeError"]
     # Les appelants existants, sans `echecs`, ne voient rien changer.
     assert asyncio.run(sc._resoudre_company_urn_via_typeahead("Orbique", Page({"ok": False, "status": 500}))) is None
+
+
+# ── Identification par la recherche d'entreprises (le typeahead répond 404) ──
+
+def test_la_maison_mere_est_retenue_parmi_ses_filiales(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(recherche=recherche_de(carte("Orbique Assurances", "orbique-assurances"),
+                                             carte("ORBIQUE", "orbique"),
+                                             carte("Groupe Orbique Leasing", "orbique-leasing")))
+    s = FauxScraper(page, FauxLimites())
+    passer(store, db, s)
+    e = store.entreprises()[0]
+    assert (e["etat"], e["company_id"], e["url_linkedin"]) == (
+        "identifiee", "7654321", "https://www.linkedin.com/company/orbique/")
+    assert page.visites[1] == "https://www.linkedin.com/company/orbique/about/"
+    assert "linkedin.taille" in store.fiche(i)
+    assert s.dumps == []
+
+
+def test_deux_entreprises_au_meme_nom_ne_sont_pas_departagees(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(recherche=recherche_de(carte("Orbique", "orbique"), carte("Orbique", "orbique-fr")))
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    e = store.entreprises()[0]
+    assert e["etat"] == "non_identifiee" and e["url_linkedin"] is None and e["company_id"] is None
+    assert r.erreurs == ["Orbique : plusieurs entreprises « Orbique » sur LinkedIn : collez le lien de la bonne."]
+    assert len(page.visites) == 1 and store.fiche(i) == {}
+
+
+def test_la_recherche_d_entreprises_compte_une_page_du_budget(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage()
+    limites = FauxLimites(deja=19)  # une seule page restante : la recherche
+    r = passer(store, db, FauxScraper(page, limites))
+    assert r.cause == "budget" and r.pages == 1 and limites.pages_veille_today == 20
+    assert page.visites == ["https://www.linkedin.com/search/results/companies/?keywords=Orbique"]
+    # Rien de confirmé : elle reste à identifier, en tête du prochain lot.
+    e = store.entreprises()[0]
+    assert (e["etat"], e["url_linkedin"], e["derniere_veille"]) == ("a_identifier", None, None)
+
+
+def test_la_page_de_recherche_est_parcourue_comme_un_humain(base):
+    store, db = base
+    store.ajouter_entreprise("Inconnue", "2026-10-14")
+    s = FauxScraper(FaussePage(recherche=recherche_de()), FauxLimites())
+    passer(store, db, s)
+    assert s.human.parcours == 1 and s.human.delais >= 1
+
+
+def test_une_recherche_sans_carte_lue_est_enregistree_et_dite(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    s = FauxScraper(FaussePage(recherche=recherche_de(html="<main>nouvelle mise en page</main>")), FauxLimites())
+    r = passer(store, db, s)
+    assert s.dumps == ["<main>nouvelle mise en page</main>"]
+    assert s.noms_dumps == ["recherche_entreprises_dump.html"]
+    assert store.entreprises()[0]["etat"] == "non_identifiee"
+    assert len(r.erreurs) == 1
+    assert "aucune entreprise lue" in r.erreurs[0] and "structure" in r.erreurs[0] and "logs/" in r.erreurs[0]
+
+
+def test_une_recherche_sans_carte_ni_html_n_enregistre_rien(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    s = FauxScraper(FaussePage(recherche=recherche_de()), FauxLimites())
+    r = passer(store, db, s)
+    assert s.dumps == []
+    assert r.erreurs == ["Orbique : aucune entreprise « Orbique » sur LinkedIn (proposées : aucune) "
+                         "— collez le lien de sa page entreprise."]
+
+
+def test_un_refus_apres_a_propos_ne_garde_pas_le_lien_trouve(base):
+    # Gardé, le lien ferait reprendre l'entreprise au passage suivant comme un
+    # lien collé — sans plus comparer les noms.
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(about=dict(ABOUT_OK, nom="Orbital Conseil"))
+    passer(store, db, FauxScraper(page, FauxLimites()))
+    e = store.entreprises()[0]
+    assert e["etat"] == "non_identifiee" and e["url_linkedin"] is None
+    page.visites.clear()
+    passer(store, db, FauxScraper(page, FauxLimites()), maintenant="2026-10-16T08:00:00")
+    assert page.visites == []
+
+
+def test_le_nom_saisi_reste_meme_s_il_ressemble_au_lien_trouve(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique Conseil", "2026-10-14")
+    page = FaussePage(about=dict(ABOUT_OK, nom="Orbique Conseil SAS"),
+                      recherche=recherche_de(carte("ORBIQUE CONSEIL SAS", "orbique-conseil")))
+    passer(store, db, FauxScraper(page, FauxLimites()))
+    e = store.entreprises()[0]
+    assert e["nom"] == "Orbique Conseil" and e["etat"] == "identifiee"
+
+
+def test_une_fenetre_fermee_arrete_le_passage(base):
+    store, db = base
+    store.ajouter_entreprise("Alpha", "2026-10-14")
+    store.ajouter_entreprise("Bêta", "2026-10-14")
+    page = FaussePage()
+    s = FauxScraper(page, FauxLimites())
+    page.ferme_pendant = {"Alpha"}
+    r = passer(store, db, s)
+    assert r.cause == "erreur" and page.recherches == ["Alpha"] and r.pages == 1
+    assert any("fenêtre LinkedIn s'est fermée" in x for x in r.erreurs)
+    assert {e["etat"] for e in store.entreprises()} == {"a_identifier"}
+    assert s.navigateur.ferme

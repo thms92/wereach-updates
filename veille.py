@@ -30,6 +30,7 @@ from utils.annuaire import (
 )
 from utils.browsemap import normaliser_url
 from utils.dom_selectors import DOMSelectors
+from utils.identification import choisir_entreprise, url_recherche_entreprises
 from utils.veille_regles import (
     PAGES_MAX_PAR_ENTREPRISE, RELECTURE_FICHE_JOURS, charger_reglages, expression_mots_cles,
     famille_de_l_intitule, fiche_depuis_apropos, nom_depuis_lien, ordre_du_lot, signature_familles,
@@ -92,6 +93,16 @@ class _PageInjoignable(Exception):
     def __init__(self, motif="page LinkedIn injoignable"):
         super().__init__(motif)
         self.motif = motif
+
+
+def _fenetre_fermee(page) -> None:
+    """Arrête le passage si la fenêtre LinkedIn a été fermée.
+
+    Sans cela, chaque entreprise suivante dépenserait une page du budget
+    pour échouer à son tour, toute l'entreprise étant dite « injoignable ».
+    """
+    if page.is_closed():
+        raise _Arret("erreur", "La fenêtre LinkedIn s'est fermée pendant le passage : veille arrêtée. Relancez-la.")
 
 
 def _meme_entreprise(nom_suivi: str, nom_page: str) -> bool:
@@ -172,48 +183,46 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         # paresseux des résultats et garde une allure humaine.
         await scraper.human.browse_page_naturally(page)
 
-    # Recherche par nom en panne technique : on ne la réessaie pas sur les
-    # entreprises suivantes du même passage (inutile d'insister sur un compte),
-    # et on ne déclare personne « introuvable » pour autant.
-    suspension = {"ligne": None, "reportees": []}
-
     async def traiter(page, entreprise, connus) -> bool:
         """Une entreprise ; False si elle n'a pas pu être passée.
 
         `connus` : URL canoniques déjà au fichier, complété au fil du passage.
         """
         eid, nom = entreprise["id"], entreprise["nom"]
-        # Avant la recherche par nom : elle interroge LinkedIn elle aussi.
-        if restant() <= 0:
-            raise _Arret("budget")
 
-        # 1. Identification
-        devine = False
+        # 1. Identification, par la page de recherche d'entreprises (une page
+        # du budget, vérifiée par `charger`). Le service « typeahead » qui le
+        # faisait répond 404 depuis le 2026-10-15.
+        devine = trouvee = False
         if not entreprise.get("company_id") and not entreprise.get("url_linkedin"):
             devine = True
-            if suspension["ligne"] is not None:
-                suspension["reportees"].append(nom)
-                return False
-            echecs = []
-            company_id = await scraper._resoudre_company_urn_via_typeahead(nom, page, echecs=echecs)
-            if page.is_closed():
-                raise _Arret("erreur", "La fenêtre LinkedIn s'est fermée pendant le passage : veille arrêtée. "
-                                       "Relancez-la.")
-            await scraper.human.human_delay(1500, 400)
-            if not company_id and echecs:
-                # Échec technique : l'entreprise reste « à identifier », en
-                # tête du prochain lot (pas de `marquer_passage`).
-                suspension["ligne"] = len(rapport.erreurs)
-                rapport.erreurs.append(
-                    f"Recherche d'entreprise par nom indisponible sur LinkedIn ({echecs[0]}) : "
-                    f"{nom} n'a pas pu être identifiée, nouvel essai au prochain passage.")
-                return False
-            if not company_id:
+            await charger(page, url_recherche_entreprises(nom))
+            lu = await page.evaluate(DOMSelectors.extract_recherche_entreprises_js()) or {}
+            resultats = lu.get("resultats") or []
+            url, motif = choisir_entreprise(resultats, nom)
+            if not url:
                 store.maj_identification(eid, "non_identifiee")
-                rapport.erreurs.append(
-                    f"{nom} : introuvable sur LinkedIn par son nom — collez le lien de sa page entreprise.")
+                html = lu.get("html") or ""
+                if not resultats and html.strip():
+                    # Aucune carte lue sur une page pourtant affichée : vraie
+                    # absence, ou structure changée — on ne sait pas, on le dit.
+                    enregistree = scraper._dumper_panneau(html, nom_fichier="recherche_entreprises_dump.html")
+                    ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
+                    rapport.erreurs.append(
+                        f"{nom} : aucune entreprise lue sur la recherche LinkedIn — aucun résultat, ou page dont "
+                        f"la structure a changé ({ou}) ; collez le lien de sa page entreprise.")
+                elif "collez le lien" in motif:
+                    rapport.erreurs.append(f"{nom} : {motif}.")
+                else:
+                    rapport.erreurs.append(f"{nom} : {motif} — collez le lien de sa page entreprise.")
                 return False
-            entreprise["company_id"] = company_id
+            # Le lien sert à lire « À propos » ; il n'est enregistré qu'une fois
+            # le nom de la page confirmé (plus bas) : enregistré avant, un
+            # refus laisserait une entreprise « non identifiée » avec un lien,
+            # que le passage suivant reprendrait comme un lien collé — sans
+            # plus comparer les noms.
+            entreprise["url_linkedin"] = url
+            trouvee = True
 
         # 2. Fiche, si absente ou trop ancienne
         age = store.age_fiche_jours(eid, "linkedin", maintenant)
@@ -236,8 +245,8 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 rapport.erreurs.append(f"{nom} : {motif} ({ou}).")
                 return False
             nom_page = lu.get("nom") or ""
-            # La recherche par nom prend le premier résultat : il peut s'agir
-            # d'un homonyme. Un lien collé, lui, est le choix de la personne.
+            # Seconde sûreté après le nom exact de la carte : la page elle-même
+            # doit porter ce nom. Un lien collé, lui, est le choix de la personne.
             if devine and not _meme_entreprise(nom, nom_page):
                 store.maj_identification(eid, "non_identifiee")
                 rapport.erreurs.append(
@@ -246,7 +255,8 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 return False
             if lu.get("description"):
                 fiche["description"] = lu["description"][:500]
-            store.maj_identification(eid, "identifiee", company_id=lu["company_id"])
+            store.maj_identification(eid, "identifiee", company_id=lu["company_id"],
+                                     url_linkedin=entreprise["url_linkedin"] if trouvee else None)
             entreprise["company_id"] = lu["company_id"]
             store.enregistrer_fiche(eid, fiche, "linkedin", maintenant)
             store.marquer_lecture(eid, "linkedin", maintenant)
@@ -254,7 +264,10 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             # Ajoutée par son lien : son nom n'était qu'un morceau d'adresse
             # (« Orbique Conseil Sas 2 »). Un nom choisi par la personne, lui,
             # est gardé : c'est sous ce nom qu'elle la cherche dans son fichier.
-            lien = entreprise.get("url_linkedin")
+            # Un lien trouvé par la recherche ne vaut pas un lien collé : le nom
+            # est alors celui que la personne a saisi, même s'il ressemble à
+            # l'adresse (« orbique-conseil » / « Orbique Conseil »).
+            lien = None if devine else entreprise.get("url_linkedin")
             if lien and nom_page and nom == nom_depuis_lien(lien) and nom_page != nom:
                 if store.renommer(eid, nom_page):
                     entreprise["nom"] = nom = nom_page
@@ -339,9 +352,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 except _Arret:
                     raise
                 except _PageInjoignable as e:
+                    _fenetre_fermee(page)
                     # Pas de `marquer_passage` : elle reste en tête du prochain lot.
                     rapport.erreurs.append(f"{entreprise['nom']} : {e.motif} — reprise au prochain passage.")
                 except Exception as e:
+                    _fenetre_fermee(page)
                     # Une page qui se recharge sous Playwright (« Execution context
                     # was destroyed ») ne doit pas fausser tout le passage.
                     logger.error(f"❌ Veille, {entreprise['nom']} : {type(e).__name__} : {e}", exc_info=True)
@@ -352,9 +367,6 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 rapport.erreurs.append(arret.message)
         finally:
             await navigateur.close()
-    if suspension["reportees"]:
-        rapport.erreurs[suspension["ligne"]] += (
-            f" Également reportée(s) : {', '.join(suspension['reportees'])}.")
     rapport.fin = _maintenant()
     return rapport
 
