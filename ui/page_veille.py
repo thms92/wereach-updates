@@ -22,8 +22,6 @@ from veille_store import VeilleStore
 
 _VISITE = "derniere_visite_veille.txt"
 _MOTIF_LIEN = re.compile(r"^https?://([a-z]+\.)?linkedin\.com/company/[^/?#]+", re.I)
-# Actualités par entreprise dans le récap : au-delà, la fiche les a toutes.
-_ACTUALITES_PAR_ENTREPRISE = 3
 
 _CAUSES = {
     "termine": "Passage terminé.",
@@ -126,7 +124,7 @@ def _date_fr(horodatage: str) -> str:
 
 
 def _afficher_passage(fin, cause, entreprises, pages, erreurs,
-                      nouveaux_contacts=None, nouvelles_actualites=None) -> None:
+                      nouveaux_contacts=None) -> None:
     """Résumé d'un passage, qu'il vienne de finir ou qu'il soit relu en base.
 
     Une seule fonction pour les deux : le résumé enregistré ne doit pas dire
@@ -137,8 +135,6 @@ def _afficher_passage(fin, cause, entreprises, pages, erreurs,
     morceaux = [couvertes, f"{pages} page(s) LinkedIn"]
     if nouveaux_contacts is not None:
         morceaux.append(f"{nouveaux_contacts} nouveau(x) contact(s)")
-    if nouvelles_actualites is not None:
-        morceaux.append(f"{nouvelles_actualites} nouvelle(s) actualité(s)")
     resume = (f"**Passage du {_date_fr(fin)}** — {_CAUSES.get(cause, cause)} — " + ", ".join(morceaux) + ".")
     (st.success if cause in ("termine", "rien_a_faire") else st.warning)(resume)
     # Le moteur consigne aussi la cause d'arrêt parmi les erreurs : déjà dite
@@ -150,7 +146,7 @@ def _afficher_passage(fin, cause, entreprises, pages, erreurs,
 
 def _afficher_rapport(rapport) -> None:
     _afficher_passage(rapport.fin, rapport.cause, rapport.entreprises, rapport.pages, rapport.erreurs,
-                      rapport.nouveaux_contacts, rapport.nouvelles_actualites)
+                      rapport.nouveaux_contacts)
 
 
 def afficher_page_veille() -> None:
@@ -161,7 +157,7 @@ def afficher_page_veille() -> None:
     # ── Nouveau aujourd'hui ────────────────────────────────────────────
     st.subheader("Nouveau depuis votre dernière visite")
     nouveautes = store.nouveautes_depuis(_visite_precedente(chemins.config_dir))
-    if not nouveautes["contacts"] and not nouveautes["changements"] and not nouveautes["actualites"]:
+    if not nouveautes["contacts"] and not nouveautes["changements"]:
         st.info("Rien de nouveau depuis votre dernière visite.")
     colonnes = {"entreprise": "Entreprise", "famille": "Famille", "nom": "Nom", "poste": "Intitulé",
                  "degre": "Degré", "url": "Lien"}
@@ -184,16 +180,6 @@ def afficher_page_veille() -> None:
         with st.expander(f"Autres postes trouvés ({len(autres)}) — hors des familles visées"):
             st.dataframe(pd.DataFrame(autres)[list(colonnes)].rename(columns=colonnes),
                          hide_index=True, width="stretch")
-    par_entreprise = {}
-    for a in nouveautes["actualites"]:  # déjà triées, la plus récente d'abord
-        par_entreprise.setdefault(a["entreprise"], []).append(a)
-    for entreprise, articles in par_entreprise.items():
-        for a in articles[:_ACTUALITES_PAR_ENTREPRISE]:
-            st.markdown(f"- 📰 **{entreprise}** — {a['categorie']} : [{a['titre']}]({a['lien']}) "
-                        f"· {a.get('source') or ''} · {(a.get('publie_le') or '')[:10]}")
-        if len(articles) > _ACTUALITES_PAR_ENTREPRISE:
-            st.caption(f"{entreprise} : +{len(articles) - _ACTUALITES_PAR_ENTREPRISE} autre(s) actualité(s) "
-                       "— voir sa fiche ci-dessous.")
     for c in nouveautes["changements"]:
         source = "LinkedIn" if c["source"] == "linkedin" else "Annuaire officiel"
         st.markdown(f"- **{c['entreprise']}** — {_CHAMPS.get(c['champ'], c['champ'])} : {c['avant']} → "
@@ -285,7 +271,7 @@ def afficher_page_veille() -> None:
         a_retirer = st.selectbox("Retirer une entreprise", ["—"] + [e["nom"] for e in entreprises],
                                  key="veille_retirer")
         if a_retirer != "—":
-            st.caption("Retirer supprime sa fiche, ses contacts suivis et son actualité ; "
+            st.caption("Retirer supprime sa fiche, ses contacts suivis ; "
                        "les profils restent dans l'Historique.")
         if a_retirer != "—" and st.button(f"Retirer {a_retirer}", key="veille_btn_retirer"):
             store.retirer_entreprise(next(e["id"] for e in entreprises if e["nom"] == a_retirer))
@@ -300,9 +286,8 @@ def afficher_page_veille() -> None:
         motif = _motif_non_rapprochee(fiche_complete)
         fiche = _fiche_affichable(fiche_complete)
         contacts = store.contacts(e["id"])
-        actualites = store.actualites(e["id"])
         lectures = store.lectures(e["id"])
-        st.markdown(f"**En un coup d'œil** — {resume_fiche(fiche, contacts, actualites, st.session_state.get('veille_visite_precedente'))}")
+        st.markdown(f"**En un coup d'œil** — {resume_fiche(fiche, contacts, st.session_state.get('veille_visite_precedente'))}")
         if not fiche:
             st.info("Pas encore de fiche : elle sera remplie au prochain passage de la veille.")
         else:
@@ -332,14 +317,6 @@ def afficher_page_veille() -> None:
         if motif:
             st.caption(f"Annuaire officiel : entreprise non rapprochée ({motif}). Faute de recoupement sûr "
                        "avec LinkedIn, aucune donnée de l'annuaire n'est affichée.")
-        st.markdown("**Actualité (12 derniers mois)**")
-        if actualites:
-            for a in actualites:
-                st.markdown(f"- {a['categorie']} — [{a['titre']}]({a['lien']}) · {a.get('source') or ''} "
-                            f"· {(a.get('publie_le') or '')[:10]}")
-            st.caption("Classement par mots-clés, approximatif : ouvrez l'article pour juger.")
-        elif e.get("derniere_actualite"):
-            st.caption(f"Aucune actualité marquante trouvée (relevé du {e['derniere_actualite'][:10]}).")
         if contacts:
             st.dataframe(pd.DataFrame(contacts)[["famille", "nom", "poste", "degre", "decouvert_le", "url"]]
                          .rename(columns={"famille": "Famille", "nom": "Nom", "poste": "Intitulé",

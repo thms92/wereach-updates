@@ -27,7 +27,8 @@ def test_les_tables_de_la_base_existante_sont_intactes(tmp_path):
     s, db = store(tmp_path)
     tables = {r[0] for r in sqlite3.connect(db).execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"profiles", "invitations", "recherches", "entreprises_suivies",
-            "fiche_entreprise", "contacts_veille", "passages_veille", "actualites"} <= tables
+            "fiche_entreprise", "contacts_veille", "passages_veille"} <= tables
+    assert "actualites" not in tables  # plus créée : la veille ne lit plus l'actualité
 
 
 def test_ajout_et_doublon_insensible_a_la_casse(tmp_path):
@@ -140,34 +141,47 @@ def test_les_societes_du_fichier(tmp_path):
     assert s.societes_du_fichier() == ["Orbique", "Zéphyr"]
 
 
-ARTICLE = {"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source": "Les Échos",
-           "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}
+def test_les_nouveautes_ne_portent_plus_d_actualite(tmp_path):
+    s, _ = store(tmp_path)
+    assert set(s.nouveautes_depuis(None)) == {"contacts", "changements"}
 
 
-def test_une_actualite_n_est_nouvelle_qu_une_fois(tmp_path):
+def _base_avec_actualites(tmp_path):
+    """Base d'une version précédente de cette branche : table et colonne d'actualité présentes."""
+    db = str(tmp_path / "avec_actus.db")
+    con = sqlite3.connect(db)
+    con.executescript("""CREATE TABLE entreprises_suivies (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL, nom_cle TEXT NOT NULL UNIQUE, url_linkedin TEXT, company_id TEXT,
+        etat TEXT NOT NULL DEFAULT 'a_identifier', ajoutee_le TEXT NOT NULL, derniere_veille TEXT,
+        curseur_page INTEGER NOT NULL DEFAULT 0, signature_familles TEXT, derniere_actualite TEXT);
+        CREATE TABLE actualites (id INTEGER PRIMARY KEY AUTOINCREMENT, entreprise_id INTEGER NOT NULL,
+        lien TEXT NOT NULL, titre TEXT NOT NULL, source TEXT, publie_le TEXT, categorie TEXT NOT NULL,
+        trouve_le TEXT NOT NULL, UNIQUE (entreprise_id, lien));
+        INSERT INTO entreprises_suivies (nom, nom_cle, ajoutee_le, derniere_actualite)
+            VALUES ('Orbique', 'orbique', '2026-10-15', '2026-10-15T08:00:00');
+        INSERT INTO actualites (entreprise_id, lien, titre, categorie, trouve_le)
+            VALUES (1, 'https://n/1', 'Orbique rachète Zéphyr', 'Rachat / fusion', '2026-10-15');""")
+    con.commit()
+    con.close()
+    return db
+
+
+def test_retirer_nettoie_l_actualite_d_une_base_qui_en_a_encore_et_ne_la_supprime_pas(tmp_path):
+    db = _base_avec_actualites(tmp_path)
+    s = VeilleStore(db)
+    [e] = s.entreprises()  # la colonne héritée ne gêne pas la lecture
+    s.retirer_entreprise(e["id"])
+    con = sqlite3.connect(db)
+    assert s.entreprises() == []
+    assert con.execute("SELECT COUNT(*) FROM actualites").fetchone()[0] == 0  # table conservée, lignes parties
+    con.close()
+
+
+def test_retirer_fonctionne_sans_table_d_actualite(tmp_path):
     s, _ = store(tmp_path)
     i = s.ajouter_entreprise("Orbique", "2026-10-15")
-    assert s.enregistrer_actualites(i, [ARTICLE], "2026-10-15T08:00:00") == 1
-    assert s.enregistrer_actualites(i, [ARTICLE], "2026-10-16T08:00:00") == 0
-    assert s.entreprises()[0]["derniere_actualite"] == "2026-10-16T08:00:00"
-    assert [a["titre"] for a in s.actualites(i)] == ["Orbique rachète Zéphyr"]
-
-
-def test_le_recap_inclut_les_actualites(tmp_path):
-    s, _ = store(tmp_path)
-    i = s.ajouter_entreprise("Orbique", "2026-10-15")
-    s.enregistrer_actualites(i, [ARTICLE], "2026-10-15T08:00:00")
-    [a] = s.nouveautes_depuis("2026-10-15T00:00:00")["actualites"]
-    assert (a["entreprise"], a["categorie"]) == ("Orbique", "Rachat / fusion")
-    assert s.nouveautes_depuis("2026-10-16T00:00:00")["actualites"] == []
-
-
-def test_retirer_supprime_aussi_l_actualite(tmp_path):
-    s, db = store(tmp_path)
-    i = s.ajouter_entreprise("Orbique", "2026-10-15")
-    s.enregistrer_actualites(i, [ARTICLE], "2026-10-15")
     s.retirer_entreprise(i)
-    assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM actualites").fetchone()[0] == 0
+    assert s.entreprises() == []
 
 
 # ── Correctifs de la revue finale ────────────────────────────────────────

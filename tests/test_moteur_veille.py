@@ -172,11 +172,10 @@ ARTICLE = {"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source":
            "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}
 
 
-def passer(store, db, scraper, reglages=None, annuaire=lambda nom: ANNUAIRE_OK, maintenant="2026-10-15T08:00:00",
-           actualite=lambda nom: []):
+def passer(store, db, scraper, reglages=None, annuaire=lambda nom: ANNUAIRE_OK, maintenant="2026-10-15T08:00:00"):
     return asyncio.run(veille.passage_async(
         scraper, store, db, reglages or ReglagesVeille(["Product", "Data", "IA"], [], 20),
-        "COOKIE", maintenant, annuaire=annuaire, actualite=actualite))
+        "COOKIE", maintenant, annuaire=annuaire))
 
 
 def test_premier_passage_complet(base):
@@ -345,48 +344,6 @@ def test_le_navigateur_est_toujours_ferme(base):
     s = FauxScraper(FaussePage(), FauxLimites())
     passer(store, db, s)
     assert s.navigateur.ferme
-
-
-def test_l_actualite_est_relue_pour_toutes_meme_sans_budget(base):
-    store, db = base
-    a = store.ajouter_entreprise("Orbique", "2026-10-14")
-    b = store.ajouter_entreprise("Zéphyr", "2026-10-14")
-    demandees = []
-
-    def actu(nom):
-        demandees.append(nom)
-        return [dict(ARTICLE, lien=f"https://n/{nom}")]
-
-    page = FaussePage()
-    r = passer(store, db, FauxScraper(page, FauxLimites(deja=20)), actualite=actu)
-    assert sorted(demandees) == ["Orbique", "Zéphyr"]
-    assert r.nouvelles_actualites == 2 and r.cause == "budget" and page.visites == []
-    assert len(store.actualites(a)) == len(store.actualites(b)) == 1
-
-
-def test_l_actualite_n_est_relue_qu_une_fois_par_jour(base):
-    store, db = base
-    store.ajouter_entreprise("Orbique", "2026-10-14")
-    demandees = []
-    actu = lambda nom: demandees.append(nom) or []
-    passer(store, db, FauxScraper(FaussePage(), FauxLimites(deja=20)), actualite=actu, maintenant="2026-10-15T08:00:00")
-    passer(store, db, FauxScraper(FaussePage(), FauxLimites(deja=20)), actualite=actu, maintenant="2026-10-15T14:00:00")
-    passer(store, db, FauxScraper(FaussePage(), FauxLimites(deja=20)), actualite=actu, maintenant="2026-10-16T08:00:00")
-    assert demandees == ["Orbique", "Orbique"]
-
-
-def test_google_news_injoignable_un_seul_message_et_la_veille_continue(base):
-    from utils.actualite import ActualiteIndisponible
-    store, db = base
-    store.ajouter_entreprise("Orbique", "2026-10-14")
-    store.ajouter_entreprise("Zéphyr", "2026-10-14")
-
-    def panne(nom):
-        raise ActualiteIndisponible("délai dépassé")
-
-    r = passer(store, db, FauxScraper(FaussePage(resultats={1: [personne("a", "PM")]}), FauxLimites()), actualite=panne)
-    assert sum("actualité" in e.lower() for e in r.erreurs) == 1
-    assert r.nouveaux_contacts >= 1
 
 
 def test_lancer_passage_respecte_le_verrou_et_enregistre(tmp_path, monkeypatch):
@@ -731,7 +688,7 @@ def test_un_passage_interrompu_ferme_chrome_et_ne_l_avale_pas(base):
 
     with pytest.raises(_Interruption):
         asyncio.run(veille.passage_async(s, store, db, ReglagesVeille(["Product"], [], 20), "COOKIE",
-                                         "2026-10-15T08:00:00", status=status, actualite=lambda n: []))
+                                         "2026-10-15T08:00:00", status=status))
     assert s.navigateur.ferme
 
 

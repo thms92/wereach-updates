@@ -21,7 +21,7 @@ def store():
     for e in s.entreprises():
         s.retirer_entreprise(e["id"])
     return s
-# (retirer_entreprise supprime aussi fiche, contacts et actualités)
+# (retirer_entreprise supprime aussi fiche et contacts)
 
 
 @pytest.fixture
@@ -99,14 +99,6 @@ def test_le_recap_montre_les_nouveaux_contacts(store):
     at = _page()
     tableaux = [d.value for d in at.dataframe]
     assert any("Jeanne Exemple" in df.to_string() for df in tableaux)
-
-
-def test_le_recap_montre_les_actualites(store):
-    i = store.ajouter_entreprise("Orbique", "2026-10-14")
-    store.enregistrer_actualites(i, [{"titre": "Orbique rachète Zéphyr", "lien": "https://n/1", "source": "Les Échos",
-                                      "publie_le": "2026-08-31", "categorie": "Rachat / fusion"}], "2999-01-01T08:00:00")
-    at = _page()
-    assert any("Orbique rachète Zéphyr" in m.value for m in at.markdown)
 
 
 def test_la_fiche_s_ouvre_sur_le_coup_d_oeil(store):
@@ -334,18 +326,6 @@ def test_les_postes_hors_familles_sont_a_part_et_pas_proposes_a_l_invitation(sto
     assert "Jeanne Exemple" in recap.to_string() and "Paul Comptable" not in recap.to_string()
     assert any(x.label.startswith("Autres postes trouvés (1)") for x in at.expander)
     assert any("Paul Comptable" in d.value.to_string() for d in at.dataframe if "Inviter" not in d.value.columns)
-
-
-def test_le_recap_montre_trois_actualites_par_entreprise_au_plus(store):
-    i = store.ajouter_entreprise("Orbique", "2026-10-14")
-    store.enregistrer_actualites(i, [{"titre": f"Orbique nomme {n}", "lien": f"https://n/{n}", "source": "S",
-                                      "publie_le": f"2026-0{n}-01", "categorie": "Nomination"} for n in range(1, 6)],
-                                 "2999-01-01T08:00:00")
-    at = _page()
-    recap = [m.value for m in at.markdown if m.value.startswith("- 📰")]
-    assert [r.split("[")[1].split("]")[0] for r in recap] == ["Orbique nomme 5", "Orbique nomme 4",
-                                                              "Orbique nomme 3"]
-    assert any("+2 autre(s) actualité(s)" in c.value for c in at.caption)
 
 
 def test_les_champs_de_l_annuaire_ont_des_libelles_lisibles(store):

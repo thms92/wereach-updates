@@ -25,19 +25,7 @@ CREATE TABLE IF NOT EXISTS entreprises_suivies (
     ajoutee_le TEXT NOT NULL,
     derniere_veille TEXT,
     curseur_page INTEGER NOT NULL DEFAULT 0,
-    signature_familles TEXT,
-    derniere_actualite TEXT
-);
-CREATE TABLE IF NOT EXISTS actualites (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entreprise_id INTEGER NOT NULL,
-    lien TEXT NOT NULL,
-    titre TEXT NOT NULL,
-    source TEXT,
-    publie_le TEXT,
-    categorie TEXT NOT NULL,
-    trouve_le TEXT NOT NULL,
-    UNIQUE (entreprise_id, lien)
+    signature_familles TEXT
 );
 CREATE TABLE IF NOT EXISTS fiche_entreprise (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,11 +149,16 @@ class VeilleStore:
 
     def retirer_entreprise(self, entreprise_id: int) -> None:
         with self._con() as con:
-            for table, colonne in (("fiche_entreprise", "entreprise_id"),
-                                   ("fiche_lectures", "entreprise_id"),
-                                   ("contacts_veille", "entreprise_id"),
-                                   ("actualites", "entreprise_id"),
-                                   ("entreprises_suivies", "id")):
+            tables = [("fiche_entreprise", "entreprise_id"),
+                      ("fiche_lectures", "entreprise_id"),
+                      ("contacts_veille", "entreprise_id"),
+                      ("entreprises_suivies", "id")]
+            # L'actualité a été retirée de la veille, mais les bases créées par
+            # une version précédente gardent leur table (jamais supprimée) :
+            # on la nettoie si elle est là, sans la créer ni échouer si elle manque.
+            if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='actualites'").fetchone():
+                tables.insert(3, ("actualites", "entreprise_id"))
+            for table, colonne in tables:
                 con.execute(f"DELETE FROM {table} WHERE {colonne} = ?", (entreprise_id,))
 
     def entreprises(self) -> list:
@@ -308,33 +301,7 @@ class VeilleStore:
                 WHERE f.precedente IS NOT NULL AND f.releve_le > ?
                 ORDER BY e.nom COLLATE NOCASE""", (borne,)).fetchall()
                            if (l["source"], l["champ"]) in CHANGEMENTS_SIGNALES]
-            actualites = [dict(l) for l in con.execute("""
-                SELECT a.*, e.nom AS entreprise FROM actualites a
-                JOIN entreprises_suivies e ON e.id = a.entreprise_id
-                WHERE a.trouve_le > ? ORDER BY a.publie_le DESC""", (borne,)).fetchall()]
-        return {"contacts": contacts, "changements": changements, "actualites": actualites}
-
-    # ── Actualité ──────────────────────────────────────────────────────
-
-    def enregistrer_actualites(self, entreprise_id, articles: list, quand: str) -> int:
-        """Enregistre les articles inconnus ; renvoie combien sont nouveaux."""
-        nouveaux = 0
-        with self._con() as con:
-            for a in articles:
-                cur = con.execute("""INSERT OR IGNORE INTO actualites
-                    (entreprise_id, lien, titre, source, publie_le, categorie, trouve_le)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (entreprise_id, a["lien"], a["titre"], a.get("source"), a.get("publie_le"),
-                     a["categorie"], quand))
-                nouveaux += cur.rowcount
-            con.execute("UPDATE entreprises_suivies SET derniere_actualite = ? WHERE id = ?", (quand, entreprise_id))
-        return nouveaux
-
-    def actualites(self, entreprise_id) -> list:
-        with self._con() as con:
-            return [dict(l) for l in con.execute(
-                "SELECT * FROM actualites WHERE entreprise_id = ? ORDER BY publie_le DESC",
-                (entreprise_id,)).fetchall()]
+        return {"contacts": contacts, "changements": changements}
 
     # ── Passages ───────────────────────────────────────────────────────
 

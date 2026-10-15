@@ -184,12 +184,11 @@ def sauver_reglages(config_dir, reglages: ReglagesVeille) -> None:
     )
 
 
-def resume_fiche(fiche: dict, contacts: list, actualites: list, depuis) -> str:
+def resume_fiche(fiche: dict, contacts: list, depuis) -> str:
     """La fiche en une ligne : ce qu'on lit avant de décider d'ouvrir le reste.
 
-    Actualité : la plus récente seulement — c'est un signal, pas une revue de
-    presse. Contacts : les familles « Autre » ne comptent pas, ce ne sont pas
-    les postes visés.
+    Contacts : les familles « Autre » ne comptent pas, ce ne sont pas les
+    postes visés.
     """
     morceaux = [fiche[c]["valeur"] for c in ("linkedin.taille", "linkedin.secteur") if c in fiche]
     if "linkedin.siege" in fiche:
@@ -198,13 +197,6 @@ def resume_fiche(fiche: dict, contacts: list, actualites: list, depuis) -> str:
         morceaux.append(fiche["annuaire.effectif"]["valeur"])
     if not morceaux:
         morceaux.append("Fiche pas encore remplie")
-    if actualites:
-        a = max(actualites, key=lambda x: x.get("publie_le") or "")
-        j = (a.get("publie_le") or "")[:10]
-        date_fr = f"{j[8:10]}/{j[5:7]}/{j[:4]}" if len(j) == 10 else j
-        morceaux.append(f"📰 {a['categorie']} : {a['titre']} ({date_fr})")
-    else:
-        morceaux.append("aucune actualité")
     vises = [c for c in contacts if c.get("famille") != "Autre"]
     if vises:
         nouveaux = sum(1 for c in vises if depuis and (c.get("decouvert_le") or "") > depuis)

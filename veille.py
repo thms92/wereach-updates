@@ -5,11 +5,10 @@ Sans Streamlit : l'application l'appelle par un bouton, et la livraison 3
 l'appellera par un réveil programmé (`python -m veille --email …`). La
 logique n'existe qu'ici.
 
-Un passage relit d'abord l'actualité de toutes les entreprises suivies
-(gratuite pour LinkedIn), puis prend les entreprises les plus en retard et,
-tant que le budget de pages du jour le permet : identifie l'entreprise sur
-LinkedIn, relit sa fiche si elle a plus de 30 jours (page « À propos » +
-annuaire officiel recoupé), puis parcourt quelques pages de la recherche de
+Un passage prend les entreprises les plus en retard et, tant que le budget
+de pages du jour le permet : identifie l'entreprise sur LinkedIn, relit sa
+fiche si elle a plus de 30 jours (page « À propos » + annuaire officiel
+recoupé), puis parcourt quelques pages de la recherche de
 ses employés Product / Data / IA, en reprenant là où le passage précédent
 s'était arrêté.
 """
@@ -25,8 +24,6 @@ from playwright.async_api import async_playwright
 
 from database import DatabaseManager
 from logger import logger
-from utils.actualite import ActualiteIndisponible
-from utils.actualite import interroger as interroger_actualite
 from utils.annuaire import (
     AnnuaireIndisponible, choisir_candidat, fiche_depuis_annuaire, interroger, nom_interrogeable,
     normaliser_nom,
@@ -52,7 +49,6 @@ class RapportPassage:
     cause: str = "termine"
     erreurs: list = field(default_factory=list)
     nouveaux_contacts: int = 0
-    nouvelles_actualites: int = 0
 
 
 # Une seule formulation par cause d'arrêt : la page Veille affiche la même
@@ -124,8 +120,7 @@ def _url_apropos(entreprise) -> str:
     return f"https://www.linkedin.com/company/{entreprise['company_id']}/about/"
 
 
-async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger,
-                        actualite=interroger_actualite, rapport=None):
+async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger, rapport=None):
     # `rapport` fourni par l'appelant : si le passage est interrompu, ce qui a
     # été fait jusque-là reste lisible et s'enregistre (voir `lancer_passage`).
     rapport = rapport if rapport is not None else RapportPassage(debut=maintenant)
@@ -135,20 +130,6 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         logger.info(f"🏢 {texte}")
         if status:
             status(texte)
-
-    # 0. Actualité : gratuite pour LinkedIn, donc pour toutes les entreprises
-    # suivies, une fois par jour — la rotation LinkedIn ne la retarde pas.
-    pannes = 0
-    for e in store.entreprises():
-        if (e.get("derniere_actualite") or "")[:10] == maintenant[:10]:
-            continue
-        dire(f"Actualité de {e['nom']}…")
-        try:
-            rapport.nouvelles_actualites += store.enregistrer_actualites(e["id"], actualite(e["nom"]), maintenant)
-        except ActualiteIndisponible:
-            pannes += 1
-    if pannes:
-        rapport.erreurs.append(f"Google News injoignable : actualité non relue pour {pannes} entreprise(s).")
 
     def restant():
         return reglages.pages_par_jour - limites.pages_veille_today

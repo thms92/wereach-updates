@@ -167,20 +167,15 @@ FICHE = {
 }
 CONTACTS = [{"famille": "Product", "decouvert_le": "2026-10-01"}, {"famille": "Data", "decouvert_le": "2026-10-15T08:00:00"},
             {"famille": "Autre", "decouvert_le": "2026-10-15T08:00:00"}]
-ACTUS = [{"categorie": "Rachat / fusion", "titre": "Orbique rachète Zéphyr", "publie_le": "2026-08-31"},
-         {"categorie": "Nomination", "titre": "Orbique nomme une DG", "publie_le": "2026-06-01"}]
-
-
 def test_l_en_tete_resume_la_fiche_en_une_ligne():
-    assert resume_fiche(FICHE, CONTACTS, ACTUS, "2026-10-10") == (
+    assert resume_fiche(FICHE, CONTACTS, "2026-10-10") == (
         "201-500 employés · Conseil · Paris · 100 à 199 salariés (2024) · "
-        "📰 Rachat / fusion : Orbique rachète Zéphyr (31/08/2026) · "
         "2 contacts ciblés, dont 1 nouveau"
     )
 
 
 def test_l_en_tete_d_une_fiche_vide():
-    assert resume_fiche({}, [], [], None) == "Fiche pas encore remplie · aucune actualité · aucun contact ciblé"
+    assert resume_fiche({}, [], None) == "Fiche pas encore remplie · aucun contact ciblé"
 
 
 # --- Correctifs du premier tour de relecture ---------------------------------
