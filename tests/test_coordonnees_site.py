@@ -13,6 +13,9 @@ def test_domaine_de():
     assert cs.domaine_de("https://www.exemple.fr/fr") == "exemple.fr"
     assert cs.domaine_de("http://Exemple.FR") == "exemple.fr"
     assert cs.domaine_de("ftp://exemple.fr") is None
+    assert cs.domaine_de("exemple.fr") == "exemple.fr"
+    assert cs.domaine_de("www.exemple.fr/fr") == "exemple.fr"
+    assert cs.domaine_de("pas un site") is None
     assert cs.domaine_de(None) is None
     assert cs.domaine_de("") is None
 
@@ -43,7 +46,7 @@ def test_sous_domaine_accepte_mais_pas_suffixe_trompeur():
 
 def test_faux_positifs_ecartes():
     html = ("logo@2x.png photo@exemple.fr.jpg x@exemple.fr.svg "
-            "sentry@exemple.fr wixpress@exemple.fr email@domain name@ vrai@exemple.fr")
+            "a@o1.sentry.exemple.fr b@wixpress.exemple.fr c@example.com email@domain name@ vrai@exemple.fr")
     assert cs.extraire_coordonnees(html, "exemple.fr")["emails"] == ["vrai@exemple.fr"]
 
 
@@ -134,7 +137,7 @@ def test_lire_site_tout_en_erreur():
         cs.lire_site("https://exemple.fr", transport=_transport({}))
 
 
-@pytest.mark.parametrize("site", [None, "", "ftp://exemple.fr", "exemple.fr"])
+@pytest.mark.parametrize("site", [None, "", "ftp://exemple.fr"])
 def test_lire_site_sans_site_valide(site):
     with pytest.raises(cs.SiteInjoignable):
         cs.lire_site(site, transport=_transport({}))
@@ -184,3 +187,100 @@ def test_lire_site_avec_transport_par_defaut(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", faux_urlopen)
     r = cs.lire_site("https://exemple.fr")
     assert r["emails"] == ["contact@exemple.fr"] and r["telephones"] == ["+33 1 23 45 67 89"]
+
+
+def test_tel_seulement_dans_href_et_sans_debris():
+    html = "<p>Tel: +33 1 23 45 67 89 \u2014 Fax: +33 1 98 76 54 32</p>"
+    r = cs.extraire_coordonnees(html, "exemple.fr")
+    assert r["telephones"] == ["+33 1 23 45 67 89", "+33 1 98 76 54 32"]
+    r = cs.extraire_coordonnees("<p>Hotel: +33 1 23 45 67 89</p>", "exemple.fr")
+    assert r["telephones"] == ["+33 1 23 45 67 89"]
+    r = cs.extraire_coordonnees("<p>Tel: +41 22 123 45 67</p>", "exemple.fr")
+    assert r["telephones"] == []
+
+
+def test_tel_href_etranger_borne():
+    assert cs.extraire_coordonnees("<a href='tel:+44 (0)20 7946 0958'>x</a>", "e.fr")["telephones"] == ["+44 20 7946 0958"]
+    assert cs.extraire_coordonnees('<a href="tel:+41 22 123 45 67">x</a>', "e.fr")["telephones"] == ["+41 22 123 45 67"]
+    assert cs.extraire_coordonnees('<a href="tel:+12">x</a>', "e.fr")["telephones"] == []
+    assert cs.extraire_coordonnees('<a href="tel:+1234567890123456789">x</a>', "e.fr")["telephones"] == []
+    assert cs.extraire_coordonnees('<a href=tel:0123456789>x</a>', "e.fr")["telephones"] == ["+33 1 23 45 67 89"]
+
+
+def test_regex_email_bornee_pas_quadratique():
+    import time
+    t = time.perf_counter()
+    r = cs.extraire_coordonnees("a" * 100_000 + " " + "a." * 50_000 + "@", "exemple.fr")
+    assert time.perf_counter() - t < 1
+    assert r["emails"] == []
+
+
+def test_partie_locale_trop_longue_refusee():
+    assert cs.extraire_coordonnees("a" * 70 + "@exemple.fr", "exemple.fr")["emails"] == []
+
+
+def test_telephone_ignore_hors_domaine_final():
+    pages = {"https://exemple.fr": ("https://autre.com/", b"info@exemple.fr 01 23 45 67 89")}
+    r = cs.lire_site("https://exemple.fr", transport=_transport(pages))
+    assert r["emails"] == ["info@exemple.fr"] and r["telephones"] == []
+    pages = {"https://exemple.fr": ("https://www.exemple.fr/fr", b"01 23 45 67 89")}
+    assert cs.lire_site("https://exemple.fr", transport=_transport(pages))["telephones"] == ["+33 1 23 45 67 89"]
+
+
+def test_telephone_dans_un_credit_ignore():
+    html = ("<footer><p>Site réalisé par Webcom 04 11 22 33 44</p>"
+            "<p>Standard 01 23 45 67 89</p><p>Agence Pixel : 05 11 22 33 44</p></footer>")
+    assert cs.extraire_coordonnees(html, "exemple.fr")["telephones"] == ["+33 1 23 45 67 89"]
+    html = "<p>Développé par Pixel</p><p>01 23 45 67 89</p>"
+    assert cs.extraire_coordonnees(html, "exemple.fr")["telephones"] == ["+33 1 23 45 67 89"]
+
+
+@pytest.mark.parametrize("site", [
+    "https://www.facebook.com/exemple", "https://fr.linkedin.com/company/x", "https://instagram.com/x",
+    "https://x.com/exemple", "https://linktr.ee/exemple", "https://sites.google.com/view/x",
+    "https://exemple.wixsite.com/site", "https://exemple.business.site", "https://youtube.com/@x",
+])
+def test_plateformes_refusees(site):
+    assert cs.domaine_de(site) is None
+    with pytest.raises(cs.SiteInjoignable, match="réseau social"):
+        cs.lire_site(site, transport=_transport({}))
+
+
+def test_domaine_au_nom_proche_d_une_plateforme_accepte():
+    assert cs.domaine_de("https://monfacebook.com") == "monfacebook.com"
+
+
+def test_domaine_sentry_conseil_garde():
+    assert cs.extraire_coordonnees("contact@sentry-conseil.fr", "sentry-conseil.fr")["emails"] == ["contact@sentry-conseil.fr"]
+
+
+def test_plafond_de_requetes_erreurs_comprises():
+    appels = []
+    with pytest.raises(cs.SiteInjoignable):
+        cs.lire_site("https://exemple.fr", transport=_transport({}, appels))
+    assert len(appels) == cs.MAX_REQUETES == 6
+
+
+def test_script_non_ferme_coupe_jusqu_a_la_fin():
+    html = "<p>vrai@exemple.fr</p><script>var a = 'cache@exemple.fr'; 01 23 45 67 89"
+    r = cs.extraire_coordonnees(html, "exemple.fr")
+    assert r["emails"] == ["vrai@exemple.fr"] and r["telephones"] == []
+
+
+@pytest.mark.parametrize("texte", ["0800 123 456", "0 800 123 456", "0800.123.456", "08 00 12 34 56"])
+def test_numero_vert(texte):
+    assert cs.extraire_coordonnees(f"<p>{texte}</p>", "exemple.fr")["telephones"] == ["+33 8 00 12 34 56"]
+
+
+def test_emails_generiques_d_abord():
+    html = "jean.dupont@exemple.fr marie@exemple.fr contact@exemple.fr rh@exemple.fr"
+    assert cs.extraire_coordonnees(html, "exemple.fr")["emails"] == [
+        "contact@exemple.fr", "rh@exemple.fr", "jean.dupont@exemple.fr"]
+
+
+@pytest.mark.parametrize("site", ["http://localhost/", "http://127.0.0.1", "http://192.168.1.10/x",
+                                  "http://169.254.169.254/", "http://0.0.0.0", "http://10.0.0.5", "http://intranet/"])
+def test_hotes_locaux_refuses(site):
+    assert cs.domaine_de(site) is None
+    with pytest.raises(cs.SiteInjoignable):
+        cs.lire_site(site, transport=_transport({}))
