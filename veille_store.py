@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS contacts_veille (
     nouveau INTEGER NOT NULL,
     UNIQUE (entreprise_id, url)
 );
+CREATE TABLE IF NOT EXISTS fiche_lectures (
+    entreprise_id INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    lue_le TEXT NOT NULL,
+    PRIMARY KEY (entreprise_id, source)
+);
 CREATE TABLE IF NOT EXISTS passages_veille (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     debut TEXT NOT NULL,
@@ -70,6 +76,17 @@ CREATE TABLE IF NOT EXISTS passages_veille (
     erreurs TEXT NOT NULL
 );
 """
+
+
+# Les changements de fiche qui méritent le récap. Les autres (nombre de
+# membres, description, constat de recherche, motif de rapprochement) bougent
+# à chaque relecture sans rien dire de l'entreprise : ils noieraient le reste.
+CHANGEMENTS_SIGNALES = {("linkedin", "taille"), ("linkedin", "siege"), ("linkedin", "secteur"),
+                        ("annuaire", "dirigeants"), ("annuaire", "effectif")}
+
+# Passages refusés avant tout travail : ils ne remplacent pas le résumé du
+# dernier vrai passage, que la personne a encore besoin de lire.
+_CAUSES_SANS_PASSAGE = ("occupe", "rien_a_faire")
 
 
 def _cle_nom(nom: str) -> str:
@@ -106,17 +123,46 @@ class VeilleStore:
                                 (_cle_nom(nom),)).fetchone()
             if ligne:
                 if url_linkedin:
-                    con.execute("UPDATE entreprises_suivies SET url_linkedin = ? WHERE id = ?",
-                                (url_linkedin, ligne["id"]))
+                    self._attacher(con, ligne["id"], url_linkedin)
                 return ligne["id"]
             cur = con.execute(
                 "INSERT INTO entreprises_suivies (nom, nom_cle, url_linkedin, ajoutee_le) VALUES (?, ?, ?, ?)",
                 (nom, _cle_nom(nom), url_linkedin, quand))
             return cur.lastrowid
 
+    @staticmethod
+    def _attacher(con, entreprise_id, url_linkedin):
+        # Un nouveau lien annule l'identification passée : l'identifiant et
+        # l'état venaient d'une autre page (homonyme, page illisible). Le
+        # prochain passage relira la page collée.
+        con.execute("""UPDATE entreprises_suivies
+                       SET url_linkedin = ?, etat = 'a_identifier', company_id = NULL
+                       WHERE id = ? AND COALESCE(url_linkedin, '') != ?""",
+                    (url_linkedin, entreprise_id, url_linkedin))
+
+    def attacher_lien(self, entreprise_id, url_linkedin: str) -> None:
+        """Colle le lien de sa page LinkedIn à une entreprise déjà suivie."""
+        with self._con() as con:
+            self._attacher(con, entreprise_id, url_linkedin)
+
+    def renommer(self, entreprise_id, nom: str) -> bool:
+        """Renomme ; False si une autre entreprise suivie porte déjà ce nom."""
+        nom = " ".join((nom or "").split())
+        if not nom:
+            return False
+        with self._con() as con:
+            autre = con.execute("SELECT id FROM entreprises_suivies WHERE nom_cle = ? AND id != ?",
+                                (_cle_nom(nom), entreprise_id)).fetchone()
+            if autre:
+                return False
+            con.execute("UPDATE entreprises_suivies SET nom = ?, nom_cle = ? WHERE id = ?",
+                        (nom, _cle_nom(nom), entreprise_id))
+        return True
+
     def retirer_entreprise(self, entreprise_id: int) -> None:
         with self._con() as con:
             for table, colonne in (("fiche_entreprise", "entreprise_id"),
+                                   ("fiche_lectures", "entreprise_id"),
                                    ("contacts_veille", "entreprise_id"),
                                    ("actualites", "entreprise_id"),
                                    ("entreprises_suivies", "id")):
@@ -183,10 +229,34 @@ class VeilleStore:
         return {f"{l['source']}.{l['champ']}": {"valeur": l["valeur"], "source": l["source"],
                                                  "releve_le": l["releve_le"]} for l in lignes}
 
+    def marquer_lecture(self, entreprise_id, source: str, quand: str) -> None:
+        """Date de la dernière lecture réussie d'une source, valeurs changées ou non.
+
+        `enregistrer_fiche` n'écrit que ce qui change : une fiche relue à
+        l'identique ne laisserait aucune trace, et passé 30 jours la page
+        « À propos » serait rechargée à chaque passage.
+        """
+        with self._con() as con:
+            con.execute("INSERT OR REPLACE INTO fiche_lectures (entreprise_id, source, lue_le) VALUES (?, ?, ?)",
+                        (entreprise_id, source, quand))
+
+    def lectures(self, entreprise_id) -> dict:
+        """{source: date de dernière lecture}."""
+        with self._con() as con:
+            return {l["source"]: l["lue_le"] for l in con.execute(
+                "SELECT source, lue_le FROM fiche_lectures WHERE entreprise_id = ?", (entreprise_id,))}
+
     def age_fiche_jours(self, entreprise_id, source: str, aujourd_hui: str):
         with self._con() as con:
-            l = con.execute("SELECT MAX(releve_le) AS d FROM fiche_entreprise WHERE entreprise_id = ? AND source = ?",
+            l = con.execute("SELECT lue_le AS d FROM fiche_lectures WHERE entreprise_id = ? AND source = ?",
                             (entreprise_id, source)).fetchone()
+            if not l:
+                # Fiche relevée avant que les lectures soient datées. Le constat
+                # de recherche s'écrit au passage sur les employés, pas en
+                # lisant la fiche : il ne la rajeunit pas.
+                l = con.execute("""SELECT MAX(releve_le) AS d FROM fiche_entreprise
+                                   WHERE entreprise_id = ? AND source = ? AND champ != 'recherche'""",
+                                (entreprise_id, source)).fetchone()
         if not l or not l["d"]:
             return None
         return (date.fromisoformat(aujourd_hui[:10]) - date.fromisoformat(l["d"][:10])).days
@@ -196,15 +266,15 @@ class VeilleStore:
     def relier_contact(self, entreprise_id, contact: dict, famille: str, quand: str, urls_au_fichier: set) -> bool:
         """Relie un contact à l'entreprise ; True s'il est réellement nouveau.
 
-        Nouveau = jamais relié à cette entreprise ET absent du fichier avant ce
-        passage (comparé sous forme canonique : le fichier contient des liens
-        copiés à la main, avec leurs paramètres de suivi).
+        Nouveau = jamais relié à cette entreprise ET absent de `urls_au_fichier`,
+        ensemble d'URL **canoniques** (`normaliser_url`) : le fichier contient
+        des liens copiés à la main, avec leurs paramètres de suivi. L'appelant
+        le normalise une fois par passage plutôt qu'à chaque contact.
         """
         url = normaliser_url(contact.get("url"))
         if url is None:
             return False
-        connus = {normaliser_url(u) for u in urls_au_fichier or ()}
-        nouveau = url not in connus
+        nouveau = url not in (urls_au_fichier or ())
         with self._con() as con:
             if con.execute("SELECT 1 FROM contacts_veille WHERE entreprise_id = ? AND url = ?",
                            (entreprise_id, url)).fetchone():
@@ -236,7 +306,8 @@ class VeilleStore:
                 SELECT f.*, e.nom AS entreprise FROM fiche_entreprise f
                 JOIN entreprises_suivies e ON e.id = f.entreprise_id
                 WHERE f.precedente IS NOT NULL AND f.releve_le > ?
-                ORDER BY e.nom COLLATE NOCASE""", (borne,)).fetchall()]
+                ORDER BY e.nom COLLATE NOCASE""", (borne,)).fetchall()
+                           if (l["source"], l["champ"]) in CHANGEMENTS_SIGNALES]
             actualites = [dict(l) for l in con.execute("""
                 SELECT a.*, e.nom AS entreprise FROM actualites a
                 JOIN entreprises_suivies e ON e.id = a.entreprise_id
@@ -275,8 +346,11 @@ class VeilleStore:
                          json.dumps(erreurs, ensure_ascii=False)))
 
     def dernier_passage(self):
+        """Le dernier passage réel ; un refus (session occupée, rien à faire) n'en est pas un."""
+        trous = ",".join("?" * len(_CAUSES_SANS_PASSAGE))
         with self._con() as con:
-            l = con.execute("SELECT * FROM passages_veille ORDER BY id DESC LIMIT 1").fetchone()
+            l = con.execute(f"SELECT * FROM passages_veille WHERE cause NOT IN ({trous}) ORDER BY id DESC LIMIT 1",
+                            _CAUSES_SANS_PASSAGE).fetchone()
         if not l:
             return None
         p = dict(l)

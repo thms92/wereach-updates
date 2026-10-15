@@ -92,7 +92,9 @@ def test_un_contact_inconnu_est_nouveau_une_fois(tmp_path):
 def test_un_contact_deja_au_fichier_est_relie_mais_pas_nouveau(tmp_path):
     s, _ = store(tmp_path)
     i = s.ajouter_entreprise("Orbique", "2026-10-15")
-    au_fichier = {"http://LINKEDIN.com/in/Jeanne-Exemple?miniProfileUrn=x"}
+    from utils.browsemap import normaliser_url
+    # L'appelant (le moteur) passe des URL canoniques, normalisées une fois par passage.
+    au_fichier = {normaliser_url("http://LINKEDIN.com/in/Jeanne-Exemple?miniProfileUrn=x")}
     assert s.relier_contact(i, contact("jeanne-exemple"), "Product", "2026-10-15", au_fichier) is False
     assert len(s.contacts(i)) == 1
     assert s.nouveautes_depuis(None)["contacts"] == []
@@ -166,3 +168,90 @@ def test_retirer_supprime_aussi_l_actualite(tmp_path):
     s.enregistrer_actualites(i, [ARTICLE], "2026-10-15")
     s.retirer_entreprise(i)
     assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM actualites").fetchone()[0] == 0
+
+
+# ── Correctifs de la revue finale ────────────────────────────────────────
+
+def test_une_fiche_relue_a_l_identique_est_datee_de_sa_lecture(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.enregistrer_fiche(i, {"taille": "x"}, "linkedin", "2026-10-01T08:00:00")
+    s.marquer_lecture(i, "linkedin", "2026-10-01T08:00:00")
+    s.enregistrer_fiche(i, {"taille": "x"}, "linkedin", "2026-11-15T08:00:00")  # rien de changé
+    s.marquer_lecture(i, "linkedin", "2026-11-15T08:00:00")
+    assert s.age_fiche_jours(i, "linkedin", "2026-11-16") == 1
+    assert s.lectures(i) == {"linkedin": "2026-11-15T08:00:00"}
+
+
+def test_sans_lecture_datee_le_constat_de_recherche_ne_rajeunit_pas_la_fiche(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.enregistrer_fiche(i, {"taille": "x"}, "linkedin", "2026-09-01T08:00:00")
+    s.enregistrer_fiche(i, {"recherche": "aucun profil trouvé"}, "linkedin", "2026-10-14T08:00:00")
+    assert s.age_fiche_jours(i, "linkedin", "2026-10-15") == 44
+
+
+def test_une_base_de_la_version_precedente_est_completee_sans_rien_perdre(tmp_path):
+    db = str(tmp_path / "ancienne.db")
+    con = sqlite3.connect(db)
+    con.executescript("""CREATE TABLE entreprises_suivies (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL, nom_cle TEXT NOT NULL UNIQUE, url_linkedin TEXT, company_id TEXT,
+        etat TEXT NOT NULL DEFAULT 'a_identifier', ajoutee_le TEXT NOT NULL, derniere_veille TEXT,
+        curseur_page INTEGER NOT NULL DEFAULT 0, signature_familles TEXT, derniere_actualite TEXT);
+        INSERT INTO entreprises_suivies (nom, nom_cle, ajoutee_le) VALUES ('Orbique', 'orbique', '2026-10-15');""")
+    con.commit()
+    con.close()
+    s = VeilleStore(db)
+    [e] = s.entreprises()
+    s.marquer_lecture(e["id"], "linkedin", "2026-10-15T08:00:00")
+    assert e["nom"] == "Orbique" and s.age_fiche_jours(e["id"], "linkedin", "2026-10-16") == 1
+
+
+def test_coller_un_lien_a_une_entreprise_existante_la_fait_reidentifier(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.maj_identification(i, "non_identifiee", company_id="999")
+    s.attacher_lien(i, "https://www.linkedin.com/company/orbique-conseil/")
+    [e] = s.entreprises()
+    assert (e["nom"], e["url_linkedin"], e["etat"], e["company_id"]) == \
+        ("Orbique", "https://www.linkedin.com/company/orbique-conseil/", "a_identifier", None)
+
+
+def test_renommer(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique Conseil", "2026-10-15")
+    assert s.renommer(i, "Orbique")
+    assert [e["nom"] for e in s.entreprises()] == ["Orbique"]
+    assert s.ajouter_entreprise("orbique", "2026-10-16") == i  # la clé suit le nouveau nom
+
+
+def test_renommer_vers_un_nom_deja_suivi_est_refuse(tmp_path):
+    s, _ = store(tmp_path)
+    s.ajouter_entreprise("Orbique", "2026-10-15")
+    j = s.ajouter_entreprise("Orbique Conseil", "2026-10-15")
+    assert s.renommer(j, "ORBIQUE") is False
+    assert sorted(e["nom"] for e in s.entreprises()) == ["Orbique", "Orbique Conseil"]
+
+
+def test_seuls_les_changements_qui_comptent_vont_au_recap(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    avant = {"taille": "11-50", "membres": "40", "description": "A", "siege": "Paris", "secteur": "Conseil"}
+    apres = {"taille": "51-200", "membres": "45", "description": "B", "siege": "Lyon", "secteur": "Logiciels"}
+    s.enregistrer_fiche(i, avant, "linkedin", "2026-10-01")
+    s.enregistrer_fiche(i, apres, "linkedin", "2026-10-15")
+    s.enregistrer_fiche(i, {"dirigeants": "X", "effectif": "10", "rapprochement": "rapprochée"}, "annuaire",
+                        "2026-10-01")
+    s.enregistrer_fiche(i, {"dirigeants": "Y", "effectif": "20", "rapprochement": "plusieurs"}, "annuaire",
+                        "2026-10-15")
+    champs = {(c["source"], c["champ"]) for c in s.nouveautes_depuis("2026-10-10")["changements"]}
+    assert champs == {("linkedin", "taille"), ("linkedin", "siege"), ("linkedin", "secteur"),
+                      ("annuaire", "dirigeants"), ("annuaire", "effectif")}
+
+
+def test_un_refus_ne_remplace_pas_le_dernier_vrai_passage(tmp_path):
+    s, _ = store(tmp_path)
+    s.enregistrer_passage("2026-10-15T08:00", "2026-10-15T08:20", ["Orbique"], 3, "budget", [])
+    s.enregistrer_passage("2026-10-15T09:00", "2026-10-15T09:00", [], 0, "occupe", ["occupé"])
+    s.enregistrer_passage("2026-10-15T10:00", "2026-10-15T10:00", [], 0, "rien_a_faire", [])
+    assert s.dernier_passage()["cause"] == "budget"

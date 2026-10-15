@@ -229,3 +229,14 @@ def ordre_du_lot(entreprises: list) -> list:
     ]
     return sorted(candidates, key=lambda e: (e.get("derniere_veille") is not None,
                                              e.get("derniere_veille") or ""))
+
+
+def nom_depuis_lien(url: str) -> str:
+    """Nom provisoire tiré du lien collé : « …/company/orbique-conseil/ » → « Orbique Conseil ».
+
+    Provisoire : une fois la page lue, la veille le remplace par le nom
+    qu'affiche LinkedIn (voir `veille.passage_async`).
+    """
+    racine = re.match(r"^(https?://[^/]+/company/[^/?#]+)", (url or "").strip())
+    morceau = (racine.group(1) if racine else (url or "").split("?")[0]).rstrip("/").split("/")[-1]
+    return " ".join(urllib.parse.unquote(morceau).replace("-", " ").split()).title()

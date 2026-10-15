@@ -376,7 +376,7 @@ class LinkedInScraperV2:
             logger.debug(f"Échec sauvegarde URN entreprise '{entreprise}': {e}")
 
     async def _resoudre_company_urn_via_typeahead(
-        self, entreprise: str, page: Page
+        self, entreprise: str, page: Page, echecs: Optional[list] = None
     ) -> Optional[str]:
         """Résout l'URN d'une entreprise via l'API typeahead authentifiée de LinkedIn.
 
@@ -387,7 +387,18 @@ class LinkedInScraperV2:
 
         Si la résolution échoue, l'appelant retombe automatiquement sur la
         stratégie "AND \"Nom\"" dans les keywords (via construire_url_recherche).
+
+        `echecs` (facultatif) reçoit le motif d'un échec *technique* (pas de
+        JSESSIONID, réponse HTTP en erreur, fetch impossible, page fermée) :
+        dans les deux cas la méthode rend None, mais la veille ne doit pas
+        déclarer « introuvable » une entreprise que LinkedIn n'a pas pu
+        chercher.
         """
+        def _echec(motif):
+            if echecs is not None:
+                echecs.append(motif)
+            return None
+
         if not entreprise:
             return None
 
@@ -402,7 +413,7 @@ class LinkedInScraperV2:
             jsess = next((c["value"] for c in cookies if c["name"] == "JSESSIONID"), None)
             if not jsess:
                 logger.debug(f"Pas de JSESSIONID — résolution URN '{entreprise}' impossible")
-                return None
+                return _echec("session LinkedIn incomplète (JSESSIONID absent)")
             csrf = jsess.strip('"')
 
             kw_q = urllib.parse.quote(entreprise)
@@ -438,7 +449,9 @@ class LinkedInScraperV2:
 
             if not result.get("ok"):
                 logger.warning(f"⚠️ Typeahead URN '{entreprise}' échoué: {result} (page: {page.url})")
-                return None
+                if result.get("status"):
+                    return _echec(f"réponse HTTP {result['status']}")
+                return _echec(f"appel impossible ({result.get('error') or 'raison inconnue'})")
 
             data = result.get("data", {}) or {}
             # Selon la version de la réponse, les éléments sont dans 'elements'
@@ -467,7 +480,7 @@ class LinkedInScraperV2:
 
         except Exception as e:
             logger.warning(f"⚠️ Erreur résolution URN '{entreprise}' via typeahead: {e}")
-            return None
+            return _echec(f"{type(e).__name__}")
 
     async def _resoudre_company_urn_via_navigation(
         self, entreprise: str, page: Page

@@ -31,10 +31,11 @@ from utils.annuaire import (
     AnnuaireIndisponible, choisir_candidat, fiche_depuis_annuaire, interroger, nom_interrogeable,
     normaliser_nom,
 )
+from utils.browsemap import normaliser_url
 from utils.dom_selectors import DOMSelectors
 from utils.veille_regles import (
     PAGES_MAX_PAR_ENTREPRISE, RELECTURE_FICHE_JOURS, charger_reglages, expression_mots_cles,
-    famille_de_l_intitule, fiche_depuis_apropos, ordre_du_lot, signature_familles,
+    famille_de_l_intitule, fiche_depuis_apropos, nom_depuis_lien, ordre_du_lot, signature_familles,
     url_recherche_personnes,
 )
 from utils.verrou_linkedin import VerrouOccupe, session_linkedin
@@ -47,7 +48,7 @@ class RapportPassage:
     fin: str = ""
     entreprises: list = field(default_factory=list)
     pages: int = 0
-    # termine, budget, cookie, deconnecte, securite, occupe, rien_a_faire, erreur
+    # termine, budget, cookie, deconnecte, securite, occupe, rien_a_faire, erreur, interrompu
     cause: str = "termine"
     erreurs: list = field(default_factory=list)
     nouveaux_contacts: int = 0
@@ -62,6 +63,9 @@ MESSAGES_ARRET = {
     "deconnecte": "LinkedIn a demandé de se reconnecter : passage interrompu.",
     "securite": ("LinkedIn a signalé une activité inhabituelle (vérification ou limitation) : veille arrêtée "
                  "par sécurité. Réessayez plus tard."),
+    "interrompu": ("Veille interrompue : la page a été quittée ou rechargée pendant le passage. "
+                   "Ce qui avait été lu est gardé ; la prochaine fois, gardez la page Veille ouverte "
+                   "jusqu'au rapport."),
 }
 
 
@@ -74,9 +78,10 @@ def _maintenant() -> str:
 class _Arret(Exception):
     """Fin anticipée du passage : budget, déconnexion."""
 
-    def __init__(self, cause):
+    def __init__(self, cause, message=None):
         super().__init__(cause)
         self.cause = cause
+        self.message = message or MESSAGES_ARRET.get(cause)
 
 
 class _PageInjoignable(Exception):
@@ -120,8 +125,10 @@ def _url_apropos(entreprise) -> str:
 
 
 async def passage_async(scraper, store, db, reglages, cookie, maintenant, status=None, annuaire=interroger,
-                        actualite=interroger_actualite):
-    rapport = RapportPassage(debut=maintenant)
+                        actualite=interroger_actualite, rapport=None):
+    # `rapport` fourni par l'appelant : si le passage est interrompu, ce qui a
+    # été fait jusque-là reste lisible et s'enregistre (voir `lancer_passage`).
+    rapport = rapport if rapport is not None else RapportPassage(debut=maintenant)
     limites = scraper.human.daily_limits
 
     def dire(texte):
@@ -184,8 +191,16 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         # paresseux des résultats et garde une allure humaine.
         await scraper.human.browse_page_naturally(page)
 
-    async def traiter(page, entreprise, urls_au_fichier) -> bool:
-        """Une entreprise ; False si elle n'a pas pu être passée."""
+    # Recherche par nom en panne technique : on ne la réessaie pas sur les
+    # entreprises suivantes du même passage (inutile d'insister sur un compte),
+    # et on ne déclare personne « introuvable » pour autant.
+    suspension = {"ligne": None, "reportees": []}
+
+    async def traiter(page, entreprise, connus) -> bool:
+        """Une entreprise ; False si elle n'a pas pu être passée.
+
+        `connus` : URL canoniques déjà au fichier, complété au fil du passage.
+        """
         eid, nom = entreprise["id"], entreprise["nom"]
         # Avant la recherche par nom : elle interroge LinkedIn elle aussi.
         if restant() <= 0:
@@ -195,7 +210,23 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         devine = False
         if not entreprise.get("company_id") and not entreprise.get("url_linkedin"):
             devine = True
-            company_id = await scraper._resoudre_company_urn_via_typeahead(nom, page)
+            if suspension["ligne"] is not None:
+                suspension["reportees"].append(nom)
+                return False
+            echecs = []
+            company_id = await scraper._resoudre_company_urn_via_typeahead(nom, page, echecs=echecs)
+            if page.is_closed():
+                raise _Arret("erreur", "La fenêtre LinkedIn s'est fermée pendant le passage : veille arrêtée. "
+                                       "Relancez-la.")
+            await scraper.human.human_delay(1500, 400)
+            if not company_id and echecs:
+                # Échec technique : l'entreprise reste « à identifier », en
+                # tête du prochain lot (pas de `marquer_passage`).
+                suspension["ligne"] = len(rapport.erreurs)
+                rapport.erreurs.append(
+                    f"Recherche d'entreprise par nom indisponible sur LinkedIn ({echecs[0]}) : "
+                    f"{nom} n'a pas pu être identifiée, nouvel essai au prochain passage.")
+                return False
             if not company_id:
                 store.maj_identification(eid, "non_identifiee")
                 rapport.erreurs.append(
@@ -210,13 +241,18 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             lu = await page.evaluate(DOMSelectors.extract_page_apropos_js()) or {}
             fiche = fiche_depuis_apropos(lu.get("champs") or {})
             if not fiche or not lu.get("company_id"):
-                scraper._dumper_panneau(lu.get("html") or "", nom_fichier="apropos_dump.html")
+                enregistree = scraper._dumper_panneau(lu.get("html") or "", nom_fichier="apropos_dump.html")
                 store.maj_identification(eid, "illisible")
                 # En fin de rotation : sinon elle mangerait une page à chaque passage.
                 store.marquer_passage(eid, maintenant)
-                rapport.erreurs.append(
-                    f"{nom} : page « À propos » illisible — sa structure a peut-être changé "
-                    "(page enregistrée dans logs/).")
+                if fiche:
+                    # Rubriques lues, mais aucun identifiant majoritaire : les
+                    # employés d'une autre société seraient rangés sous celle-ci.
+                    motif = "identifiant de l'entreprise ambigu sur la page"
+                else:
+                    motif = "page « À propos » illisible — sa structure a peut-être changé"
+                ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
+                rapport.erreurs.append(f"{nom} : {motif} ({ou}).")
                 return False
             nom_page = lu.get("nom") or ""
             # La recherche par nom prend le premier résultat : il peut s'agir
@@ -232,6 +268,19 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             store.maj_identification(eid, "identifiee", company_id=lu["company_id"])
             entreprise["company_id"] = lu["company_id"]
             store.enregistrer_fiche(eid, fiche, "linkedin", maintenant)
+            store.marquer_lecture(eid, "linkedin", maintenant)
+
+            # Ajoutée par son lien : son nom n'était qu'un morceau d'adresse
+            # (« Orbique Conseil Sas 2 »). Un nom choisi par la personne, lui,
+            # est gardé : c'est sous ce nom qu'elle la cherche dans son fichier.
+            lien = entreprise.get("url_linkedin")
+            if lien and nom_page and nom == nom_depuis_lien(lien) and nom_page != nom:
+                if store.renommer(eid, nom_page):
+                    entreprise["nom"] = nom = nom_page
+                else:
+                    rapport.erreurs.append(
+                        f"{nom} : sa page LinkedIn s'appelle « {nom_page} », nom déjà suivi dans la veille "
+                        f"— gardée sous « {nom} » ; retirez l'une des deux.")
 
             # 3. Annuaire officiel, recoupé — sans coût LinkedIn. Avec le nom
             # de la page : c'est LinkedIn qu'on recoupe, pas le libellé saisi.
@@ -250,6 +299,7 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                                                 "annuaire", maintenant)
                     else:
                         store.enregistrer_fiche(eid, {"rapprochement": motif}, "annuaire", maintenant)
+                    store.marquer_lecture(eid, "annuaire", maintenant)
 
         # 4. Employés, à partir du curseur (dernière page réellement lue)
         curseur = entreprise.get("curseur_page") or 0
@@ -275,11 +325,16 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             for personne in trouves:
                 famille = famille_de_l_intitule(personne.get("poste", ""), reglages.familles,
                                                 reglages.intitules_libres)
-                if store.relier_contact(eid, personne, famille, maintenant, urls_au_fichier):
+                if store.relier_contact(eid, personne, famille, maintenant, connus):
                     rapport.nouveaux_contacts += 1
-                if personne.get("url"):
+                canonique = normaliser_url(personne.get("url"))
+                # Seulement les inconnus : pour un profil déjà au fichier,
+                # `ajouter_profil` réécrirait sa fiche (école, connexions
+                # effacées) ou, sous une autre écriture du lien, la doublerait.
+                if canonique and canonique not in connus:
                     db.ajouter_profil(personne.get("nom", ""), personne.get("poste", ""), nom, "",
                                       personne["url"], personne.get("localisation", ""))
+                    connus.add(canonique)
             curseur = numero
             store.maj_curseur(eid, curseur, signature)
         store.maj_curseur(eid, curseur, signature)
@@ -294,11 +349,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             rapport.erreurs.append(MESSAGES_ARRET["cookie"])
             return rapport
         try:
-            urls_au_fichier = db.urls_connues()
+            connus = {u for u in map(normaliser_url, db.urls_connues()) if u}
             for entreprise in lot:
                 dire(f"{entreprise['nom']}…")
                 try:
-                    if await traiter(page, entreprise, urls_au_fichier):
+                    if await traiter(page, entreprise, connus):
                         rapport.entreprises.append(entreprise["nom"])
                 except _Arret:
                     raise
@@ -312,10 +367,13 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                     rapport.erreurs.append(f"{entreprise['nom']} : erreur inattendue ({type(e).__name__}).")
         except _Arret as arret:
             rapport.cause = arret.cause
-            if arret.cause in ("deconnecte", "securite"):
-                rapport.erreurs.append(MESSAGES_ARRET[arret.cause])
+            if arret.message:
+                rapport.erreurs.append(arret.message)
         finally:
             await navigateur.close()
+    if suspension["reportees"]:
+        rapport.erreurs[suspension["ligne"]] += (
+            f" Également reportée(s) : {', '.join(suspension['reportees'])}.")
     rapport.fin = _maintenant()
     return rapport
 
@@ -326,13 +384,14 @@ def lancer_passage(chemins, cookie, proxy=None, status=None) -> RapportPassage:
 
     maintenant = _maintenant()
     store = VeilleStore(str(chemins.db_file))
+    en_cours = RapportPassage(debut=maintenant)
     try:
         with session_linkedin(chemins.config_dir, "veille"):
             scraper = LinkedInScraperV2(use_database=True, proxy=proxy, db_file=str(chemins.db_file),
                                         profiles_csv=str(chemins.profiles_csv), config_dir=str(chemins.config_dir))
             rapport = asyncio.run(passage_async(
                 scraper, store, DatabaseManager(db_file=str(chemins.db_file)),
-                charger_reglages(chemins.config_dir), cookie, maintenant, status))
+                charger_reglages(chemins.config_dir), cookie, maintenant, status, rapport=en_cours))
     except VerrouOccupe as occupe:
         rapport = RapportPassage(debut=maintenant, fin=maintenant, cause="occupe", erreurs=[str(occupe)])
     except Exception as e:
@@ -341,6 +400,15 @@ def lancer_passage(chemins, cookie, proxy=None, status=None) -> RapportPassage:
         logger.error(f"❌ Veille interrompue : {type(e).__name__} : {e}", exc_info=True)
         rapport = RapportPassage(debut=maintenant, fin=_maintenant(), cause="erreur",
                                  erreurs=[f"Erreur inattendue ({type(e).__name__}) : {e}"])
+    except BaseException:
+        # Streamlit arrête le script (page quittée, rechargée) en levant une
+        # exception hors de la hiérarchie `Exception`. Chrome est fermé et le
+        # verrou rendu par les `finally` ; reste à garder trace du passage.
+        en_cours.cause, en_cours.fin = "interrompu", _maintenant()
+        en_cours.erreurs.append(MESSAGES_ARRET["interrompu"])
+        store.enregistrer_passage(en_cours.debut, en_cours.fin, en_cours.entreprises, en_cours.pages,
+                                  en_cours.cause, en_cours.erreurs)
+        raise
     store.enregistrer_passage(rapport.debut, rapport.fin, rapport.entreprises, rapport.pages,
                               rapport.cause, rapport.erreurs)
     return rapport

@@ -51,9 +51,10 @@ class FauxHumain:
         self.daily_limits = limites
         self.sur = True  # ce que répond le moniteur de sécurité
         self.parcours = 0
+        self.delais = 0
 
     async def human_delay(self, *a, **k):
-        pass
+        self.delais += 1
 
     async def check_safety(self, page):
         return self.sur
@@ -79,6 +80,10 @@ class FaussePage:
         self.visites = []
         self.url = ""
         self.url_apres_goto = url_apres_goto
+        self.fermee = False
+
+    def is_closed(self):
+        return self.fermee
 
     async def evaluate(self, js):
         return self.about
@@ -106,11 +111,20 @@ class FauxScraper:
         self.typeahead_appels = []
         self.explose = set()           # noms dont l'identification lève une erreur Playwright
         self.extraction_en_echec = False
+        self.typeahead_en_panne = None  # motif d'échec technique, comme le vrai via `echecs`
+        self.ferme_la_page = False      # la fenêtre se ferme pendant la recherche par nom
 
-    async def _resoudre_company_urn_via_typeahead(self, nom, page):
+    async def _resoudre_company_urn_via_typeahead(self, nom, page, echecs=None):
         self.typeahead_appels.append(nom)
         if nom in self.explose:
             raise RuntimeError("Execution context was destroyed")
+        if self.ferme_la_page:
+            page.fermee = True
+            echecs.append("TargetClosedError")
+            return None
+        if self.typeahead_en_panne:
+            echecs.append(self.typeahead_en_panne)
+            return None
         return self.typeahead
 
     async def _open_linkedin_page(self, p, cookie, status_callback=None):
@@ -385,7 +399,11 @@ def test_lancer_passage_respecte_le_verrou_et_enregistre(tmp_path, monkeypatch):
     with session_linkedin(tmp_path, "recherche"):
         r = veille.lancer_passage(chemins, "COOKIE")
     assert r.cause == "occupe"
-    assert VeilleStore(db_file).dernier_passage()["cause"] == "occupe"
+    import sqlite3
+    causes = [c for (c,) in sqlite3.connect(db_file).execute("SELECT cause FROM passages_veille")]
+    assert causes == ["occupe"]
+    # Consigné, mais ce n'est pas un passage : le résumé du dernier vrai reste affiché.
+    assert VeilleStore(db_file).dernier_passage() is None
 
 
 # ── Ajouts : ce que le brief ne couvrait pas ─────────────────────────────
@@ -607,3 +625,215 @@ def test_une_page_illisible_passe_en_fin_de_rotation(base):
     page = FaussePage(about={"nom": "", "champs": {}, "company_id": "", "description": "", "html": "x"})
     passer(store, db, FauxScraper(page, FauxLimites()))
     assert store.entreprises()[0]["derniere_veille"] == "2026-10-15T08:00:00"
+
+
+# ── Correctifs de la revue finale ────────────────────────────────────────
+
+def test_une_fiche_relue_a_l_identique_n_est_pas_relue_le_lendemain(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage()
+    passer(store, db, FauxScraper(page, FauxLimites()), maintenant="2026-10-15T08:00:00")
+    page.visites.clear()
+    passer(store, db, FauxScraper(page, FauxLimites()), maintenant="2026-11-29T08:00:00")  # jour 45
+    assert [v for v in page.visites if "about" in v]  # plus de 30 jours : relue, à l'identique
+    page.visites.clear()
+    passer(store, db, FauxScraper(page, FauxLimites()), maintenant="2026-11-30T08:00:00")  # jour 46
+    assert [v for v in page.visites if "about" in v] == []
+
+
+def test_une_panne_de_la_recherche_par_nom_ne_declare_personne_introuvable(base):
+    store, db = base
+    store.ajouter_entreprise("Alpha", "2026-10-14")
+    store.ajouter_entreprise("Bêta", "2026-10-14")
+    store.ajouter_entreprise("Orbique", "2026-10-14",
+                             url_linkedin="https://www.linkedin.com/company/orbique/")
+    page = FaussePage()
+    s = FauxScraper(page, FauxLimites())
+    s.typeahead_en_panne = "réponse HTTP 429"
+    r = passer(store, db, s)
+    etats = {e["nom"]: (e["etat"], e["derniere_veille"]) for e in store.entreprises()}
+    assert etats["Alpha"] == ("a_identifier", None) and etats["Bêta"] == ("a_identifier", None)
+    assert s.typeahead_appels == ["Alpha"]  # on n'insiste pas après la première panne
+    assert etats["Orbique"][0] == "identifiee"  # un lien collé ne dépend pas de la recherche par nom
+    lignes = [x for x in r.erreurs if "429" in x]
+    assert len(lignes) == 1 and "Alpha" in lignes[0] and "Bêta" in lignes[0]
+    assert not any("introuvable" in x for x in r.erreurs)
+
+
+def test_une_vraie_absence_de_resultat_reste_non_identifiee(base):
+    store, db = base
+    store.ajouter_entreprise("Inconnue", "2026-10-14")
+    s = FauxScraper(FaussePage(), FauxLimites(), typeahead=None)
+    r = passer(store, db, s)
+    assert store.entreprises()[0]["etat"] == "non_identifiee"
+    assert any("introuvable" in x for x in r.erreurs)
+    assert s.human.delais >= 1  # une pause après chaque appel à la recherche par nom
+
+
+def test_une_fenetre_fermee_arrete_le_passage(base):
+    store, db = base
+    store.ajouter_entreprise("Alpha", "2026-10-14")
+    store.ajouter_entreprise("Bêta", "2026-10-14")
+    s = FauxScraper(FaussePage(), FauxLimites())
+    s.ferme_la_page = True
+    r = passer(store, db, s)
+    assert r.cause == "erreur" and s.typeahead_appels == ["Alpha"]
+    assert any("fenêtre LinkedIn s'est fermée" in x for x in r.erreurs)
+    assert {e["etat"] for e in store.entreprises()} == {"a_identifier"}
+    assert s.navigateur.ferme
+
+
+def _profil_du_fichier(db, vanity):
+    import sqlite3
+    return sqlite3.connect(db.db_file).execute(
+        "SELECT ecole, nb_connexions, poste FROM profiles WHERE LOWER(url) LIKE ?", (f"%/in/{vanity}%",)).fetchall()
+
+
+@pytest.mark.parametrize("lien_au_fichier", [
+    "https://www.linkedin.com/in/jeanne-exemple/",
+    "http://linkedin.com/in/Jeanne-Exemple?miniProfileUrn=x",
+])
+def test_un_profil_deja_au_fichier_n_est_ni_reecrit_ni_double(base, lien_au_fichier):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    db.ajouter_profil("Jeanne", "Consultante", "Orbique", "École Exemple", lien_au_fichier, "", "500+")
+    passer(store, db, FauxScraper(FaussePage(resultats={1: [personne("jeanne-exemple", "Product Manager")]}),
+                                  FauxLimites()))
+    assert _profil_du_fichier(db, "jeanne-exemple") == [("École Exemple", "500+", "Consultante")]
+    assert len(store.contacts(store.entreprises()[0]["id"])) == 1  # relié quand même
+
+
+def test_une_personne_trouvee_sous_deux_entreprises_compte_une_fois(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.ajouter_entreprise("Orbique Studio", "2026-10-14")
+    page = FaussePage(about=dict(ABOUT_OK, nom="Orbique Studio"),
+                      resultats={1: [personne("jeanne-exemple", "Product Manager")]})
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert r.entreprises == ["Orbique", "Orbique Studio"]
+    assert r.nouveaux_contacts == 1
+    assert len(_profil_du_fichier(db, "jeanne-exemple")) == 1
+
+
+class _Interruption(BaseException):
+    """Comme le StopException de Streamlit : hors de la hiérarchie `Exception`."""
+
+
+def test_un_passage_interrompu_ferme_chrome_et_ne_l_avale_pas(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    s = FauxScraper(FaussePage(resultats={1: [personne("a", "PM")]}), FauxLimites())
+
+    def status(texte):
+        if texte.startswith("Orbique"):
+            raise _Interruption()
+
+    with pytest.raises(_Interruption):
+        asyncio.run(veille.passage_async(s, store, db, ReglagesVeille(["Product"], [], 20), "COOKIE",
+                                         "2026-10-15T08:00:00", status=status, actualite=lambda n: []))
+    assert s.navigateur.ferme
+
+
+def test_lancer_passage_interrompu_est_enregistre_puis_relance(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    db_file = str(tmp_path / "p.db")
+    DatabaseManager(db_file=db_file)
+    chemins = SimpleNamespace(db_file=db_file, profiles_csv=str(tmp_path / "p.csv"), config_dir=str(tmp_path))
+
+    async def interrompu(*a, rapport=None, **k):
+        rapport.pages, rapport.entreprises = 2, ["Orbique"]
+        raise _Interruption()
+
+    monkeypatch.setattr(veille, "passage_async", interrompu)
+    with pytest.raises(_Interruption):
+        veille.lancer_passage(chemins, "COOKIE")
+    p = VeilleStore(db_file).dernier_passage()
+    assert (p["cause"], p["pages"], p["entreprises"]) == ("interrompu", 2, ["Orbique"])
+    assert p["erreurs"] == [veille.MESSAGES_ARRET["interrompu"]]
+    assert not (tmp_path / "session_linkedin.lock").exists()
+
+
+def test_ajoutee_par_son_lien_elle_prend_le_nom_de_sa_page(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique Conseil Sas", "2026-10-14",
+                             url_linkedin="https://www.linkedin.com/company/orbique-conseil-sas/")
+    r = passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
+    assert [e["nom"] for e in store.entreprises()] == ["Orbique"]
+    assert r.entreprises == ["Orbique"]
+
+
+def test_un_nom_choisi_par_la_personne_n_est_pas_remplace(base):
+    store, db = base
+    store.ajouter_entreprise("Mon client", "2026-10-14", url_linkedin="https://www.linkedin.com/company/orbique/")
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
+    assert [e["nom"] for e in store.entreprises()] == ["Mon client"]
+
+
+def test_renommer_vers_un_nom_deja_suivi_garde_l_ancien_et_le_dit(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.maj_identification(1, "non_identifiee")  # hors du lot : pas de lien
+    store.ajouter_entreprise("Orbique Sas", "2026-10-14", url_linkedin="https://www.linkedin.com/company/orbique-sas/")
+    r = passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
+    assert sorted(e["nom"] for e in store.entreprises()) == ["Orbique", "Orbique Sas"]
+    assert any("Orbique Sas" in x and "déjà suivi" in x for x in r.erreurs)
+
+
+def test_un_identifiant_ambigu_est_dit_tel_quel(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    s = FauxScraper(FaussePage(about=dict(ABOUT_OK, company_id="", html="<main>deux sociétés</main>")),
+                    FauxLimites())
+    r = passer(store, db, s)
+    assert any("identifiant de l'entreprise ambigu" in x and "logs/" in x for x in r.erreurs)
+    assert s.dumps == ["<main>deux sociétés</main>"]
+
+
+def test_une_page_non_enregistree_n_est_pas_dite_enregistree(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    s = FauxScraper(FaussePage(about={"nom": "", "champs": {}, "company_id": "", "description": "", "html": ""}),
+                    FauxLimites())
+    s._dumper_panneau = lambda html, nom_fichier=None: False
+    r = passer(store, db, s)
+    assert any("page non enregistrée" in x for x in r.erreurs)
+    assert not any("enregistrée dans logs/" in x for x in r.erreurs)
+
+
+def test_le_vrai_typeahead_distingue_la_panne_de_l_absence(monkeypatch):
+    from scraper_v2 import LinkedInScraperV2
+
+    sc = LinkedInScraperV2.__new__(LinkedInScraperV2)  # sans navigateur ni fichiers
+    monkeypatch.setattr(sc, "_resoudre_company_urn", lambda nom: None, raising=False)
+
+    class Contexte:
+        def __init__(self, cookies):
+            self._c = cookies
+
+        async def cookies(self, url):
+            return self._c
+
+    class Page:
+        url = "https://www.linkedin.com/feed/"
+
+        def __init__(self, reponse, cookies=({"name": "JSESSIONID", "value": '"ajax:1"'},)):
+            self.context, self.reponse = Contexte(list(cookies)), reponse
+
+        async def evaluate(self, js, arg=None):
+            if isinstance(self.reponse, Exception):
+                raise self.reponse
+            return self.reponse
+
+    def essai(page):
+        echecs = []
+        r = asyncio.run(sc._resoudre_company_urn_via_typeahead("Orbique", page, echecs=echecs))
+        return r, echecs
+
+    assert essai(Page({"ok": True, "data": {"elements": []}})) == (None, [])
+    assert essai(Page({"ok": False, "status": 429}))[1] == ["réponse HTTP 429"]
+    assert essai(Page({"ok": False, "error": "TypeError: Failed to fetch"}))[1][0].startswith("appel impossible")
+    assert essai(Page(None, cookies=()))[1] and essai(Page(RuntimeError("Target closed")))[1] == ["RuntimeError"]
+    # Les appelants existants, sans `echecs`, ne voient rien changer.
+    assert asyncio.run(sc._resoudre_company_urn_via_typeahead("Orbique", Page({"ok": False, "status": 500}))) is None
