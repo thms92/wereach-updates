@@ -7,6 +7,7 @@ qui peut se tester sans navigateur vit ici.
 """
 
 import json
+import re
 import unicodedata
 import urllib.parse
 from dataclasses import asdict, dataclass, field
@@ -45,6 +46,14 @@ _CHAMPS_APROPOS = {
     "siege social": "siege",
     "fondee en": "fondee",
     "specialisations": "specialisations",
+    # Certains collègues utilisent LinkedIn en anglais.
+    "website": "site",
+    "phone": "telephone",
+    "industry": "secteur",
+    "company size": "taille",
+    "headquarters": "siege",
+    "founded": "fondee",
+    "specialties": "specialisations",
 }
 
 
@@ -102,13 +111,18 @@ def famille_de_l_intitule(intitule: str, familles, intitules_libres) -> str:
     la personne a demandé explicitement, on ne le noie pas dans une famille.
     """
     bas = _sans_accents(intitule or "").lower()
+
+    def present(terme):
+        # Mot entier : « ia » ne doit pas se lire dans « Air » ni « IAM ».
+        t = _sans_accents(terme).lower().strip()
+        return bool(t) and re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", bas) is not None
+
     for libre in intitules_libres or []:
-        if _sans_accents(libre).lower().strip() and _sans_accents(libre).lower().strip() in bas:
+        if present(libre):
             return libre.strip()
     for famille in familles:
-        for terme in FAMILLES.get(famille, ()):
-            if _sans_accents(terme).lower() in bas:
-                return famille
+        if any(present(terme) for terme in FAMILLES.get(famille, ())):
+            return famille
     return "Autre"
 
 
@@ -132,9 +146,9 @@ def fiche_depuis_apropos(champs: dict) -> dict:
         fiche[cle] = valeurs[0].strip()
         if cle == "taille":
             for v in valeurs[1:]:
-                chiffres = "".join(c for c in v.split("membres")[0] if c.isdigit())
-                if "membres" in v and chiffres:
-                    fiche["membres"] = chiffres
+                m = re.match(r"\D*(\d+)\D*(?:membres|members)", v.lower())
+                if m:
+                    fiche["membres"] = m.group(1)
     return fiche
 
 
@@ -150,7 +164,9 @@ def charger_reglages(config_dir) -> ReglagesVeille:
     try:
         brut = json.loads((Path(config_dir) / _FICHIER_REGLAGES).read_text(encoding="utf-8"))
         r = ReglagesVeille(
-            familles=[f for f in brut.get("familles", []) if f in FAMILLES],
+            # Fichier sans la clé : les trois familles, pas aucune (la
+            # recherche lèverait « aucun intitulé »).
+            familles=[f for f in brut.get("familles", list(FAMILLES)) if f in FAMILLES],
             intitules_libres=[str(t) for t in brut.get("intitules_libres", []) if str(t).strip()],
             pages_par_jour=int(brut.get("pages_par_jour", PAGES_PAR_JOUR_DEFAUT)),
         )
@@ -192,12 +208,12 @@ def resume_fiche(fiche: dict, contacts: list, actualites: list, depuis) -> str:
     vises = [c for c in contacts if c.get("famille") != "Autre"]
     if vises:
         nouveaux = sum(1 for c in vises if depuis and (c.get("decouvert_le") or "") > depuis)
-        texte = f"{len(vises)} contact{'s' if len(vises) > 1 else ''} Product/Data/IA"
+        texte = f"{len(vises)} contact{'s' if len(vises) > 1 else ''} ciblé{'s' if len(vises) > 1 else ''}"
         if nouveaux:
             texte += f", dont {nouveaux} nouveau{'x' if nouveaux > 1 else ''}"
         morceaux.append(texte)
     else:
-        morceaux.append("aucun contact Product/Data/IA")
+        morceaux.append("aucun contact ciblé")
     return " · ".join(morceaux)
 
 

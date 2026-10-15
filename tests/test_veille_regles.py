@@ -166,9 +166,44 @@ def test_l_en_tete_resume_la_fiche_en_une_ligne():
     assert resume_fiche(FICHE, CONTACTS, ACTUS, "2026-10-10") == (
         "201-500 employés · Conseil · Paris · 100 à 199 salariés (2024) · "
         "📰 Rachat / fusion : Orbique rachète Zéphyr (31/08/2026) · "
-        "2 contacts Product/Data/IA, dont 1 nouveau"
+        "2 contacts ciblés, dont 1 nouveau"
     )
 
 
 def test_l_en_tete_d_une_fiche_vide():
-    assert resume_fiche({}, [], [], None) == "Fiche pas encore remplie · aucune actualité · aucun contact Product/Data/IA"
+    assert resume_fiche({}, [], [], None) == "Fiche pas encore remplie · aucune actualité · aucun contact ciblé"
+
+
+# --- Correctifs du premier tour de relecture ---------------------------------
+
+def test_un_fichier_sans_familles_donne_les_trois_familles(tmp_path):
+    import json
+    (tmp_path / "reglages_veille.json").write_text(json.dumps({"pages_par_jour": 10}), encoding="utf-8")
+    r = charger_reglages(tmp_path)
+    assert r.familles == ["Product", "Data", "IA"] and r.pages_par_jour == 10
+
+
+@pytest.mark.parametrize("intitule,famille", [
+    ("Head of Air Operations", "Autre"),   # « ia » n'est pas dans « Air »
+    ("Responsable IAM", "Autre"),
+    ("Head of AI", "IA"),
+    ("Responsable IA générative", "IA"),
+])
+def test_les_termes_de_famille_sont_des_mots_entiers(intitule, famille):
+    assert famille_de_l_intitule(intitule, ["Product", "Data", "IA"], []) == famille
+
+
+def test_un_intitule_libre_est_aussi_un_mot_entier():
+    assert famille_de_l_intitule("Growth Leader", [], ["Growth Lead"]) == "Autre"
+
+
+def test_la_fiche_se_lit_aussi_en_anglais():
+    champs = {
+        "Website": ["https://www.exemple.co"], "Phone": ["+33 1 00 00 00 00"],
+        "Industry": ["Consulting"], "Company size": ["201-500 employees", "198 associated members"],
+        "Headquarters": ["Paris, Paris"], "Founded": ["2014"], "Specialties": ["Product"],
+    }
+    f = fiche_depuis_apropos(champs)
+    assert f["site"] == "https://www.exemple.co" and f["telephone"] == "+33 1 00 00 00 00"
+    assert f["secteur"] == "Consulting" and f["taille"] == "201-500 employees" and f["membres"] == "198"
+    assert f["siege"] == "Paris, Paris" and f["fondee"] == "2014" and f["specialisations"] == "Product"

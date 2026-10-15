@@ -13,7 +13,7 @@ import pytest
 
 from utils.annuaire import (
     AnnuaireIndisponible, choisir_candidat, commune_du_siege_linkedin,
-    fiche_depuis_annuaire, interroger, normaliser_nom,
+    fiche_depuis_annuaire, interroger, nom_interrogeable, normaliser_nom,
 )
 
 
@@ -129,3 +129,37 @@ def test_une_panne_de_l_annuaire_est_signalee(panne):
 def test_un_json_illisible_est_signale():
     with pytest.raises(AnnuaireIndisponible):
         interroger("Orbique", transport=lambda url, delai: b"<html>")
+
+
+# --- Correctifs du premier tour de relecture ---------------------------------
+
+@pytest.mark.parametrize("nom", ["", "SAS", "S.A."])
+def test_un_nom_vide_apres_nettoyage_ne_recoupe_rien(nom):
+    # Sans cette garde, "" figurait dans les noms de toute société sans sigle.
+    retenu, motif = choisir_candidat([societe("333333333", "ORBIQUE", "PARIS")], nom, "Paris, Paris")
+    assert retenu is None and "nom LinkedIn inconnu" in motif
+
+
+def test_un_nom_trop_court_n_est_pas_interrogeable():
+    assert not nom_interrogeable("SAS") and not nom_interrogeable("AB SA")
+    assert nom_interrogeable("Thiga SAS")
+    assert choisir_candidat([], "AB", "Paris, Paris")[1] == "nom trop court pour l'annuaire"
+
+
+def test_les_apostrophes_et_espaces_s_equivalent_dans_un_nom():
+    assert normaliser_nom("L'Oréal") == normaliser_nom("L’ORÉAL") == normaliser_nom("L OREAL")
+    r, _ = choisir_candidat([societe("5", "L'OREAL", "PARIS")], "L’Oréal", "Paris, Paris")
+    assert r is not None
+
+
+def test_tiret_espace_et_saint_abrege_sont_equivalents_pour_la_commune():
+    r, _ = choisir_candidat([societe("6", "ORBIQUE", "BOULOGNE-BILLANCOURT")], "Orbique",
+                            "Boulogne Billancourt, Île-de-France")
+    assert r is not None
+    r, _ = choisir_candidat([societe("7", "ORBIQUE", "SAINT-DENIS")], "Orbique", "St-Denis, Île-de-France")
+    assert r is not None
+
+
+def test_l_arrondissement_ecrit_en_toutes_lettres_est_ignore():
+    r, _ = choisir_candidat([societe("8", "ORBIQUE", "PARIS 9E ARRONDISSEMENT")], "Orbique", "Paris, Paris")
+    assert r is not None

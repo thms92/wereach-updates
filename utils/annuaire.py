@@ -55,16 +55,34 @@ def _sans_accents(texte: str) -> str:
 
 
 def normaliser_nom(nom: str) -> str:
-    """Majuscules, sans accents, sans forme juridique ni points."""
-    mots = _sans_accents(nom).upper().replace(".", "").split()
-    return " ".join(m for m in mots if m not in _FORMES).strip()
+    """Majuscules, sans accents, sans forme juridique ni points.
+
+    L'apostrophe (droite ou typographique) vaut une espace : « L'Oréal »,
+    « L’ORÉAL » et « L OREAL » sont la même société.
+    """
+    brut = _sans_accents(nom).upper().replace(".", "").replace("’", " ").replace("'", " ")
+    return " ".join(m for m in brut.split() if m not in _FORMES).strip()
+
+
+def nom_interrogeable(nom: str) -> bool:
+    """Faux si le nom, une fois nettoyé, est trop court pour interroger l'annuaire.
+
+    « SAS » ou « AB » ramèneraient n'importe quoi : mieux vaut ne pas appeler.
+    """
+    return len(normaliser_nom(nom)) >= 3
 
 
 def _normaliser_commune(commune: str) -> str:
     c = _sans_accents(commune).upper().strip()
-    # « LYON 3EME », « PARIS 9 », « MARSEILLE 1ER » : l'arrondissement ne
+    # « LYON 3EME », « PARIS 9E ARRONDISSEMENT » : l'arrondissement ne
     # change pas la ville ; LinkedIn ne le donne jamais.
-    return re.sub(r"\s+\d+\s*(E|ER|EME)?$", "", c).strip()
+    c = re.sub(r"\s+ARRONDISSEMENT$", "", c)
+    c = re.sub(r"\s+\d+\s*(E|ER|EME)?$", "", c).strip()
+    # LinkedIn écrit « Boulogne Billancourt » ou « St-Denis » là où l'INSEE
+    # écrit « BOULOGNE-BILLANCOURT » et « SAINT-DENIS » : tiret et espace
+    # s'équivalent, ST/STE s'étendent.
+    c = re.sub(r"^(ST|STE)(?=[\s-])", lambda m: "SAINT" if m.group(1) == "ST" else "SAINTE", c)
+    return re.sub(r"[\s-]+", "-", c)
 
 
 def commune_du_siege_linkedin(siege: str) -> str:
@@ -74,16 +92,22 @@ def commune_du_siege_linkedin(siege: str) -> str:
 
 def choisir_candidat(resultats, nom_linkedin: str, siege_linkedin: str):
     """(société retenue, "") ou (None, motif). Jamais de devinette."""
+    cible = normaliser_nom(nom_linkedin)
+    # Un nom vide (« SAS ») serait égal au nom vide de tout sigle absent.
+    if not cible:
+        return None, "nom LinkedIn inconnu : impossible de recouper"
+    if not nom_interrogeable(nom_linkedin):
+        return None, "nom trop court pour l'annuaire"
     commune = commune_du_siege_linkedin(siege_linkedin)
     if not commune:
         return None, "siège LinkedIn inconnu : impossible de recouper"
-    cible = normaliser_nom(nom_linkedin)
     compatibles = []
     for r in resultats or []:
         if r.get("etat_administratif") != "A":
             continue
         noms = {normaliser_nom(r.get(k) or "") for k in ("nom_raison_sociale", "nom_complet", "sigle")}
         siege = r.get("siege") or {}
+        noms.discard("")
         if cible in noms and _normaliser_commune(siege.get("libelle_commune") or "") == commune:
             compatibles.append(r)
     if len(compatibles) == 1:

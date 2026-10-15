@@ -92,3 +92,32 @@ def test_interroger_et_ses_pannes():
         interroger("Orbique", transport=lambda url, delai: (_ for _ in ()).throw(OSError("réseau")))
     with pytest.raises(ActualiteIndisponible):
         interroger("Orbique", transport=lambda url, delai: b"<html>pas du rss")
+
+
+# --- Correctifs du premier tour de relecture ---------------------------------
+
+@pytest.mark.parametrize("titre,categorie", [
+    ("Decathlon : 200 licenciements à Lille", "Licenciements / restructuration"),
+    ("Marie Dupont nommée directrice générale de Thiga", "Nomination"),
+    ("La levée de 5 M€ de Thiga", "Levée de fonds"),
+    ("Thiga fusionne avec Y", "Rachat / fusion"),
+    ("Restructurations chez Thiga", "Licenciements / restructuration"),
+    ("Thiga acquisitions", "Rachat / fusion"),
+    ("Thiga s'offre la start-up X", "Rachat / fusion"),
+    ("Thiga met la main sur X", "Rachat / fusion"),
+    ("Thiga se sépare de 50 salariés", "Licenciements / restructuration"),
+    ("Nomination d'un nouveau CTO chez Thiga", "Nomination"),
+    ("Thiga s’offre la start-up X", "Rachat / fusion"),   # apostrophe typographique
+    # Faux positifs écartés : débuts de mots volontairement bornés.
+    ("L'élève de Thiga", None),
+    ("Le cèdre de Thiga", None),
+    ("Thiga acquitté en appel", None),
+])
+def test_le_francais_courant_est_classe(titre, categorie):
+    assert categorie_du_titre(titre) == categorie
+
+
+def test_l_apostrophe_typographique_n_empeche_pas_de_reconnaitre_le_nom():
+    xml = (b"<rss><channel><item><title>L\xe2\x80\x99Or\xc3\xa9al rach\xc3\xa8te Aesop</title>"
+           b"<link>u</link></item></channel></rss>")
+    assert len(lire_flux(xml, "L'Or\u00e9al")) == 1

@@ -19,17 +19,24 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
+# Motifs (regex) cherchés dans le titre aplati : sans accents, minuscules,
+# apostrophes droites. On cherche des débuts de mots pour couvrir le français
+# courant (« licenciés », « nommée », « fusionne », « s'offre »…) ; une
+# lecture au mot entier laissait passer ces titres, et la fiche annonçait
+# « aucune actualité » alors qu'il y en avait. L'ordre compte : la première
+# catégorie qui correspond l'emporte.
 CATEGORIES = {
-    "Rachat / fusion": ("rachat", "rachete", "acquisition", "acquiert", "fusion", "cede ",
-                        "cession", "entre au capital", "prend le controle", "reprise de"),
-    "Licenciements / restructuration": ("licenciement", "plan social", "pse", "suppression de postes",
-                                        "suppressions de postes", "supprime", "restructuration",
-                                        "redressement judiciaire", "liquidation", "plan de departs",
-                                        "rupture conventionnelle collective"),
-    "Levée de fonds": ("leve ", "levee de fonds", "tour de table", "financement de", "serie a", "serie b",
-                       "series a", "series b"),
-    "Nomination": ("nomme", "nouveau directeur", "nouvelle directrice", "nouveau pdg", "nouveau ceo",
-                   "prend la tete"),
+    "Rachat / fusion": (r"\brachat", r"\brachet", r"\bacqui(?!t)", r"\bfusion", r"\bcede\b",
+                        r"\bcession", r"entre au capital", r"prend le controle", r"\breprise de",
+                        r"\bs'offre", r"met la main sur"),
+    "Licenciements / restructuration": (r"\blicenci", r"plan social", r"\bpse\b", r"suppressions? de postes",
+                                        r"\bsupprim", r"\brestructur", r"redressement judiciaire",
+                                        r"\bliquidation", r"plan de departs", r"rupture conventionnelle collective",
+                                        r"\bse separe de"),
+    "Levée de fonds": (r"\blevee?s?\b", r"levee de fonds", r"tour de table", r"financement de",
+                       r"\bseries? [ab]\b"),
+    "Nomination": (r"\bnomm", r"\bnomination", r"nouveau directeur", r"nouvelle directrice",
+                   r"nouveau pdg", r"nouveau ceo", r"prend la tete"),
 }
 _MOTS_REQUETE = ("rachat", "acquisition", "fusion", "licenciement", '"plan social"', "restructuration",
                  '"levée de fonds"', "lève", "nomme")
@@ -42,7 +49,9 @@ class ActualiteIndisponible(Exception):
 
 def _plat(texte: str) -> str:
     decompose = unicodedata.normalize("NFKD", texte or "")
-    return "".join(c for c in decompose if not unicodedata.combining(c)).lower()
+    sans = "".join(c for c in decompose if not unicodedata.combining(c)).lower()
+    # L’Oréal et L'Oréal sont la même marque ; la presse mêle les deux.
+    return sans.replace("’", "'")
 
 
 def url_flux(nom: str) -> str:
@@ -52,10 +61,9 @@ def url_flux(nom: str) -> str:
 
 
 def categorie_du_titre(titre: str):
-    plat = _plat(titre) + " "
-    for categorie, mots in CATEGORIES.items():
-        if any(re.search(r"\b" + re.escape(m.strip()) + (r"\b" if not m.endswith(" ") else r"\s"), plat)
-               for m in mots):
+    plat = _plat(titre)
+    for categorie, motifs in CATEGORIES.items():
+        if any(re.search(m, plat) for m in motifs):
             return categorie
     return None
 
