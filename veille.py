@@ -226,10 +226,12 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             rapport.erreurs.append(f"{nom} : site {site} injoignable ({e}) — coordonnées générales non relues.")
             return
         emails, telephones = (lu.get("emails") or [])[:3], (lu.get("telephones") or [])[:3]
-        # Rien trouvé est un constat daté, pas un champ vide muet.
+        # Rien trouvé est un constat daté, pas un champ vide muet — pour le
+        # téléphone comme pour l'email : `enregistrer_fiche` ignore une valeur
+        # vide, un numéro retiré du site resterait affiché comme actuel.
         # « lecture » remplace un ancien « site non lisible » si l'adresse a changé.
         store.enregistrer_fiche(eid, {"lecture": "site lu", "email": ", ".join(emails) or "non publié",
-                                      "telephone": ", ".join(telephones)}, "site", maintenant)
+                                      "telephone": ", ".join(telephones) or "non publié"}, "site", maintenant)
         store.marquer_lecture(eid, "site", maintenant)
 
     async def lire_coordonnees(page, entreprise, contact):

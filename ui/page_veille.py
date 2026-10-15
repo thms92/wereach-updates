@@ -61,8 +61,18 @@ _RIEN_PARTAGE = "rien de partagé"
 _ECHEC = "lecture impossible, nouvel essai prévu"
 _A_LIRE = "à lire au prochain passage"
 _NON_PARTAGE = "non partagé"
+_PARTAGE = "partagé"
 
-_COLONNES_EXPORT = ["Nom", "Intitulé", "Famille", "Degré", "Email", "Téléphone", "Lien", "Trouvé le"]
+_COLONNES_EXPORT = ["Nom", "Intitulé", "Famille", "Degré", "Email", "Téléphone", "Statut coordonnées",
+                    "Lien", "Trouvé le"]
+_COLONNES_ECRAN = ["Famille", "Nom", "Intitulé", "Degré", "Email", "Téléphone", "Trouvé le", "Lien"]
+
+# Débuts de cellule qu'Excel ou LibreOffice prendraient pour une formule.
+_DEBUTS_FORMULE = ("=", "+", "-", "@", "\t", "\r")
+# Un vrai numéro commence souvent par « + » : gardé tel quel, c'est du texte
+# dans le classeur (xlsxwriter ne convertit pas les chaînes en nombres) et,
+# dans le CSV, ses espaces l'empêchent d'être lu comme une formule valide.
+_MOTIF_TELEPHONE = re.compile(r"^\+?[\d\s().\-/]+$")
 
 _ETATS = {"a_identifier": "à identifier", "identifiee": "identifiée",
           "non_identifiee": "non identifiée — collez son lien", "illisible": "page illisible"}
@@ -161,18 +171,37 @@ def _lignes_coordonnees_entreprise(fiche: dict, lectures: dict) -> list:
     return lignes
 
 
-def _coordonnee_contact(c: dict, champ: str) -> str:
-    """Email ou téléphone d'un contact, ou la raison de son absence."""
+def _coordonnee_contact(c: dict, champ: str) -> tuple:
+    """(valeur, statut) de l'email ou du téléphone d'un contact.
+
+    La valeur n'est remplie que pour une coordonnée lue et partagée ; sinon
+    le statut dit pourquoi. Hors relation, rien n'est montré, même lu un jour.
+    """
     if not c.get("en_relation"):
-        return _HORS_RELATION
+        return "", _HORS_RELATION
     k = c.get("coordonnees")
     if k and k["partage"] == "oui":
-        return k[champ] or _NON_PARTAGE
+        return k[champ] or "", _PARTAGE
     if k:
-        return _RIEN_PARTAGE
+        return "", _RIEN_PARTAGE
     if c.get("echec_le"):
-        return _ECHEC
-    return _A_LIRE
+        return "", _ECHEC
+    return "", _A_LIRE
+
+
+def _cellule_ecran(valeur: str, statut: str) -> str:
+    """À l'écran, jamais de case vide : la valeur, ou la raison de son absence."""
+    if valeur:
+        return valeur
+    return _NON_PARTAGE if statut == _PARTAGE else statut
+
+
+def _sans_formule(valeur, telephone: bool = False):
+    if not isinstance(valeur, str) or not valeur.startswith(_DEBUTS_FORMULE):
+        return valeur
+    if telephone and _MOTIF_TELEPHONE.match(valeur):
+        return valeur
+    return "'" + valeur
 
 
 def _degre_lisible(c: dict) -> str:
@@ -182,14 +211,36 @@ def _degre_lisible(c: dict) -> str:
     return degre or "inconnu"
 
 
+def _lignes_contacts(contacts: list) -> list:
+    """Une ligne par contact (`contacts_et_coordonnees`), base de l'écran et de l'export."""
+    lignes = []
+    for c in contacts:
+        (email, statut), (tel, _) = _coordonnee_contact(c, "email"), _coordonnee_contact(c, "telephone")
+        lignes.append({"Nom": c.get("nom") or "", "Intitulé": c.get("poste") or "",
+                       "Famille": c.get("famille") or "", "Degré": _degre_lisible(c),
+                       "Email": email, "Téléphone": tel, "Statut coordonnées": statut, "Lien": c["url"],
+                       "Trouvé le": (c.get("decouvert_le") or "")[:10]})
+    return lignes
+
+
+def _contacts_a_afficher(contacts: list) -> pd.DataFrame:
+    lignes = _lignes_contacts(contacts)
+    for l in lignes:
+        l["Email"] = _cellule_ecran(l["Email"], l["Statut coordonnées"])
+        l["Téléphone"] = _cellule_ecran(l["Téléphone"], l["Statut coordonnées"])
+    return pd.DataFrame(lignes, columns=_COLONNES_ECRAN)
+
+
 def _contacts_a_exporter(contacts: list) -> pd.DataFrame:
-    """Contacts et coordonnées, tels qu'affichés et exportés (`contacts_et_coordonnees`)."""
-    return pd.DataFrame([{
-        "Nom": c.get("nom") or "", "Intitulé": c.get("poste") or "", "Famille": c.get("famille") or "",
-        "Degré": _degre_lisible(c), "Email": _coordonnee_contact(c, "email"),
-        "Téléphone": _coordonnee_contact(c, "telephone"), "Lien": c["url"],
-        "Trouvé le": (c.get("decouvert_le") or "")[:10],
-    } for c in contacts], columns=_COLONNES_EXPORT)
+    """L'export, exploitable par une machine : Email et Téléphone vides sauf
+    coordonnée lue et partagée, la raison dans « Statut coordonnées ».
+
+    Les textes venus de LinkedIn (nom, intitulé…) sont neutralisés : une
+    cellule commençant par « = » serait exécutée comme formule à l'ouverture.
+    """
+    lignes = [{k: _sans_formule(v, telephone=(k == "Téléphone")) for k, v in l.items()}
+              for l in _lignes_contacts(contacts)]
+    return pd.DataFrame(lignes, columns=_COLONNES_EXPORT)
 
 
 def _nom_export(entreprise: str, jour: str) -> str:
@@ -425,9 +476,9 @@ def afficher_page_veille() -> None:
             st.markdown("**Contacts**")
             st.caption("Coordonnées : celles que la personne partage sur LinkedIn, lisibles seulement "
                        "une fois en relation (1er degré ou invitation acceptée).")
-            tableau = _contacts_a_exporter(store.contacts_et_coordonnees(e["id"]))
-            st.dataframe(tableau[["Famille", "Nom", "Intitulé", "Degré", "Email", "Téléphone", "Trouvé le", "Lien"]],
-                         hide_index=True, width="stretch")
+            avec_coordonnees = store.contacts_et_coordonnees(e["id"])
+            st.dataframe(_contacts_a_afficher(avec_coordonnees), hide_index=True, width="stretch")
+            tableau = _contacts_a_exporter(avec_coordonnees)
             fichier = _nom_export(e["nom"], datetime.now().strftime("%Y-%m-%d"))
             col_x, col_c = st.columns(2)
             with col_x:

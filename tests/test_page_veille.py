@@ -450,9 +450,72 @@ def test_l_export_des_contacts_a_les_bonnes_colonnes(store):
     ids = [b.proto.id for b in at.get("download_button")]
     assert any(x.endswith(f"veille_dl_xlsx_{i}") for x in ids) and any(x.endswith(f"veille_dl_csv_{i}") for x in ids)
     df = _contacts_a_exporter(store.contacts_et_coordonnees(i))
-    assert list(df.columns) == ["Nom", "Intitulé", "Famille", "Degré", "Email", "Téléphone", "Lien", "Trouvé le"]
-    assert "jeanne@orbique.example" in set(df["Email"])
+    assert list(df.columns) == ["Nom", "Intitulé", "Famille", "Degré", "Email", "Téléphone",
+                                "Statut coordonnées", "Lien", "Trouvé le"]
+    # Exploitable par une machine : une case Email ne contient qu'un email.
+    par_nom = {r["Nom"]: r for _, r in df.iterrows()}
+    assert (par_nom["Jeanne Exemple"]["Email"], par_nom["Jeanne Exemple"]["Téléphone"]) == \
+        ("jeanne@orbique.example", "")
+    assert par_nom["Jeanne Exemple"]["Statut coordonnées"] == "partagé"
+    attendus = {"Paul Exemple": "rien de partagé", "Léa Exemple": "lecture impossible, nouvel essai prévu",
+                "Max Exemple": "après acceptation de l'invitation", "Zoé Exemple": "à lire au prochain passage"}
+    for nom, statut in attendus.items():
+        assert (par_nom[nom]["Email"], par_nom[nom]["Téléphone"], par_nom[nom]["Statut coordonnées"]) == \
+            ("", "", statut)
     assert "max@" not in df.to_csv()
+
+
+def test_le_csv_telecharge_est_celui_attendu(store, monkeypatch):
+    """Octets réellement remis au bouton de téléchargement, captés au stockage des fichiers."""
+    from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage
+    recus = {}
+    origine = MemoryMediaFileStorage.load_and_get_id
+
+    def espion(self, data, mimetype, kind, filename=None):
+        recus[filename] = data
+        return origine(self, data, mimetype, kind, filename)
+
+    monkeypatch.setattr(MemoryMediaFileStorage, "load_and_get_id", espion)
+    _orbique_avec_contacts(store)
+    _page()
+    [(nom, octets)] = [(n, d) for n, d in recus.items() if n and n.endswith(".csv")]
+    assert nom.startswith("contacts_orbique-conseil_")
+    assert octets.startswith("\ufeff".encode("utf-8"))
+    lignes = octets.decode("utf-8-sig").splitlines()
+    assert lignes[0] == "Nom;Intitulé;Famille;Degré;Email;Téléphone;Statut coordonnées;Lien;Trouvé le"
+    assert ("Jeanne Exemple;Product Manager;Product;1er;jeanne@orbique.example;;partagé;"
+            "https://www.linkedin.com/in/jeanne-exemple/;2026-10-14") in lignes
+    assert ("Max Exemple;Product Manager;Product;2e;;;après acceptation de l'invitation;"
+            "https://www.linkedin.com/in/max-exemple/;2026-10-14") in lignes
+
+
+def test_l_export_neutralise_les_formules_mais_garde_les_telephones():
+    from ui.page_veille import _contacts_a_exporter
+    contact = {"nom": "=HYPERLINK(\"http://x\")", "poste": "+Directeur", "famille": "@Data", "degre": "1er",
+               "url": "https://www.linkedin.com/in/x/", "decouvert_le": "2026-10-14", "en_relation": True,
+               "echec_le": None, "coordonnees": {"email": "-a@x.example", "telephone": "+33 1 23 45 67 89",
+                                                  "partage": "oui", "releve_le": "2026-10-14"}}
+    [r] = _contacts_a_exporter([contact]).to_dict("records")
+    assert r["Nom"] == "'=HYPERLINK(\"http://x\")"
+    assert r["Intitulé"] == "'+Directeur" and r["Famille"] == "'@Data" and r["Email"] == "'-a@x.example"
+    assert r["Téléphone"] == "+33 1 23 45 67 89"
+    contact["coordonnees"]["telephone"] = "=1+1"
+    assert _contacts_a_exporter([contact])["Téléphone"][0] == "'=1+1"
+
+
+def test_un_telephone_de_site_retire_est_dit_non_publie(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_fiche(i, {"lecture": "site lu", "email": "contact@orbique.example",
+                                "telephone": "01 23 45 67 89"}, "site", "2026-09-01T08:00:00")
+    store.enregistrer_fiche(i, {"lecture": "site lu", "email": "contact@orbique.example",
+                                "telephone": "non publié"}, "site", "2026-10-14T08:00:00")
+    store.marquer_lecture(i, "site", "2026-10-14T08:00:00")
+    at = _page()
+    [coord] = [d.value for d in at.dataframe if "Source" in d.value.columns
+               and "Téléphone (site)" in set(d.value["Information"])]
+    tel = coord[coord["Information"] == "Téléphone (site)"].iloc[0]
+    assert (tel["Valeur"], tel["Relevé le"]) == ("non publié", "2026-10-14")
+    assert "01 23 45 67 89" not in coord.to_string()
 
 
 def test_une_entreprise_sans_contact_n_a_pas_d_export(store):

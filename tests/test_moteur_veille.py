@@ -1011,7 +1011,7 @@ def test_un_site_qui_ne_publie_rien_est_dit_et_date(base):
     i = store.ajouter_entreprise("Orbique", "2026-10-14")
     passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
     assert store.fiche(i)["site.email"]["valeur"] == "non publié"
-    assert "site.telephone" not in store.fiche(i)
+    assert store.fiche(i)["site.telephone"]["valeur"] == "non publié"
     assert store.lectures(i)["site"] == "2026-10-15T08:00:00"
 
 
@@ -1258,3 +1258,18 @@ def test_un_site_lu_le_dit_dans_la_fiche(base):
     i = store.ajouter_entreprise("Orbique", "2026-10-14")
     passer(store, db, FauxScraper(FaussePage(), FauxLimites()))
     assert store.fiche(i)["site.lecture"]["valeur"] == "site lu"
+
+
+def test_une_coordonnee_que_le_site_ne_publie_plus_est_remplacee(base):
+    """Sans cela, l'ancien numéro resterait affiché comme actuel, avec une date de relevé récente."""
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    lu = {"emails": ["contact@orbique.example"], "telephones": ["01 23 45 67 89"], "pages_lues": []}
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=lambda site: lu)
+    lu = {"emails": [], "telephones": [], "pages_lues": []}
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=lambda site: lu,
+           maintenant="2026-11-15T08:00:00")
+    fiche = store.fiche(i)
+    assert fiche["site.telephone"]["valeur"] == "non publié"
+    assert fiche["site.email"]["valeur"] == "non publié"
+    assert fiche["site.telephone"]["releve_le"] == "2026-11-15T08:00:00"
