@@ -29,6 +29,7 @@ from utils.actualite import ActualiteIndisponible
 from utils.actualite import interroger as interroger_actualite
 from utils.annuaire import (
     AnnuaireIndisponible, choisir_candidat, fiche_depuis_annuaire, interroger, nom_interrogeable,
+    normaliser_nom,
 )
 from utils.dom_selectors import DOMSelectors
 from utils.veille_regles import (
@@ -46,6 +47,7 @@ class RapportPassage:
     fin: str = ""
     entreprises: list = field(default_factory=list)
     pages: int = 0
+    # termine, budget, cookie, deconnecte, securite, occupe, rien_a_faire, erreur
     cause: str = "termine"
     erreurs: list = field(default_factory=list)
     nouveaux_contacts: int = 0
@@ -67,11 +69,30 @@ class _Arret(Exception):
 
 
 class _PageInjoignable(Exception):
-    """Une page n'a pas chargé : on passe à l'entreprise suivante.
+    """Une page n'a pas pu être lue : on passe à l'entreprise suivante.
 
     Lire quand même la page affichée reviendrait à lire la précédente —
-    la recherche d'une autre entreprise, rangée sous ce nom-ci.
+    la recherche d'une autre entreprise, rangée sous ce nom-ci. Et une
+    extraction en échec n'est pas une fin de liste : on garderait le
+    silence en remettant le curseur à zéro.
     """
+
+    def __init__(self, motif="page LinkedIn injoignable"):
+        super().__init__(motif)
+        self.motif = motif
+
+
+def _meme_entreprise(nom_suivi: str, nom_page: str) -> bool:
+    """Vrai si la page LinkedIn porte bien le nom suivi.
+
+    Égalité, ou tous les mots du nom suivi présents dans celui de la page
+    (« Decathlon » / « Decathlon France ») ; le reste est un homonyme
+    possible, et la veille ne devine pas.
+    """
+    suivi, page = normaliser_nom(nom_suivi), normaliser_nom(nom_page)
+    if not suivi or not page:
+        return False
+    return suivi == page or set(suivi.split()) <= set(page.split())
 
 
 _RACINE_PAGE_ENTREPRISE = re.compile(r"^(https?://[^/]+/company/[^/?#]+)")
@@ -116,17 +137,18 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
 
     lot = ordre_du_lot(store.entreprises())
     if not lot:
-        rapport.cause, rapport.fin = "rien_a_faire", maintenant
+        rapport.cause, rapport.fin = "rien_a_faire", _maintenant()
         return rapport
     try:
         expression = expression_mots_cles(reglages.familles, reglages.intitules_libres)
     except ValueError:
-        rapport.cause, rapport.fin = "erreur", maintenant
+        rapport.cause, rapport.fin = "erreur", _maintenant()
         rapport.erreurs.append("Aucun intitulé à chercher : cochez au moins une famille dans les réglages de la veille.")
         return rapport
     signature = signature_familles(reglages.familles, reglages.intitules_libres)
+    cibles = " / ".join(list(reglages.familles) + list(reglages.intitules_libres or []))
     if restant() <= 0:
-        rapport.cause, rapport.fin = "budget", maintenant
+        rapport.cause, rapport.fin = "budget", _maintenant()
         rapport.erreurs.append(f"Budget de veille du jour déjà consommé ({reglages.pages_par_jour} pages).")
         return rapport
 
@@ -140,16 +162,28 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         ok = await scraper.network_manager.safe_page_goto(page, url)
         if scraper._est_page_de_connexion(page.url):
             raise _Arret("deconnecte")
+        # Même moniteur HTTP que la recherche : vérification, limitation de
+        # débit — on s'arrête plutôt que d'insister sur un compte surveillé.
+        if not await scraper.human.check_safety(page):
+            raise _Arret("securite")
         if not ok:
-            raise _PageInjoignable(url)
+            raise _PageInjoignable()
         await scraper.human.human_delay(1500, 400)
+        # Défilement comme la recherche existante : déclenche l'affichage
+        # paresseux des résultats et garde une allure humaine.
+        await scraper.human.browse_page_naturally(page)
 
     async def traiter(page, entreprise, urls_au_fichier) -> bool:
         """Une entreprise ; False si elle n'a pas pu être passée."""
         eid, nom = entreprise["id"], entreprise["nom"]
+        # Avant la recherche par nom : elle interroge LinkedIn elle aussi.
+        if restant() <= 0:
+            raise _Arret("budget")
 
         # 1. Identification
+        devine = False
         if not entreprise.get("company_id") and not entreprise.get("url_linkedin"):
+            devine = True
             company_id = await scraper._resoudre_company_urn_via_typeahead(nom, page)
             if not company_id:
                 store.maj_identification(eid, "non_identifiee")
@@ -167,9 +201,20 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             if not fiche or not lu.get("company_id"):
                 scraper._dumper_panneau(lu.get("html") or "", nom_fichier="apropos_dump.html")
                 store.maj_identification(eid, "illisible")
+                # En fin de rotation : sinon elle mangerait une page à chaque passage.
+                store.marquer_passage(eid, maintenant)
                 rapport.erreurs.append(
                     f"{nom} : page « À propos » illisible — sa structure a peut-être changé "
                     "(page enregistrée dans logs/).")
+                return False
+            nom_page = lu.get("nom") or ""
+            # La recherche par nom prend le premier résultat : il peut s'agir
+            # d'un homonyme. Un lien collé, lui, est le choix de la personne.
+            if devine and not _meme_entreprise(nom, nom_page):
+                store.maj_identification(eid, "non_identifiee")
+                rapport.erreurs.append(
+                    f"{nom} : LinkedIn propose « {nom_page or 'une page sans nom'} » "
+                    "— collez le lien de sa page pour confirmer.")
                 return False
             if lu.get("description"):
                 fiche["description"] = lu["description"][:500]
@@ -177,13 +222,15 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             entreprise["company_id"] = lu["company_id"]
             store.enregistrer_fiche(eid, fiche, "linkedin", maintenant)
 
-            # 3. Annuaire officiel, recoupé — sans coût LinkedIn
-            if not nom_interrogeable(nom):
+            # 3. Annuaire officiel, recoupé — sans coût LinkedIn. Avec le nom
+            # de la page : c'est LinkedIn qu'on recoupe, pas le libellé saisi.
+            nom_page = nom_page or nom
+            if not nom_interrogeable(nom_page):
                 store.enregistrer_fiche(eid, {"rapprochement": "nom trop court pour l'annuaire"},
                                         "annuaire", maintenant)
             else:
                 try:
-                    candidat, motif = choisir_candidat(annuaire(nom), nom, fiche.get("siege", ""))
+                    candidat, motif = choisir_candidat(annuaire(nom_page), nom_page, fiche.get("siege", ""))
                 except AnnuaireIndisponible as e:
                     rapport.erreurs.append(f"{nom} : annuaire officiel injoignable ({e}) — fiche annuaire inchangée.")
                 else:
@@ -199,10 +246,21 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             curseur = 0
         for numero in range(curseur + 1, curseur + 1 + PAGES_MAX_PAR_ENTREPRISE):
             await charger(page, url_recherche_personnes(entreprise["company_id"], expression, numero))
+            erreurs_avant = len(scraper.errors)
             trouves = await scraper.extraire_profils_page(page)
+            if not trouves and len(scraper.errors) > erreurs_avant:
+                # `extraire_profils_page` avale ses erreurs et rend [] : ce
+                # n'est pas une fin de liste, le curseur ne bouge pas.
+                raise _PageInjoignable("résultats de recherche illisibles")
             if not trouves:
+                if numero == 1:
+                    rapport.erreurs.append(f"{nom} : aucun profil {cibles} trouvé.")
+                    store.enregistrer_fiche(eid, {"recherche": "aucun profil trouvé"}, "linkedin", maintenant)
                 curseur = 0  # fin de liste : le prochain cycle repart du début
                 break
+            if numero == 1 and (store.fiche(eid).get("linkedin.recherche") or {}).get("valeur") == "aucun profil trouvé":
+                # Le constat d'absence daté ne doit pas survivre aux premiers résultats.
+                store.enregistrer_fiche(eid, {"recherche": "profils trouvés"}, "linkedin", maintenant)
             for personne in trouves:
                 famille = famille_de_l_intitule(personne.get("poste", ""), reglages.familles,
                                                 reglages.intitules_libres)
@@ -221,7 +279,7 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         dire("Ouverture de LinkedIn…")
         navigateur, page = await scraper._open_linkedin_page(p, cookie, status)
         if page is None:
-            rapport.cause, rapport.fin = "cookie", maintenant
+            rapport.cause, rapport.fin = "cookie", _maintenant()
             rapport.erreurs.append("Cookie LinkedIn invalide ou expiré — reconnectez-vous dans le panneau de gauche.")
             return rapport
         try:
@@ -231,14 +289,24 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                 try:
                     if await traiter(page, entreprise, urls_au_fichier):
                         rapport.entreprises.append(entreprise["nom"])
-                except _PageInjoignable:
+                except _Arret:
+                    raise
+                except _PageInjoignable as e:
                     # Pas de `marquer_passage` : elle reste en tête du prochain lot.
-                    rapport.erreurs.append(
-                        f"{entreprise['nom']} : page LinkedIn injoignable — reprise au prochain passage.")
+                    rapport.erreurs.append(f"{entreprise['nom']} : {e.motif} — reprise au prochain passage.")
+                except Exception as e:
+                    # Une page qui se recharge sous Playwright (« Execution context
+                    # was destroyed ») ne doit pas fausser tout le passage.
+                    logger.error(f"❌ Veille, {entreprise['nom']} : {type(e).__name__} : {e}", exc_info=True)
+                    rapport.erreurs.append(f"{entreprise['nom']} : erreur inattendue ({type(e).__name__}).")
         except _Arret as arret:
             rapport.cause = arret.cause
             if arret.cause == "deconnecte":
                 rapport.erreurs.append("LinkedIn a demandé de se reconnecter : passage interrompu.")
+            elif arret.cause == "securite":
+                rapport.erreurs.append(
+                    "LinkedIn montre des signes d'alerte (vérification ou limitation) : veille arrêtée "
+                    "par sécurité — réessayez plus tard.")
         finally:
             await navigateur.close()
     rapport.fin = _maintenant()
