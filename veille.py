@@ -54,6 +54,17 @@ class RapportPassage:
     nouvelles_actualites: int = 0
 
 
+# Une seule formulation par cause d'arrêt : la page Veille affiche la même
+# phrase en tête du rapport et retire la ligne d'erreur identique, pour ne pas
+# dire deux fois la même chose avec des mots différents.
+MESSAGES_ARRET = {
+    "cookie": "Cookie LinkedIn invalide ou expiré — renseignez un nouveau cookie li_at dans la page Recherche.",
+    "deconnecte": "LinkedIn a demandé de se reconnecter : passage interrompu.",
+    "securite": ("LinkedIn a signalé une activité inhabituelle (vérification ou limitation) : veille arrêtée "
+                 "par sécurité. Réessayez plus tard."),
+}
+
+
 def _maintenant() -> str:
     # Horodatage complet : `nouveautes_depuis` compare des chaînes, une date
     # seule passerait à côté de ce qui a été trouvé le jour même.
@@ -280,7 +291,7 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         navigateur, page = await scraper._open_linkedin_page(p, cookie, status)
         if page is None:
             rapport.cause, rapport.fin = "cookie", _maintenant()
-            rapport.erreurs.append("Cookie LinkedIn invalide ou expiré — reconnectez-vous dans le panneau de gauche.")
+            rapport.erreurs.append(MESSAGES_ARRET["cookie"])
             return rapport
         try:
             urls_au_fichier = db.urls_connues()
@@ -301,12 +312,8 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                     rapport.erreurs.append(f"{entreprise['nom']} : erreur inattendue ({type(e).__name__}).")
         except _Arret as arret:
             rapport.cause = arret.cause
-            if arret.cause == "deconnecte":
-                rapport.erreurs.append("LinkedIn a demandé de se reconnecter : passage interrompu.")
-            elif arret.cause == "securite":
-                rapport.erreurs.append(
-                    "LinkedIn montre des signes d'alerte (vérification ou limitation) : veille arrêtée "
-                    "par sécurité — réessayez plus tard.")
+            if arret.cause in ("deconnecte", "securite"):
+                rapport.erreurs.append(MESSAGES_ARRET[arret.cause])
         finally:
             await navigateur.close()
     rapport.fin = _maintenant()

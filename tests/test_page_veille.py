@@ -198,3 +198,88 @@ def test_aucun_widget_n_a_a_la_fois_une_valeur_par_defaut_et_une_valeur_en_sessi
         journal.removeHandler(collecteur)
     assert not at.exception
     assert not any("default value" in m for m in messages), messages
+
+
+def _textes(at):
+    return " ".join(e.value for e in list(at.markdown) + list(at.warning) + list(at.info)
+                    + list(at.success) + list(at.caption) + list(at.error))
+
+
+def test_le_dernier_passage_est_resume_en_entier(store):
+    store.enregistrer_passage("2026-10-15T08:00:00", "2026-10-15T08:12:00", ["Orbique", "Zéphyr Conseil"], 7,
+                              "budget", ["Zéphyr Conseil : annuaire officiel injoignable"])
+    textes = _textes(_page())
+    assert "15/10/2026 08:12" in textes
+    assert "Budget de pages du jour atteint" in textes
+    assert "2 entreprise(s) : Orbique, Zéphyr Conseil" in textes
+    assert "7 page(s)" in textes
+    assert "Zéphyr Conseil : annuaire officiel injoignable" in textes
+
+
+def test_apres_la_veille_le_recap_montre_ce_qu_elle_a_trouve(store, monkeypatch):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+
+    def faux(chemins, cookie, proxy=None, status=None):
+        s = VeilleStore(str(chemins.db_file))
+        s.relier_contact(i, {"nom": "Paul Exemple", "poste": "Head of Data",
+                             "url": "https://www.linkedin.com/in/paul-exemple/", "connexions": "3e"},
+                         "Data", "2999-01-01T08:00:00", set())
+        s.enregistrer_passage("2026-10-15T08:00:00", "2026-10-15T08:05:00", ["Orbique"], 2, "termine", [])
+        return RapportPassage(debut="2026-10-15T08:00:00", fin="2026-10-15T08:05:00", entreprises=["Orbique"],
+                              pages=2, cause="termine", nouveaux_contacts=1)
+
+    monkeypatch.setattr(veille, "lancer_passage", faux)
+    at = _page()
+    at.session_state["global_cookie"] = "COOKIE-DE-TEST"
+    _bouton(at, "🏢 Lancer la veille").click()
+    at.run()
+    assert not at.exception
+    recap = [d.value for d in at.dataframe if "Inviter" in d.value.columns]
+    assert recap and "Paul Exemple" in recap[0].to_string()
+    assert "1 nouveau(x) contact(s)" in _textes(at)
+    # Montré une fois : au rechargement suivant, seul le résumé enregistré reste.
+    at.run()
+    assert "1 nouveau(x) contact(s)" not in _textes(at)
+    assert "Passage terminé" in _textes(at)
+
+
+def test_la_date_de_visite_est_reecrite_a_chaque_affichage(store):
+    from pathlib import Path
+    fichier = Path(chemins_de_test().config_dir) / "derniere_visite_veille.txt"
+    at = _page()
+    precedente = at.session_state["veille_visite_precedente"]
+    fichier.write_text("2000-01-01T00:00:00", encoding="utf-8")
+    at.run()
+    assert fichier.read_text(encoding="utf-8") != "2000-01-01T00:00:00"
+    assert at.session_state["veille_visite_precedente"] == precedente
+
+
+def test_une_cause_d_arret_n_est_pas_dite_deux_fois(store, monkeypatch):
+    def faux(chemins, cookie, proxy=None, status=None):
+        return RapportPassage(debut="2026-10-15T08:00:00", fin="2026-10-15T08:01:00", entreprises=[], pages=1,
+                              cause="securite", erreurs=[veille.MESSAGES_ARRET["securite"], "Orbique : autre souci"])
+
+    monkeypatch.setattr(veille, "lancer_passage", faux)
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    at = _page()
+    at.session_state["global_cookie"] = "COOKIE-DE-TEST"
+    _bouton(at, "🏢 Lancer la veille").click()
+    at.run()
+    assert sum("activité inhabituelle" in w.value for w in at.warning) == 1
+    assert any("Orbique : autre souci" in w.value for w in at.warning)
+
+
+@pytest.mark.parametrize("headless, attendu", [(True, "arrière-plan"), (False, "fenêtre Chrome")])
+def test_la_legende_du_lancement_suit_le_mode_du_navigateur(store, monkeypatch, headless, attendu):
+    from config import ScraperConfig
+    monkeypatch.setattr(ScraperConfig, "HEADLESS", headless)
+    at = _page()
+    assert any(attendu in c.value for c in at.caption)
+
+
+def test_retirer_previent_de_ce_qui_est_supprime(store):
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    at = _page()
+    at.selectbox(key="veille_retirer").set_value("Orbique")
+    at.run()
+    assert any("les profils restent dans l'Historique" in c.value for c in list(at.caption) + list(at.warning))

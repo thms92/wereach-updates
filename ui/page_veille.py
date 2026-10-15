@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 import veille
+from config import ScraperConfig
 from ui.invitations import bloc_recuperer_inviter
 from utils.veille_regles import (FAMILLES, PAGES_MAX, PAGES_MIN, ReglagesVeille, charger_reglages,
                                  resume_fiche, sauver_reglages)
@@ -25,13 +26,12 @@ _MOTIF_LIEN = re.compile(r"^https?://([a-z]+\.)?linkedin\.com/company/[^/?#]+", 
 _CAUSES = {
     "termine": "Passage terminé.",
     "budget": "Budget de pages du jour atteint : les entreprises restantes passeront en tête la prochaine fois.",
-    "cookie": "Cookie LinkedIn invalide ou expiré.",
-    "deconnecte": "LinkedIn a demandé de se reconnecter : passage interrompu.",
-    "securite": ("LinkedIn a signalé une activité inhabituelle : veille arrêtée par prudence. "
-                 "Réessayez plus tard."),
     "occupe": "Une autre session LinkedIn était en cours.",
     "rien_a_faire": "Aucune entreprise à passer.",
     "erreur": "Le passage s'est interrompu sur une erreur.",
+    # Mêmes phrases que le moteur : voir `_afficher_passage`, qui retire la
+    # ligne d'erreur identique.
+    **veille.MESSAGES_ARRET,
 }
 
 # Libellés lisibles des champs de la fiche ; un champ inconnu garde son nom.
@@ -47,20 +47,23 @@ _ETATS = {"a_identifier": "à identifier", "identifiee": "identifiée",
 def _visite_precedente(config_dir) -> str | None:
     """Date de la visite précédente, lue une fois par session.
 
-    Lue au premier affichage puis remplacée par maintenant : sinon chaque
-    clic (qui relance la page) viderait le récap qu'on est en train de lire.
+    Lue au premier affichage puis gardée en session : sinon chaque clic (qui
+    relance la page) viderait le récap qu'on est en train de lire. Le fichier,
+    lui, est réécrit à chaque affichage : la session suivante doit compter à
+    partir de la dernière fois où la page a réellement été vue, pas de la
+    première de la session précédente.
     """
+    chemin = Path(config_dir) / _VISITE
     if "veille_visite_precedente" not in st.session_state:
-        chemin = Path(config_dir) / _VISITE
         try:
             precedente = chemin.read_text(encoding="utf-8").strip() or None
         except Exception:
             precedente = None
         st.session_state["veille_visite_precedente"] = precedente
-        try:
-            chemin.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
-        except Exception:
-            pass
+    try:
+        chemin.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+    except Exception:
+        pass
     return st.session_state["veille_visite_precedente"]
 
 
@@ -95,13 +98,39 @@ def _etat_lisible(entreprise: dict, fiche: dict) -> str:
     return etat
 
 
+def _date_fr(horodatage: str) -> str:
+    h = horodatage or ""
+    if len(h) < 16:
+        return h
+    return f"{h[8:10]}/{h[5:7]}/{h[:4]} {h[11:16]}"
+
+
+def _afficher_passage(fin, cause, entreprises, pages, erreurs,
+                      nouveaux_contacts=None, nouvelles_actualites=None) -> None:
+    """Résumé d'un passage, qu'il vienne de finir ou qu'il soit relu en base.
+
+    Une seule fonction pour les deux : le résumé enregistré ne doit pas dire
+    moins que celui affiché à chaud. Les compteurs de nouveautés ne sont pas
+    stockés en base : ils n'apparaissent que juste après le passage.
+    """
+    couvertes = f"{len(entreprises)} entreprise(s)" + (f" : {', '.join(entreprises)}" if entreprises else "")
+    morceaux = [couvertes, f"{pages} page(s) LinkedIn"]
+    if nouveaux_contacts is not None:
+        morceaux.append(f"{nouveaux_contacts} nouveau(x) contact(s)")
+    if nouvelles_actualites is not None:
+        morceaux.append(f"{nouvelles_actualites} nouvelle(s) actualité(s)")
+    resume = (f"**Passage du {_date_fr(fin)}** — {_CAUSES.get(cause, cause)} — " + ", ".join(morceaux) + ".")
+    (st.success if cause in ("termine", "rien_a_faire") else st.warning)(resume)
+    # Le moteur consigne aussi la cause d'arrêt parmi les erreurs : déjà dite
+    # en tête, on ne la répète pas.
+    for erreur in erreurs:
+        if erreur != veille.MESSAGES_ARRET.get(cause):
+            st.warning(f"⚠️ {erreur}")
+
+
 def _afficher_rapport(rapport) -> None:
-    resume = (f"**{_CAUSES.get(rapport.cause, rapport.cause)}** — "
-              f"{len(rapport.entreprises)} entreprise(s), {rapport.pages} page(s) LinkedIn, "
-              f"{rapport.nouveaux_contacts} nouveau(x) contact(s).")
-    (st.success if rapport.cause in ("termine", "rien_a_faire") else st.warning)(resume)
-    for erreur in rapport.erreurs:
-        st.warning(f"⚠️ {erreur}")
+    _afficher_passage(rapport.fin, rapport.cause, rapport.entreprises, rapport.pages, rapport.erreurs,
+                      rapport.nouveaux_contacts, rapport.nouvelles_actualites)
 
 
 def afficher_page_veille() -> None:
@@ -120,7 +149,7 @@ def afficher_page_veille() -> None:
         choix = st.data_editor(
             df.rename(columns={"entreprise": "Entreprise", "famille": "Famille", "nom": "Nom",
                                "poste": "Intitulé", "degre": "Degré", "url": "Lien"}),
-            key="veille_recap", hide_index=True, use_container_width=True,
+            key="veille_recap", hide_index=True, width="stretch",
             disabled=["Entreprise", "Famille", "Nom", "Intitulé", "Degré", "Lien"],
         )
         urls = list(choix.loc[choix["Inviter"], "Lien"])
@@ -134,15 +163,25 @@ def afficher_page_veille() -> None:
         st.markdown(f"- **{c['entreprise']}** — {_CHAMPS.get(c['champ'], c['champ'])} : {c['avant']} → "
                     f"**{c['apres']}** ({source}, {c['releve_le'][:10]})")
 
+    # Le rapport d'un passage qui vient de finir est montré une fois, à la
+    # place du résumé enregistré (même passage, avec ses compteurs en plus).
+    rapport = st.session_state.pop("veille_rapport", None)
     dernier = store.dernier_passage()
-    if dernier:
-        st.caption(f"Dernier passage : {dernier['fin'][:16].replace('T', ' ')} — "
-                   f"{_CAUSES.get(dernier['cause'], dernier['cause'])}")
+    if rapport is not None:
+        _afficher_rapport(rapport)
+    elif dernier:
+        _afficher_passage(dernier["fin"], dernier["cause"], dernier["entreprises"], dernier["pages"],
+                          dernier["erreurs"])
 
     # ── Lancer ─────────────────────────────────────────────────────────
     st.markdown("---")
-    st.caption("Une fenêtre Chrome va s'ouvrir et travailler quelques minutes : c'est normal, "
-               "LinkedIn l'exige. Laissez-la faire.")
+    # Même réglage que celui que lit le scraper au lancement de Chrome.
+    if ScraperConfig.HEADLESS:
+        st.caption("La veille travaille en arrière-plan quelques minutes : aucune fenêtre ne s'ouvre. "
+                   "Gardez cette page ouverte jusqu'au rapport.")
+    else:
+        st.caption("Une fenêtre Chrome va s'ouvrir et travailler quelques minutes : c'est normal, "
+                   "LinkedIn l'exige. Laissez-la faire.")
     if st.button("🏢 Lancer la veille", type="primary", key="veille_lancer"):
         if not st.session_state.get("global_cookie"):
             st.error("❌ Cookie manquant — renseignez votre cookie li_at dans la page Recherche.")
@@ -152,7 +191,10 @@ def afficher_page_veille() -> None:
                                                 proxy=st.session_state.get("user_proxy"),
                                                 status=lambda t: statut.update(label=t))
                 statut.update(label="Veille terminée", state="complete")
-            _afficher_rapport(rapport)
+            # Le récap, en haut, a été calculé avant le passage : on relance la
+            # page pour qu'il montre ce que la veille vient de trouver.
+            st.session_state["veille_rapport"] = rapport
+            st.rerun()
 
     # ── Mes entreprises ────────────────────────────────────────────────
     st.markdown("---")
@@ -162,7 +204,7 @@ def afficher_page_veille() -> None:
         st.dataframe(pd.DataFrame([{
             "Entreprise": e["nom"], "État": _etat_lisible(e, store.fiche(e["id"])),
             "Dernier passage": (e["derniere_veille"] or "jamais")[:10], "Contacts": e["nb_contacts"],
-        } for e in entreprises]), hide_index=True, use_container_width=True)
+        } for e in entreprises]), hide_index=True, width="stretch")
     else:
         st.info("Aucune entreprise suivie : ajoutez-en ci-dessous.")
 
@@ -199,6 +241,9 @@ def afficher_page_veille() -> None:
     if entreprises:
         a_retirer = st.selectbox("Retirer une entreprise", ["—"] + [e["nom"] for e in entreprises],
                                  key="veille_retirer")
+        if a_retirer != "—":
+            st.caption("Retirer supprime sa fiche, ses contacts suivis et son actualité ; "
+                       "les profils restent dans l'Historique.")
         if a_retirer != "—" and st.button(f"Retirer {a_retirer}", key="veille_btn_retirer"):
             store.retirer_entreprise(next(e["id"] for e in entreprises if e["nom"] == a_retirer))
             st.rerun()
@@ -221,7 +266,7 @@ def afficher_page_veille() -> None:
                 "Information": _CHAMPS.get(cle.split(".", 1)[1], cle.split(".", 1)[1]), "Valeur": v["valeur"],
                 "Source": "LinkedIn" if v["source"] == "linkedin" else "Annuaire officiel",
                 "Relevé le": v["releve_le"][:10]} for cle, v in fiche.items()]),
-                hide_index=True, use_container_width=True)
+                hide_index=True, width="stretch")
         if motif:
             st.caption(f"Annuaire officiel : entreprise non rapprochée ({motif}). Faute de recoupement sûr "
                        "avec LinkedIn, aucune donnée de l'annuaire n'est affichée.")
@@ -237,7 +282,7 @@ def afficher_page_veille() -> None:
             st.dataframe(pd.DataFrame(contacts)[["famille", "nom", "poste", "degre", "decouvert_le", "url"]]
                          .rename(columns={"famille": "Famille", "nom": "Nom", "poste": "Intitulé",
                                           "degre": "Degré", "decouvert_le": "Trouvé le", "url": "Lien"}),
-                         hide_index=True, use_container_width=True)
+                         hide_index=True, width="stretch")
         elif e["derniere_veille"]:
             st.caption(f"Aucun contact trouvé au passage du {e['derniere_veille'][:10]}.")
 
