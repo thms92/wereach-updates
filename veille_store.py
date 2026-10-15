@@ -1,0 +1,300 @@
+# -*- coding: utf-8 -*-
+"""Stockage de la veille entreprises, dans la base SQLite de l'utilisateur.
+
+Même fichier que les profils et les invitations : un contact trouvé par la
+veille est un profil comme un autre, et la sauvegarde de la base sauvegarde
+tout. Les tables sont créées par `CREATE TABLE IF NOT EXISTS`, comme celles
+de `database.py` : aucune migration, rien de détruit chez qui a déjà une base.
+"""
+
+import json
+import sqlite3
+from contextlib import contextmanager
+from datetime import date
+
+from utils.browsemap import normaliser_url
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS entreprises_suivies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom TEXT NOT NULL,
+    nom_cle TEXT NOT NULL UNIQUE,
+    url_linkedin TEXT,
+    company_id TEXT,
+    etat TEXT NOT NULL DEFAULT 'a_identifier',
+    ajoutee_le TEXT NOT NULL,
+    derniere_veille TEXT,
+    curseur_page INTEGER NOT NULL DEFAULT 0,
+    signature_familles TEXT,
+    derniere_actualite TEXT
+);
+CREATE TABLE IF NOT EXISTS actualites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entreprise_id INTEGER NOT NULL,
+    lien TEXT NOT NULL,
+    titre TEXT NOT NULL,
+    source TEXT,
+    publie_le TEXT,
+    categorie TEXT NOT NULL,
+    trouve_le TEXT NOT NULL,
+    UNIQUE (entreprise_id, lien)
+);
+CREATE TABLE IF NOT EXISTS fiche_entreprise (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entreprise_id INTEGER NOT NULL,
+    champ TEXT NOT NULL,
+    valeur TEXT NOT NULL,
+    source TEXT NOT NULL,
+    precedente TEXT,
+    releve_le TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS contacts_veille (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entreprise_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    nom TEXT,
+    poste TEXT,
+    famille TEXT,
+    degre TEXT,
+    decouvert_le TEXT NOT NULL,
+    nouveau INTEGER NOT NULL,
+    UNIQUE (entreprise_id, url)
+);
+CREATE TABLE IF NOT EXISTS passages_veille (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    debut TEXT NOT NULL,
+    fin TEXT NOT NULL,
+    entreprises TEXT NOT NULL,
+    pages INTEGER NOT NULL,
+    cause TEXT NOT NULL,
+    erreurs TEXT NOT NULL
+);
+"""
+
+
+def _cle_nom(nom: str) -> str:
+    return " ".join((nom or "").split()).lower()
+
+
+class VeilleStore:
+    def __init__(self, db_file: str):
+        self.db_file = db_file
+        with self._con() as con:
+            con.executescript(_SCHEMA)
+
+    @contextmanager
+    def _con(self):
+        # `with sqlite3.connect()` valide mais ne ferme pas : le store est rouvert
+        # à chaque rechargement de Streamlit, les connexions s'accumuleraient.
+        con = sqlite3.connect(self.db_file)
+        con.row_factory = sqlite3.Row
+        try:
+            yield con
+            con.commit()
+        except BaseException:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    # ── Entreprises suivies ────────────────────────────────────────────
+
+    def ajouter_entreprise(self, nom: str, quand: str, url_linkedin=None) -> int:
+        nom = " ".join((nom or "").split())
+        with self._con() as con:
+            ligne = con.execute("SELECT id FROM entreprises_suivies WHERE nom_cle = ?",
+                                (_cle_nom(nom),)).fetchone()
+            if ligne:
+                if url_linkedin:
+                    con.execute("UPDATE entreprises_suivies SET url_linkedin = ? WHERE id = ?",
+                                (url_linkedin, ligne["id"]))
+                return ligne["id"]
+            cur = con.execute(
+                "INSERT INTO entreprises_suivies (nom, nom_cle, url_linkedin, ajoutee_le) VALUES (?, ?, ?, ?)",
+                (nom, _cle_nom(nom), url_linkedin, quand))
+            return cur.lastrowid
+
+    def retirer_entreprise(self, entreprise_id: int) -> None:
+        with self._con() as con:
+            for table, colonne in (("fiche_entreprise", "entreprise_id"),
+                                   ("contacts_veille", "entreprise_id"),
+                                   ("actualites", "entreprise_id"),
+                                   ("entreprises_suivies", "id")):
+                con.execute(f"DELETE FROM {table} WHERE {colonne} = ?", (entreprise_id,))
+
+    def entreprises(self) -> list:
+        with self._con() as con:
+            lignes = con.execute("""
+                SELECT e.*, (SELECT COUNT(*) FROM contacts_veille c WHERE c.entreprise_id = e.id) AS nb_contacts
+                FROM entreprises_suivies e ORDER BY e.nom COLLATE NOCASE""").fetchall()
+        return [{k: l[k] for k in l.keys() if k != "nom_cle"} for l in lignes]
+
+    def maj_identification(self, entreprise_id, etat, company_id=None, url_linkedin=None) -> None:
+        with self._con() as con:
+            con.execute("""UPDATE entreprises_suivies
+                           SET etat = ?, company_id = COALESCE(?, company_id),
+                               url_linkedin = COALESCE(?, url_linkedin)
+                           WHERE id = ?""", (etat, company_id, url_linkedin, entreprise_id))
+
+    def maj_curseur(self, entreprise_id, page: int, signature: str) -> None:
+        with self._con() as con:
+            con.execute("UPDATE entreprises_suivies SET curseur_page = ?, signature_familles = ? WHERE id = ?",
+                        (page, signature, entreprise_id))
+
+    def marquer_passage(self, entreprise_id, quand: str) -> None:
+        with self._con() as con:
+            con.execute("UPDATE entreprises_suivies SET derniere_veille = ? WHERE id = ?", (quand, entreprise_id))
+
+    # ── Fiche ──────────────────────────────────────────────────────────
+
+    def _derniere(self, con, entreprise_id, champ, source):
+        return con.execute("""SELECT valeur FROM fiche_entreprise
+                              WHERE entreprise_id = ? AND champ = ? AND source = ?
+                              ORDER BY id DESC LIMIT 1""", (entreprise_id, champ, source)).fetchone()
+
+    def enregistrer_fiche(self, entreprise_id, valeurs: dict, source: str, quand: str) -> list:
+        """Enregistre les valeurs qui ont changé ; renvoie les champs changés.
+
+        Une première valeur n'est pas un changement : sinon le premier passage
+        sur une entreprise remplirait le récap de « nouveautés » qui n'en sont
+        pas.
+        """
+        changes = []
+        with self._con() as con:
+            for champ, valeur in valeurs.items():
+                valeur = (valeur or "").strip()
+                if not valeur:
+                    continue
+                avant = self._derniere(con, entreprise_id, champ, source)
+                if avant and avant["valeur"] == valeur:
+                    continue
+                con.execute("""INSERT INTO fiche_entreprise
+                               (entreprise_id, champ, valeur, source, precedente, releve_le)
+                               VALUES (?, ?, ?, ?, ?, ?)""",
+                            (entreprise_id, champ, valeur, source, avant["valeur"] if avant else None, quand))
+                if avant:
+                    changes.append(champ)
+        return changes
+
+    def fiche(self, entreprise_id) -> dict:
+        with self._con() as con:
+            lignes = con.execute("""SELECT champ, valeur, source, releve_le FROM fiche_entreprise
+                                    WHERE entreprise_id = ? ORDER BY id""", (entreprise_id,)).fetchall()
+        return {f"{l['source']}.{l['champ']}": {"valeur": l["valeur"], "source": l["source"],
+                                                 "releve_le": l["releve_le"]} for l in lignes}
+
+    def age_fiche_jours(self, entreprise_id, source: str, aujourd_hui: str):
+        with self._con() as con:
+            l = con.execute("SELECT MAX(releve_le) AS d FROM fiche_entreprise WHERE entreprise_id = ? AND source = ?",
+                            (entreprise_id, source)).fetchone()
+        if not l or not l["d"]:
+            return None
+        return (date.fromisoformat(aujourd_hui[:10]) - date.fromisoformat(l["d"][:10])).days
+
+    # ── Contacts ───────────────────────────────────────────────────────
+
+    def relier_contact(self, entreprise_id, contact: dict, famille: str, quand: str, urls_au_fichier: set) -> bool:
+        """Relie un contact à l'entreprise ; True s'il est réellement nouveau.
+
+        Nouveau = jamais relié à cette entreprise ET absent du fichier avant ce
+        passage (comparé sous forme canonique : le fichier contient des liens
+        copiés à la main, avec leurs paramètres de suivi).
+        """
+        url = normaliser_url(contact.get("url"))
+        if url is None:
+            return False
+        connus = {normaliser_url(u) for u in urls_au_fichier or ()}
+        nouveau = url not in connus
+        with self._con() as con:
+            if con.execute("SELECT 1 FROM contacts_veille WHERE entreprise_id = ? AND url = ?",
+                           (entreprise_id, url)).fetchone():
+                return False
+            con.execute("""INSERT INTO contacts_veille
+                           (entreprise_id, url, nom, poste, famille, degre, decouvert_le, nouveau)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (entreprise_id, url, contact.get("nom"), contact.get("poste"), famille,
+                         contact.get("connexions") or "", quand, int(nouveau)))
+        return nouveau
+
+    def contacts(self, entreprise_id) -> list:
+        with self._con() as con:
+            return [dict(l) for l in con.execute(
+                "SELECT * FROM contacts_veille WHERE entreprise_id = ? ORDER BY famille, nom",
+                (entreprise_id,)).fetchall()]
+
+    def nouveautes_depuis(self, quand) -> dict:
+        borne = quand or ""
+        with self._con() as con:
+            contacts = [dict(l) for l in con.execute("""
+                SELECT c.*, e.nom AS entreprise FROM contacts_veille c
+                JOIN entreprises_suivies e ON e.id = c.entreprise_id
+                WHERE c.nouveau = 1 AND c.decouvert_le > ?
+                ORDER BY e.nom COLLATE NOCASE, c.famille, c.nom""", (borne,)).fetchall()]
+            changements = [{"entreprise": l["entreprise"], "champ": l["champ"], "source": l["source"],
+                            "avant": l["precedente"], "apres": l["valeur"], "releve_le": l["releve_le"]}
+                           for l in con.execute("""
+                SELECT f.*, e.nom AS entreprise FROM fiche_entreprise f
+                JOIN entreprises_suivies e ON e.id = f.entreprise_id
+                WHERE f.precedente IS NOT NULL AND f.releve_le > ?
+                ORDER BY e.nom COLLATE NOCASE""", (borne,)).fetchall()]
+            actualites = [dict(l) for l in con.execute("""
+                SELECT a.*, e.nom AS entreprise FROM actualites a
+                JOIN entreprises_suivies e ON e.id = a.entreprise_id
+                WHERE a.trouve_le > ? ORDER BY a.publie_le DESC""", (borne,)).fetchall()]
+        return {"contacts": contacts, "changements": changements, "actualites": actualites}
+
+    # ── Actualité ──────────────────────────────────────────────────────
+
+    def enregistrer_actualites(self, entreprise_id, articles: list, quand: str) -> int:
+        """Enregistre les articles inconnus ; renvoie combien sont nouveaux."""
+        nouveaux = 0
+        with self._con() as con:
+            for a in articles:
+                cur = con.execute("""INSERT OR IGNORE INTO actualites
+                    (entreprise_id, lien, titre, source, publie_le, categorie, trouve_le)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (entreprise_id, a["lien"], a["titre"], a.get("source"), a.get("publie_le"),
+                     a["categorie"], quand))
+                nouveaux += cur.rowcount
+            con.execute("UPDATE entreprises_suivies SET derniere_actualite = ? WHERE id = ?", (quand, entreprise_id))
+        return nouveaux
+
+    def actualites(self, entreprise_id) -> list:
+        with self._con() as con:
+            return [dict(l) for l in con.execute(
+                "SELECT * FROM actualites WHERE entreprise_id = ? ORDER BY publie_le DESC",
+                (entreprise_id,)).fetchall()]
+
+    # ── Passages ───────────────────────────────────────────────────────
+
+    def enregistrer_passage(self, debut, fin, entreprises, pages, cause, erreurs) -> None:
+        with self._con() as con:
+            con.execute("""INSERT INTO passages_veille (debut, fin, entreprises, pages, cause, erreurs)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (debut, fin, json.dumps(entreprises, ensure_ascii=False), pages, cause,
+                         json.dumps(erreurs, ensure_ascii=False)))
+
+    def dernier_passage(self):
+        with self._con() as con:
+            l = con.execute("SELECT * FROM passages_veille ORDER BY id DESC LIMIT 1").fetchone()
+        if not l:
+            return None
+        p = dict(l)
+        p["entreprises"] = json.loads(p["entreprises"])
+        p["erreurs"] = json.loads(p["erreurs"])
+        return p
+
+    # ── Fichier existant ───────────────────────────────────────────────
+
+    def societes_du_fichier(self) -> list:
+        """Sociétés distinctes des profils déjà récupérés, pour proposer l'ajout."""
+        try:
+            with self._con() as con:
+                brutes = [l[0] for l in con.execute(
+                    "SELECT entreprise FROM profiles WHERE entreprise IS NOT NULL AND TRIM(entreprise) != ''")]
+        except sqlite3.OperationalError:
+            return []
+        vues = {}
+        for nom in brutes:
+            vues.setdefault(_cle_nom(nom), nom.strip())
+        return sorted(vues.values(), key=str.lower)
