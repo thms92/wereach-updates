@@ -954,6 +954,97 @@ class DOMSelectors:
             return {resultats: resultats, html: resultats.length ? '' : racine.innerHTML.slice(0, 1000000)};
         }"""
 
+    @staticmethod
+    def extract_degres_js() -> str:
+        """Degré de relation par carte de résultats de personnes : `{vanity: "1er"|"2e"|"3e"}`.
+
+        Le vanity est décodé et en minuscules (même clé que `vanity_depuis_url`).
+        Le degré est lu dans le texte de la carte, sous la forme « · 1er » —
+        vue sur d'autres listes LinkedIn, pas encore sur cette page : on
+        accepte aussi « • » et l'anglais (« 1st »). Une carte sans degré
+        lisible est absente du résultat ; rien de lu → `{}`, et la relation
+        ne viendra alors que des invitations acceptées.
+        """
+        return r"""() => {
+            const DEGRES = {'1er': '1er', '1st': '1er', '2e': '2e', '2nd': '2e', '3e': '3e', '3rd': '3e'};
+            const motif = /[·•]\s*(1er|2e|3e|1st|2nd|3rd)(?![a-z])/i;
+            const vanityDe = href => {
+                const m = (href || '').match(/\/in\/([^/?#]+)/);
+                if (!m || /\/in\/[^/?#]+\/overlay\//.test(href)) return null;
+                let v = m[1];
+                try { v = decodeURIComponent(v); } catch (e) { /* encodage invalide : brut */ }
+                return v.trim().toLowerCase() || null;
+            };
+            const degres = {};
+            for (const carte of document.querySelectorAll('div[role="listitem"], li[role="listitem"]')) {
+                const lien = [...carte.querySelectorAll('a[href*="/in/"]')]
+                    .find(a => vanityDe(a.getAttribute('href')));
+                if (!lien) continue;
+                const vanity = vanityDe(lien.getAttribute('href'));
+                const m = (carte.innerText || carte.textContent || '').match(motif);
+                if (!m || vanity in degres) continue;
+                degres[vanity] = DEGRES[m[1].toLowerCase()];
+            }
+            return degres;
+        }"""
+
+    @staticmethod
+    def extract_coordonnees_js() -> str:
+        """Fenêtre « Coordonnées » d'un profil : `{dialogue, email, telephone, html}`.
+
+        La fenêtre est le `<dialog open>` (ou `[role=dialog]`/`[aria-modal]`
+        visible) dont le texte porte « Coordonnées » / « Contact info » : le
+        profil garde d'autres <dialog> fermés (menus), qu'on ignore.
+        Email : premier lien `mailto:`. Téléphone : premier lien `tel:`, sinon
+        le texte sous la rubrique « Téléphone » (sans « (Mobile) »).
+
+        `dialogue` faux : aucune fenêtre ouverte, `html` = la page. Fenêtre
+        ouverte mais aucune rubrique reconnue : `html` = la fenêtre — sa
+        structure a changé, et « rien de partagé » serait un faux constat.
+        Rubrique reconnue sans email ni téléphone : la personne ne partage
+        rien, `html` vide.
+        """
+        return r"""() => {
+            const net = s => (s || '').replace(/\s+/g, ' ').trim();
+            const sansAccents = s => net(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+            const visible = el => el.tagName === 'DIALOG' ? el.open
+                : !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+            const fenetre = [...document.querySelectorAll('dialog[open], [role="dialog"], [aria-modal="true"]')]
+                .filter(visible)
+                .find(el => /coordonnees|contact info/.test(sansAccents(el.innerText || el.textContent)));
+            if (!fenetre) {
+                const racine = document.querySelector('main') || document.body;
+                return {dialogue: false, email: '', telephone: '', html: racine.innerHTML.slice(0, 1000000)};
+            }
+            const RUBRIQUES = /^(votre profil|your profile|profil|profile|e-mail|email|telephone|phone|site web|sites web|website|websites|adresse|address|anniversaire|birthday|messagerie instantanee|im|en relation depuis|connected)$/;
+            const TELEPHONE = /^(telephone|phone)$/;
+            const libelles = [...fenetre.querySelectorAll('p, span, h3, dt, header')]
+                .filter(el => RUBRIQUES.test(sansAccents(el.innerText || el.textContent)));
+            const mail = fenetre.querySelector('a[href^="mailto:"]');
+            let email = '';
+            if (mail) {
+                let v = (mail.getAttribute('href') || '').slice(7).split('?')[0];
+                try { v = decodeURIComponent(v); } catch (e) { /* brut */ }
+                email = net(v);
+            }
+            let telephone = '';
+            const tel = fenetre.querySelector('a[href^="tel:"]');
+            if (tel) {
+                telephone = net((tel.getAttribute('href') || '').slice(4));
+            } else {
+                const libelle = libelles.find(el => TELEPHONE.test(sansAccents(el.innerText || el.textContent)));
+                let suivant = libelle && libelle.nextElementSibling;
+                while (suivant && !telephone) {
+                    const texte = net((suivant.innerText || suivant.textContent).replace(/\([^)]*\)/g, ' '));
+                    if ((texte.match(/\d/g) || []).length >= 6) telephone = texte;
+                    suivant = suivant.nextElementSibling;
+                }
+            }
+            const lisible = libelles.length || email || telephone;
+            return {dialogue: true, email: email, telephone: telephone,
+                    html: lisible ? '' : fenetre.outerHTML.slice(0, 1000000)};
+        }"""
+
 
 # Outils communs aux scripts du panneau, injectés en tête de chacun : le choix
 # du conteneur doit être le même pour attendre, dérouler et lire.
