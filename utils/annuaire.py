@@ -78,11 +78,12 @@ def _normaliser_commune(commune: str) -> str:
     # change pas la ville ; LinkedIn ne le donne jamais.
     c = re.sub(r"\s+ARRONDISSEMENT$", "", c)
     c = re.sub(r"\s+\d+\s*(E|ER|EME)?$", "", c).strip()
-    # LinkedIn écrit « Boulogne Billancourt » ou « St-Denis » là où l'INSEE
-    # écrit « BOULOGNE-BILLANCOURT » et « SAINT-DENIS » : tiret et espace
-    # s'équivalent, ST/STE s'étendent.
-    c = re.sub(r"^(ST|STE)(?=[\s-])", lambda m: "SAINT" if m.group(1) == "ST" else "SAINTE", c)
-    return re.sub(r"[\s-]+", "-", c)
+    # LinkedIn écrit « Boulogne Billancourt », « St-Denis » ou
+    # « Villeneuve-d’Ascq » là où l'INSEE écrit « BOULOGNE-BILLANCOURT »,
+    # « SAINT-DENIS » et « VILLENEUVE-D'ASCQ » : tiret, espace et apostrophe
+    # (droite ou typographique) s'équivalent, ST/STE s'étendent.
+    c = re.sub(r"^(ST|STE)(?=[\s'’-])", lambda m: "SAINT" if m.group(1) == "ST" else "SAINTE", c)
+    return re.sub(r"[\s'’-]+", "-", c)
 
 
 def commune_du_siege_linkedin(siege: str) -> str:

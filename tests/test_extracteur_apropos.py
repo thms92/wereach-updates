@@ -99,3 +99,11 @@ def test_une_page_inattendue_renvoie_son_html(navigateur):
     r = lire(navigateur, PAGE_SANS_DL)
     assert r["champs"] == {} and r["company_id"] == ""
     assert "Contenu inattendu" in r["html"]
+
+
+def test_rubriques_lues_mais_identifiant_ambigu_renvoie_le_html(navigateur):
+    # Deux liens vers 7654321, deux vers 227766 : égalité.
+    html = PAGE.replace("</main>", '<a href="/x?currentCompany=%5B%22227766%22%5D">c</a></main>')
+    r = lire(navigateur, html)
+    assert r["champs"] and r["company_id"] == ""
+    assert "Siège social" in r["html"]

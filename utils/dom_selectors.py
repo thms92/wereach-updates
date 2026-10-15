@@ -837,8 +837,8 @@ class DOMSelectors:
 
         Ancrée sur la structure sémantique (<dl>/<dt>/<dd>, <main>, lien
         « voir les employés ») et jamais sur les classes CSS, que LinkedIn
-        regénère. Quand aucune rubrique n'est lue, le HTML de <main> est
-        renvoyé pour être enregistré : c'est la seule façon de rattraper un
+        regénère. Quand aucune rubrique n'est lue, ou que l'identifiant est
+        ambigu, le HTML de <main> est renvoyé pour être enregistré : c'est la seule façon de rattraper un
         changement de structure.
         """
         return r"""() => {
@@ -895,7 +895,9 @@ class DOMSelectors:
                 champs: champs,
                 company_id: companyId,
                 description: description,
-                html: Object.keys(champs).length ? '' : racine.innerHTML.slice(0, 1000000)
+                // Rubriques lues mais identifiant vide (égalité) : la page est
+                // aussi rendue, pour voir dans logs/ d'où venait l'ambiguïté.
+                html: (Object.keys(champs).length && companyId) ? '' : racine.innerHTML.slice(0, 1000000)
             };
         }"""
 

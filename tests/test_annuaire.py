@@ -44,6 +44,15 @@ def test_la_commune_du_siege_linkedin():
     assert commune_du_siege_linkedin("") == ""
 
 
+def test_l_apostrophe_typographique_de_linkedin_vaut_celle_de_l_insee():
+    attendu = commune_du_siege_linkedin("Villeneuve-d'Ascq, Hauts-de-France")
+    assert commune_du_siege_linkedin("Villeneuve-d’Ascq, Hauts-de-France") == attendu
+    assert commune_du_siege_linkedin("Villeneuve d’Ascq, Hauts-de-France") == attendu
+    r = choisir_candidat([societe("444444444", "ORBIQUE", "VILLENEUVE-D'ASCQ")], "Orbique",
+                         "Villeneuve-d’Ascq, Hauts-de-France")
+    assert r[0] and r[0]["siren"] == "444444444"
+
+
 def test_le_nom_est_normalise_sans_forme_juridique():
     assert normaliser_nom("Orbique SAS") == normaliser_nom("ORBIQUE") == "ORBIQUE"
     assert normaliser_nom("Café & Cie S.A.") == "CAFE & CIE"
