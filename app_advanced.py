@@ -31,6 +31,7 @@ from logger import logger
 from utils.user_context import (resolve_user_email, user_paths_for,
                                 DEFAULT_DEV_EMAIL, mode_admin)
 from utils.proxy_store import load_proxy, save_proxy
+from utils.verrou_linkedin import message_occupe
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import inject_theme, wordmark
 from version import get_version
@@ -1049,11 +1050,15 @@ elif page == "✉️ Messages":
                 )
                 for a in acceptees:
                     st.session_state.db.marquer_acceptee(a["url"])
-                if acceptees:
+                # Session occupée : rien n'a été vérifié, ce n'est pas « aucune acceptation ».
+                occupe = message_occupe(sc.errors)
+                if occupe:
+                    st.error(f"❌ {occupe}")
+                elif acceptees:
                     st.success(f"✅ {len(acceptees)} personne(s) ont accepté ton invitation !")
                 else:
                     st.info("Aucune nouvelle acceptation détectée pour l'instant.")
-                if sc.errors:
+                if sc.errors and not occupe:
                     with st.expander("⚠️ Détails"):
                         for e in sc.errors:
                             st.write(f"- {e}")
@@ -1091,12 +1096,18 @@ elif page == "✉️ Messages":
                     )
                     for e in envoyes:
                         st.session_state.db.marquer_messagee(e["url"])
-                    st.success(f"✅ {len(envoyes)} message(s) envoyé(s).")
-                    if sc.errors:
-                        with st.expander("⚠️ Détails"):
-                            for er in sc.errors:
-                                st.write(f"- {er}")
-                    st.rerun()
+                    # Session occupée : rien n'est parti ; le dire, et ne pas
+                    # relancer la page, qui effacerait l'explication.
+                    occupe = message_occupe(sc.errors)
+                    if occupe:
+                        st.error(f"❌ {occupe}")
+                    else:
+                        st.success(f"✅ {len(envoyes)} message(s) envoyé(s).")
+                        if sc.errors:
+                            with st.expander("⚠️ Détails"):
+                                for er in sc.errors:
+                                    st.write(f"- {er}")
+                        st.rerun()
 
 elif page == "📜 Logs":
     st.header("📜 Logs du scraper")

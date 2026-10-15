@@ -29,6 +29,17 @@ class VerrouOccupe(Exception):
         self.activite = activite
 
 
+def message_occupe(erreurs):
+    """Le message « session occupée » parmi `erreurs`, ou None.
+
+    Les enveloppes synchrones du scraper rangent le refus parmi leurs
+    erreurs et rendent une liste vide : l'appelant doit le dire en clair
+    plutôt qu'afficher « 0 envoyé » ou « aucune acceptation ».
+    """
+    debut = MESSAGE_OCCUPE.split("{activite}")[0]
+    return next((str(e) for e in erreurs or () if str(e).startswith(debut)), None)
+
+
 def _vivant(pid) -> bool:
     try:
         pid = int(pid)
