@@ -396,6 +396,56 @@ class VeilleStore:
             return set()  # base sans table d'invitations : personne n'a accepté
         return {u for u in (normaliser_url(l[0]) for l in brutes) if u}
 
+    @staticmethod
+    def _en_relation(contact, acceptees) -> bool:
+        return normaliser_degre(contact["degre"]) == "1er" or contact["url"] in acceptees
+
+    def contacts_et_coordonnees(self, entreprise_id) -> list:
+        """Les contacts de l'entreprise, chacun avec ce qu'on sait de ses coordonnées.
+
+        Ajoute à chaque contact : `en_relation`, `coordonnees` (la lecture,
+        ou None) et `echec_le` (dernier essai manqué, ou None). Hors relation,
+        les deux derniers restent à None même si une lecture ancienne existe :
+        on ne montre pas les coordonnées de quelqu'un qui n'est plus en
+        relation. Même ordre que `contacts`.
+        """
+        with self._con() as con:
+            acceptees = self._urls_invitation_acceptee(con)
+            lignes = [dict(l) for l in con.execute("""
+                SELECT c.*, k.email AS k_email, k.telephone AS k_telephone, k.partage AS k_partage,
+                       k.releve_le AS k_releve_le, e.essai_le AS echec_le
+                FROM contacts_veille c
+                LEFT JOIN coordonnees_contacts k ON k.url = c.url
+                LEFT JOIN essais_coordonnees e ON e.url = c.url
+                WHERE c.entreprise_id = ? ORDER BY c.famille, c.nom""", (entreprise_id,)).fetchall()]
+        resultat = []
+        for c in lignes:
+            lue = {k[2:]: c.pop(k) for k in ("k_email", "k_telephone", "k_partage", "k_releve_le")}
+            c["en_relation"] = self._en_relation(c, acceptees)
+            if not c["en_relation"]:
+                c["coordonnees"], c["echec_le"] = None, None
+            else:
+                c["coordonnees"] = lue if lue["partage"] else None
+            resultat.append(c)
+        return resultat
+
+    def coordonnees_nouvelles_depuis(self, quand) -> list:
+        """Coordonnées partagées, lues depuis `quand`, de personnes en relation.
+
+        Lecture seule, comme `nouveautes_depuis` : le récap peut être relu.
+        Un « rien de partagé » n'est pas une nouvelle.
+        """
+        with self._con() as con:
+            acceptees = self._urls_invitation_acceptee(con)
+            lignes = [dict(l) for l in con.execute("""
+                SELECT e.nom AS entreprise, c.nom, c.url, c.degre, k.email, k.telephone, k.releve_le
+                FROM coordonnees_contacts k
+                JOIN contacts_veille c ON c.url = k.url
+                JOIN entreprises_suivies e ON e.id = c.entreprise_id
+                WHERE k.partage = 'oui' AND k.releve_le > ?
+                ORDER BY e.nom COLLATE NOCASE, c.nom""", (quand or "",)).fetchall()]
+        return [l for l in lignes if self._en_relation(l, acceptees)]
+
     def contacts_en_relation(self, entreprise_id, aujourd_hui: str,
                              max_age_jours: int = RELECTURE_COORDONNEES_JOURS) -> list:
         """Contacts en relation dont les coordonnées sont à lire.
@@ -419,7 +469,7 @@ class VeilleStore:
                 WHERE c.entreprise_id = ? ORDER BY c.id""", (entreprise_id,)).fetchall()]
         retenus = []
         for c in lignes:
-            if normaliser_degre(c["degre"]) != "1er" and c["url"] not in acceptees:
+            if not self._en_relation(c, acceptees):
                 continue
             lu, echec = c.pop("coordonnees_le"), c.pop("echec_le")
             if lu and age(lu) < max_age_jours:

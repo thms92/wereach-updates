@@ -371,3 +371,105 @@ def test_un_refus_est_dit_une_fois_sans_cacher_le_dernier_passage(store, monkeyp
     at.run()
     assert not any("en cours (recherche)" in w.value for w in at.warning)
     assert "7 page(s)" in _textes(at)
+
+
+# ── Coordonnées et export ────────────────────────────────────────────────
+
+def _orbique_avec_contacts(store):
+    """Une entreprise, ses coordonnées générales, et un contact de chaque cas."""
+    i = store.ajouter_entreprise("Orbique Conseil", "2026-10-14")
+    store.enregistrer_fiche(i, {"telephone": "+33 1 23 45 67 89", "site": "https://orbique.example"},
+                            "linkedin", "2026-10-14T08:00:00")
+    store.marquer_lecture(i, "linkedin", "2026-10-14T08:00:00")
+    store.enregistrer_fiche(i, {"lecture": "site lu", "email": "contact@orbique.example"}, "site",
+                            "2026-10-14T08:05:00")
+    store.marquer_lecture(i, "site", "2026-10-14T08:05:00")
+    cas = [("jeanne-exemple", "Jeanne Exemple", "1er"), ("paul-exemple", "Paul Exemple", "1er"),
+           ("lea-exemple", "Léa Exemple", "1er"), ("max-exemple", "Max Exemple", "2e"),
+           ("zoe-exemple", "Zoé Exemple", "1er")]
+    for vanity, nom, degre in cas:
+        store.relier_contact(i, {"nom": nom, "poste": "Product Manager",
+                                 "url": f"https://www.linkedin.com/in/{vanity}/", "connexions": degre},
+                             "Product", "2026-10-14T08:00:00", set())
+    store.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne-exemple/", "jeanne@orbique.example", "",
+                                  "2999-01-01T08:00:00")
+    store.enregistrer_coordonnees("https://www.linkedin.com/in/paul-exemple/", "", "", "2026-10-14T09:00:00")
+    store.noter_echec_coordonnees("https://www.linkedin.com/in/lea-exemple/", "2026-10-14T09:00:00")
+    return i
+
+
+def _tableau_contacts(at):
+    return [d.value for d in at.dataframe if "Email" in d.value.columns and "Inviter" not in d.value.columns][0]
+
+
+def test_la_fiche_montre_les_coordonnees_de_l_entreprise_avec_leur_source(store):
+    _orbique_avec_contacts(store)
+    at = _page()
+    assert any("Coordonnées de l'entreprise" in m.value for m in list(at.markdown) + list(at.subheader))
+    [coord] = [d.value for d in at.dataframe if "Source" in d.value.columns
+               and "Email (site)" in set(d.value["Information"])]
+    lignes = {r["Information"]: r for _, r in coord.iterrows()}
+    assert lignes["Téléphone (LinkedIn)"]["Valeur"] == "+33 1 23 45 67 89"
+    assert lignes["Téléphone (LinkedIn)"]["Source"].startswith("LinkedIn")
+    assert lignes["Email (site)"]["Valeur"] == "contact@orbique.example"
+    assert lignes["Email (site)"]["Source"].startswith("Site de l'entreprise")
+    assert lignes["Email (site)"]["Relevé le"] == "2026-10-14"
+    # Site lu sans téléphone : dit, pas laissé vide.
+    assert lignes["Téléphone (site)"]["Valeur"] == "non publié"
+
+
+def test_un_site_non_lisible_est_dit(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_fiche(i, {"lecture": "site non lisible (réseau social)"}, "site", "2026-10-14T08:00:00")
+    store.marquer_lecture(i, "site", "2026-10-14T08:00:00")
+    at = _page()
+    tableaux = " ".join(d.value.to_string() for d in at.dataframe)
+    assert "site non lisible (réseau social)" in tableaux
+
+
+def test_le_tableau_des_contacts_dit_l_etat_de_chaque_coordonnee(store):
+    _orbique_avec_contacts(store)
+    at = _page()
+    t = _tableau_contacts(at)
+    assert {"Degré", "Email", "Téléphone"} <= set(t.columns)
+    par_nom = {r["Nom"]: r for _, r in t.iterrows()}
+    assert par_nom["Jeanne Exemple"]["Email"] == "jeanne@orbique.example"
+    assert par_nom["Jeanne Exemple"]["Degré"] == "1er"
+    assert par_nom["Paul Exemple"]["Email"] == "rien de partagé"
+    assert par_nom["Léa Exemple"]["Email"].startswith("lecture impossible")
+    assert par_nom["Max Exemple"]["Email"] == "après acceptation de l'invitation"
+    assert par_nom["Max Exemple"]["Téléphone"] == "après acceptation de l'invitation"
+    assert par_nom["Zoé Exemple"]["Email"] == "à lire au prochain passage"
+
+
+def test_l_export_des_contacts_a_les_bonnes_colonnes(store):
+    from ui.page_veille import _contacts_a_exporter
+    i = _orbique_avec_contacts(store)
+    at = _page()
+    # L'identifiant d'un widget à clé se termine par sa clé.
+    ids = [b.proto.id for b in at.get("download_button")]
+    assert any(x.endswith(f"veille_dl_xlsx_{i}") for x in ids) and any(x.endswith(f"veille_dl_csv_{i}") for x in ids)
+    df = _contacts_a_exporter(store.contacts_et_coordonnees(i))
+    assert list(df.columns) == ["Nom", "Intitulé", "Famille", "Degré", "Email", "Téléphone", "Lien", "Trouvé le"]
+    assert "jeanne@orbique.example" in set(df["Email"])
+    assert "max@" not in df.to_csv()
+
+
+def test_une_entreprise_sans_contact_n_a_pas_d_export(store):
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    at = _page()
+    assert not [b for b in at.get("download_button") if "veille_dl_" in b.proto.id]
+    assert any("rien à exporter" in c.value.lower() for c in at.caption)
+
+
+def test_le_nom_du_fichier_exporte(store):
+    from ui.page_veille import _nom_export
+    assert _nom_export("Zéphyr & Fils SA", "2026-10-15") == "contacts_zephyr-fils-sa_20261015"
+
+
+def test_le_recap_montre_une_coordonnee_nouvellement_partagee(store):
+    _orbique_avec_contacts(store)
+    at = _page()
+    assert any("Jeanne Exemple" in m.value and "a partagé son email" in m.value for m in at.markdown)
+    assert not any("Paul Exemple a partagé" in m.value for m in at.markdown)
+    assert not any("Rien de nouveau" in x.value for x in at.info)

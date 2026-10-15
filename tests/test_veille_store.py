@@ -389,3 +389,44 @@ def test_retirer_une_entreprise_efface_les_coordonnees_de_ses_seuls_contacts(tmp
     assert s.coordonnees("https://www.linkedin.com/in/jeanne/") is None
     assert sqlite3.connect(db).execute("SELECT COUNT(*) FROM essais_coordonnees").fetchone()[0] == 0
     assert s.coordonnees("https://www.linkedin.com/in/paul/")["email"] == "paul@o.example"
+
+
+# ── Coordonnées pour la fiche et le récap ─────────────────────────────
+
+def test_contacts_et_coordonnees_suivent_la_relation(tmp_path):
+    s, db = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    for v, deg in (("jeanne", "1er"), ("paul", "1er"), ("lea", "1er"), ("max", "2e"), ("zoe", "")):
+        s.relier_contact(i, contact(v, connexions=deg), "Product", "2026-10-15", set())
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "jeanne@orbique.example", "", "2026-10-15T09:00")
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/paul/", "", "", "2026-10-15T09:00")
+    s.noter_echec_coordonnees("https://www.linkedin.com/in/lea/", "2026-10-15T09:00")
+    # Lues un jour, mais la personne n'est plus en relation : rien ne sort.
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/max/", "max@orbique.example", "", "2026-10-15T09:00")
+    _invitation_acceptee(db, "https://www.linkedin.com/in/zoe/")
+    par_url = {c["url"].split("/")[-2]: c for c in s.contacts_et_coordonnees(i)}
+    assert par_url["jeanne"]["en_relation"] and par_url["jeanne"]["coordonnees"]["email"] == "jeanne@orbique.example"
+    assert par_url["paul"]["coordonnees"]["partage"] == "rien"
+    assert par_url["lea"]["coordonnees"] is None and par_url["lea"]["echec_le"] == "2026-10-15T09:00"
+    assert not par_url["max"]["en_relation"] and par_url["max"]["coordonnees"] is None
+    assert par_url["zoe"]["en_relation"] and par_url["zoe"]["coordonnees"] is None
+    assert par_url["zoe"]["echec_le"] is None
+    # Même ordre que `contacts`.
+    assert [c["url"] for c in s.contacts_et_coordonnees(i)] == [c["url"] for c in s.contacts(i)]
+
+
+def test_coordonnees_nouvelles_depuis_la_derniere_visite(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    for v in ("jeanne", "paul", "lea"):
+        s.relier_contact(i, contact(v, connexions="1er"), "Product", "2026-10-01", set())
+    s.relier_contact(i, contact("max", connexions="2e"), "Product", "2026-10-01", set())
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "jeanne@orbique.example", "", "2026-10-15T09:00")
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/paul/", "", "", "2026-10-15T09:00")     # rien
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/lea/", "", "+33 1 00", "2026-10-01T09:00")  # avant
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/max/", "max@x.example", "", "2026-10-15T09:00")  # hors relation
+    [n] = s.coordonnees_nouvelles_depuis("2026-10-10T00:00:00")
+    assert (n["entreprise"], n["nom"], n["email"], n["telephone"]) == ("Orbique", "Jeanne", "jeanne@orbique.example", "")
+    assert len(s.coordonnees_nouvelles_depuis(None)) == 2
+    # Lecture seule : rien n'est consommé.
+    assert len(s.coordonnees_nouvelles_depuis("2026-10-10T00:00:00")) == 1
