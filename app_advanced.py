@@ -13,6 +13,7 @@ import os
 
 from scraper_v2_sync import LinkedInScraperV2Sync
 from ui.invitations import bloc_recuperer_inviter
+from ui.page_veille import afficher_page_veille
 from config import (ScraperConfig, ECOLES, CONCURRENTS, SECTEURS,
                     EMAIL_SUPPORT)
 from scraper_v2 import LinkedInScraperV2 as _S
@@ -125,6 +126,7 @@ if st.session_state.get("auth_email"):
 PAGES = [
     "📊 Dashboard",
     "🔍 Recherche",
+    "🏢 Veille",
     "✉️ Messages",
     "💾 Historique",
     "📜 Logs",
@@ -135,6 +137,7 @@ PAGES = [
 ICONES_PAGES = {
     "📊 Dashboard": ":material/dashboard:",
     "🔍 Recherche": ":material/search:",
+    "🏢 Veille": ":material/domain:",
     "✉️ Messages": ":material/mail:",
     "💾 Historique": ":material/database:",
     "📜 Logs": ":material/terminal:",
@@ -997,6 +1000,9 @@ elif page == "💾 Historique":
             )
     else:
         st.info("Aucun profil dans l'historique")
+
+elif page == "🏢 Veille":
+    afficher_page_veille()
 
 # ==============================================
 # PAGE 6: CONFIGURATION
