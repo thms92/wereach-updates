@@ -283,3 +283,111 @@ def test_retirer_previent_de_ce_qui_est_supprime(store):
     at.selectbox(key="veille_retirer").set_value("Orbique")
     at.run()
     assert any("les profils restent dans l'Historique" in c.value for c in list(at.caption) + list(at.warning))
+
+
+# ── Correctifs de la revue finale ────────────────────────────────────────
+
+@pytest.mark.parametrize("headless", [True, False])
+def test_la_legende_dit_de_garder_la_page_ouverte(store, monkeypatch, headless):
+    from config import ScraperConfig
+    monkeypatch.setattr(ScraperConfig, "HEADLESS", headless)
+    at = _page()
+    assert any("cette page ouverte jusqu'au rapport" in c.value for c in at.caption)
+
+
+def test_coller_son_lien_sur_la_fiche_ne_cree_pas_de_doublon(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.maj_identification(i, "non_identifiee")
+    at = _page()
+    assert any("collez ci-dessous le lien" in w.value for w in at.warning)
+    at.text_input(key=f"veille_lien_fiche_{i}").set_value(
+        "https://www.linkedin.com/company/orbique-conseil/about/?trk=x")
+    _bouton(at, "Enregistrer ce lien").click()
+    at.run()
+    assert not at.exception
+    [e] = store.entreprises()
+    assert (e["nom"], e["url_linkedin"], e["etat"]) == \
+        ("Orbique", "https://www.linkedin.com/company/orbique-conseil/", "a_identifier")
+
+
+def test_coller_un_lien_qui_n_en_est_pas_un_sur_la_fiche_est_refuse(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.maj_identification(i, "non_identifiee")
+    at = _page()
+    at.text_input(key=f"veille_lien_fiche_{i}").set_value("https://www.linkedin.com/in/jeanne/")
+    _bouton(at, "Enregistrer ce lien").click()
+    at.run()
+    assert store.entreprises()[0]["etat"] == "non_identifiee"
+    assert any("/company/" in e.value for e in at.error)
+
+
+def test_les_postes_hors_familles_sont_a_part_et_pas_proposes_a_l_invitation(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.relier_contact(i, {"nom": "Jeanne Exemple", "poste": "Product Manager",
+                             "url": "https://www.linkedin.com/in/jeanne-exemple/"}, "Product", "2999-01-01T08:00:00",
+                         set())
+    store.relier_contact(i, {"nom": "Paul Comptable", "poste": "Comptable",
+                             "url": "https://www.linkedin.com/in/paul-comptable/"}, "Autre", "2999-01-01T08:00:00",
+                         set())
+    at = _page()
+    [recap] = [d.value for d in at.dataframe if "Inviter" in d.value.columns]
+    assert "Jeanne Exemple" in recap.to_string() and "Paul Comptable" not in recap.to_string()
+    assert any(x.label.startswith("Autres postes trouvés (1)") for x in at.expander)
+    assert any("Paul Comptable" in d.value.to_string() for d in at.dataframe if "Inviter" not in d.value.columns)
+
+
+def test_le_recap_montre_trois_actualites_par_entreprise_au_plus(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_actualites(i, [{"titre": f"Orbique nomme {n}", "lien": f"https://n/{n}", "source": "S",
+                                      "publie_le": f"2026-0{n}-01", "categorie": "Nomination"} for n in range(1, 6)],
+                                 "2999-01-01T08:00:00")
+    at = _page()
+    recap = [m.value for m in at.markdown if m.value.startswith("- 📰")]
+    assert [r.split("[")[1].split("]")[0] for r in recap] == ["Orbique nomme 5", "Orbique nomme 4",
+                                                              "Orbique nomme 3"]
+    assert any("+2 autre(s) actualité(s)" in c.value for c in at.caption)
+
+
+def test_les_champs_de_l_annuaire_ont_des_libelles_lisibles(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_fiche(i, {"siren": "333333333", "activite": "70.22Z", "commune": "PARIS",
+                                "effectif": "100 à 199 salariés", "rapprochement": "rapprochée"},
+                            "annuaire", "2026-10-14")
+    at = _page()
+    fiche = [d.value for d in at.dataframe if "Source" in d.value.columns][0]
+    assert {"SIREN", "Activité (NAF)", "Commune du siège", "Effectif (INSEE)"} <= set(fiche["Information"])
+
+
+def test_releve_le_donne_la_derniere_lecture(store):
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    store.enregistrer_fiche(i, {"taille": "201-500 employés"}, "linkedin", "2026-09-01T08:00:00")
+    store.enregistrer_fiche(i, {"recherche": "aucun profil trouvé"}, "linkedin", "2026-09-01T08:00:00")
+    store.marquer_lecture(i, "linkedin", "2026-10-14T08:00:00")
+    at = _page()
+    fiche = [d.value for d in at.dataframe if "Source" in d.value.columns][0]
+    dates = dict(zip(fiche["Information"], fiche["Relevé le"]))
+    assert dates["Taille"] == "2026-10-14"
+    assert dates["Recherche des employés"] == "2026-09-01"
+
+
+def test_un_refus_est_dit_une_fois_sans_cacher_le_dernier_passage(store, monkeypatch):
+    store.enregistrer_passage("2026-10-15T08:00:00", "2026-10-15T08:12:00", ["Orbique"], 7, "budget", [])
+
+    def occupe(chemins, cookie, proxy=None, status=None):
+        s = VeilleStore(str(chemins.db_file))
+        s.enregistrer_passage("2026-10-15T09:00:00", "2026-10-15T09:00:00", [], 0, "occupe",
+                              ["Une autre session LinkedIn de We.Reach est en cours (recherche)"])
+        return RapportPassage(debut="2026-10-15T09:00:00", fin="2026-10-15T09:00:00", cause="occupe",
+                              erreurs=["Une autre session LinkedIn de We.Reach est en cours (recherche)"])
+
+    monkeypatch.setattr(veille, "lancer_passage", occupe)
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    at = _page()
+    at.session_state["global_cookie"] = "COOKIE-DE-TEST"
+    _bouton(at, "🏢 Lancer la veille").click()
+    at.run()
+    assert any("en cours (recherche)" in w.value for w in at.warning)
+    assert "15/10/2026 08:12" in _textes(at) and "7 page(s)" in _textes(at)
+    at.run()
+    assert not any("en cours (recherche)" in w.value for w in at.warning)
+    assert "7 page(s)" in _textes(at)

@@ -17,11 +17,13 @@ import veille
 from config import ScraperConfig
 from ui.invitations import bloc_recuperer_inviter
 from utils.veille_regles import (FAMILLES, PAGES_MAX, PAGES_MIN, ReglagesVeille, charger_reglages,
-                                 resume_fiche, sauver_reglages)
+                                 nom_depuis_lien, resume_fiche, sauver_reglages)
 from veille_store import VeilleStore
 
 _VISITE = "derniere_visite_veille.txt"
 _MOTIF_LIEN = re.compile(r"^https?://([a-z]+\.)?linkedin\.com/company/[^/?#]+", re.I)
+# Actualités par entreprise dans le récap : au-delà, la fiche les a toutes.
+_ACTUALITES_PAR_ENTREPRISE = 3
 
 _CAUSES = {
     "termine": "Passage terminé.",
@@ -29,6 +31,7 @@ _CAUSES = {
     "occupe": "Une autre session LinkedIn était en cours.",
     "rien_a_faire": "Aucune entreprise à passer.",
     "erreur": "Le passage s'est interrompu sur une erreur.",
+    # « interrompu » : phrase du moteur, via MESSAGES_ARRET.
     # Mêmes phrases que le moteur : voir `_afficher_passage`, qui retire la
     # ligne d'erreur identique.
     **veille.MESSAGES_ARRET,
@@ -38,7 +41,10 @@ _CAUSES = {
 _CHAMPS = {"taille": "Taille", "secteur": "Secteur", "siege": "Siège", "site": "Site web",
            "telephone": "Téléphone", "fondee": "Fondée en", "specialisations": "Spécialisations",
            "membres": "Membres LinkedIn", "description": "Description", "recherche": "Recherche des employés",
-           "rapprochement": "Rapprochement annuaire", "effectif": "Effectif"}
+           "rapprochement": "Rapprochement annuaire",
+           # Annuaire officiel
+           "siren": "SIREN", "activite": "Activité (NAF)", "creation": "Création", "categorie": "Catégorie",
+           "commune": "Commune du siège", "dirigeants": "Dirigeants", "effectif": "Effectif (INSEE)"}
 
 _ETATS = {"a_identifier": "à identifier", "identifiee": "identifiée",
           "non_identifiee": "non identifiée — collez son lien", "illisible": "page illisible"}
@@ -67,8 +73,22 @@ def _visite_precedente(config_dir) -> str | None:
     return st.session_state["veille_visite_precedente"]
 
 
-def _nom_depuis_lien(url: str) -> str:
-    return " ".join(url.rstrip("/").split("/")[-1].replace("-", " ").split()).title()
+def _lien_entreprise(saisie: str):
+    """Lien de page entreprise ramené à sa racine, ou None s'il n'en est pas un."""
+    m = _MOTIF_LIEN.match((saisie or "").strip())
+    return m.group(0).rstrip("/") + "/" if m else None
+
+
+def _date_de_releve(cle: str, valeur: dict, lectures: dict) -> str:
+    """Date affichée pour une information : sa dernière lecture, pas son dernier changement.
+
+    Une valeur inchangée n'est pas réécrite ; sans cela, une fiche relue la
+    veille afficherait la date de sa première lecture. Le constat de
+    recherche, lui, garde la sienne : il ne vient pas de la fiche.
+    """
+    if cle.endswith(".recherche"):
+        return valeur["releve_le"]
+    return max(valeur["releve_le"], lectures.get(valeur["source"]) or "")
 
 
 def _motif_non_rapprochee(fiche: dict):
@@ -143,21 +163,37 @@ def afficher_page_veille() -> None:
     nouveautes = store.nouveautes_depuis(_visite_precedente(chemins.config_dir))
     if not nouveautes["contacts"] and not nouveautes["changements"] and not nouveautes["actualites"]:
         st.info("Rien de nouveau depuis votre dernière visite.")
-    if nouveautes["contacts"]:
-        df = pd.DataFrame(nouveautes["contacts"])[["entreprise", "famille", "nom", "poste", "degre", "url"]]
+    colonnes = {"entreprise": "Entreprise", "famille": "Famille", "nom": "Nom", "poste": "Intitulé",
+                 "degre": "Degré", "url": "Lien"}
+    # « Autre » : trouvés par la recherche mais hors des familles visées. Ni
+    # dans le tableau d'invitation, ni comptés dans le coup d'œil.
+    vises = [c for c in nouveautes["contacts"] if c.get("famille") != "Autre"]
+    autres = [c for c in nouveautes["contacts"] if c.get("famille") == "Autre"]
+    if vises:
+        df = pd.DataFrame(vises)[list(colonnes)]
         df.insert(0, "Inviter", False)
         choix = st.data_editor(
-            df.rename(columns={"entreprise": "Entreprise", "famille": "Famille", "nom": "Nom",
-                               "poste": "Intitulé", "degre": "Degré", "url": "Lien"}),
+            df.rename(columns=colonnes),
             key="veille_recap", hide_index=True, width="stretch",
-            disabled=["Entreprise", "Famille", "Nom", "Intitulé", "Degré", "Lien"],
+            disabled=list(colonnes.values()),
         )
         urls = list(choix.loc[choix["Inviter"], "Lien"])
         if urls:
             bloc_recuperer_inviter(urls, "veille", nom_export="veille")
-    for a in nouveautes["actualites"]:
-        st.markdown(f"- 📰 **{a['entreprise']}** — {a['categorie']} : [{a['titre']}]({a['lien']}) "
-                    f"· {a.get('source') or ''} · {(a.get('publie_le') or '')[:10]}")
+    if autres:
+        with st.expander(f"Autres postes trouvés ({len(autres)}) — hors des familles visées"):
+            st.dataframe(pd.DataFrame(autres)[list(colonnes)].rename(columns=colonnes),
+                         hide_index=True, width="stretch")
+    par_entreprise = {}
+    for a in nouveautes["actualites"]:  # déjà triées, la plus récente d'abord
+        par_entreprise.setdefault(a["entreprise"], []).append(a)
+    for entreprise, articles in par_entreprise.items():
+        for a in articles[:_ACTUALITES_PAR_ENTREPRISE]:
+            st.markdown(f"- 📰 **{entreprise}** — {a['categorie']} : [{a['titre']}]({a['lien']}) "
+                        f"· {a.get('source') or ''} · {(a.get('publie_le') or '')[:10]}")
+        if len(articles) > _ACTUALITES_PAR_ENTREPRISE:
+            st.caption(f"{entreprise} : +{len(articles) - _ACTUALITES_PAR_ENTREPRISE} autre(s) actualité(s) "
+                       "— voir sa fiche ci-dessous.")
     for c in nouveautes["changements"]:
         source = "LinkedIn" if c["source"] == "linkedin" else "Annuaire officiel"
         st.markdown(f"- **{c['entreprise']}** — {_CHAMPS.get(c['champ'], c['champ'])} : {c['avant']} → "
@@ -167,6 +203,11 @@ def afficher_page_veille() -> None:
     # place du résumé enregistré (même passage, avec ses compteurs en plus).
     rapport = st.session_state.pop("veille_rapport", None)
     dernier = store.dernier_passage()
+    if rapport is not None and rapport.cause in ("occupe", "rien_a_faire"):
+        # Un refus n'est pas un passage : il est dit une fois, et le résumé
+        # du dernier vrai passage reste en dessous.
+        st.warning(" ".join([_CAUSES[rapport.cause]] + list(rapport.erreurs)))
+        rapport = None
     if rapport is not None:
         _afficher_rapport(rapport)
     elif dernier:
@@ -176,12 +217,15 @@ def afficher_page_veille() -> None:
     # ── Lancer ─────────────────────────────────────────────────────────
     st.markdown("---")
     # Même réglage que celui que lit le scraper au lancement de Chrome.
+    # Quitter la page ou la recharger arrête la veille en cours (Streamlit
+    # interrompt le script) : il faut le dire avant, dans les deux modes.
     if ScraperConfig.HEADLESS:
         st.caption("La veille travaille en arrière-plan quelques minutes : aucune fenêtre ne s'ouvre. "
-                   "Gardez cette page ouverte jusqu'au rapport.")
+                   "Gardez cette page ouverte jusqu'au rapport : la quitter arrête la veille.")
     else:
         st.caption("Une fenêtre Chrome va s'ouvrir et travailler quelques minutes : c'est normal, "
-                   "LinkedIn l'exige. Laissez-la faire.")
+                   "LinkedIn l'exige. Laissez-la faire, et gardez cette page ouverte jusqu'au rapport : "
+                   "la quitter arrête la veille.")
     if st.button("🏢 Lancer la veille", type="primary", key="veille_lancer"):
         if not st.session_state.get("global_cookie"):
             st.error("❌ Cookie manquant — renseignez votre cookie li_at dans la page Recherche.")
@@ -225,12 +269,11 @@ def afficher_page_veille() -> None:
         lien = st.text_input("Ou le lien de sa page LinkedIn", key="veille_lien",
                              placeholder="https://www.linkedin.com/company/…")
         if st.button("Ajouter", key="veille_ajouter_lien"):
-            m = _MOTIF_LIEN.match((lien or "").strip())
-            if not m:
+            url = _lien_entreprise(lien)
+            if not url:
                 st.error("❌ Ce lien n'est pas celui d'une page entreprise LinkedIn (…/company/…).")
             else:
-                url = m.group(0).rstrip("/") + "/"
-                nom = _nom_depuis_lien(url)
+                nom = nom_depuis_lien(url)
                 if not nom:
                     st.error("❌ Impossible de lire le nom de l'entreprise dans ce lien : "
                              "copiez l'adresse complète de sa page LinkedIn.")
@@ -258,6 +301,7 @@ def afficher_page_veille() -> None:
         fiche = _fiche_affichable(fiche_complete)
         contacts = store.contacts(e["id"])
         actualites = store.actualites(e["id"])
+        lectures = store.lectures(e["id"])
         st.markdown(f"**En un coup d'œil** — {resume_fiche(fiche, contacts, actualites, st.session_state.get('veille_visite_precedente'))}")
         if not fiche:
             st.info("Pas encore de fiche : elle sera remplie au prochain passage de la veille.")
@@ -265,8 +309,26 @@ def afficher_page_veille() -> None:
             st.dataframe(pd.DataFrame([{
                 "Information": _CHAMPS.get(cle.split(".", 1)[1], cle.split(".", 1)[1]), "Valeur": v["valeur"],
                 "Source": "LinkedIn" if v["source"] == "linkedin" else "Annuaire officiel",
-                "Relevé le": v["releve_le"][:10]} for cle, v in fiche.items()]),
+                "Relevé le": _date_de_releve(cle, v, lectures)[:10]} for cle, v in fiche.items()]),
                 hide_index=True, width="stretch")
+        # Coller le lien sur la fiche, plutôt que par « Ajouter » : ce dernier
+        # créerait une seconde entreprise, nommée d'après l'adresse.
+        non_identifiee = e["etat"] in ("non_identifiee", "illisible")
+        if non_identifiee:
+            st.warning(f"{e['nom']} n'a pas pu être identifiée sur LinkedIn : collez ci-dessous le lien de "
+                       "sa page entreprise, elle sera relue au prochain passage.")
+        with st.expander("🔗 Lien de sa page LinkedIn", expanded=non_identifiee):
+            if e.get("url_linkedin"):
+                st.caption(f"Lien actuel : {e['url_linkedin']}")
+            colle = st.text_input("Lien de sa page entreprise", key=f"veille_lien_fiche_{e['id']}",
+                                  placeholder="https://www.linkedin.com/company/…")
+            if st.button("Enregistrer ce lien", key="veille_attacher"):
+                url = _lien_entreprise(colle)
+                if not url:
+                    st.error("❌ Ce lien n'est pas celui d'une page entreprise LinkedIn (…/company/…).")
+                else:
+                    store.attacher_lien(e["id"], url)
+                    st.rerun()
         if motif:
             st.caption(f"Annuaire officiel : entreprise non rapprochée ({motif}). Faute de recoupement sûr "
                        "avec LinkedIn, aucune donnée de l'annuaire n'est affichée.")
