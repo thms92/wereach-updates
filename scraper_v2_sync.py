@@ -10,6 +10,7 @@ import pandas as pd
 
 from scraper_v2 import LinkedInScraperV2
 from logger import logger
+from utils.verrou_linkedin import VerrouOccupe, session_linkedin
 
 
 class LinkedInScraperV2Sync:
@@ -25,6 +26,7 @@ class LinkedInScraperV2Sync:
                                           db_file=db_file, profiles_csv=profiles_csv,
                                           config_dir=config_dir)
         self.errors = []
+        self.config_dir = config_dir
 
     def run_scraper(
         self,
@@ -70,29 +72,33 @@ class LinkedInScraperV2Sync:
 
             # Exécuter la méthode async de manière synchrone
             # asyncio.run() crée un nouvel event loop et exécute la coroutine
-            result = asyncio.run(
-                self.scraper.run_scraper_async(
-                    cookie=cookie,
-                    keyword=keyword,
-                    entreprises=entreprises,
-                    nb_profils=nb_profils,
-                    ecoles_ids=ecoles_ids,
-                    secteurs_ids=secteurs_ids,
-                    inviter=inviter,
-                    email_notif=email_notif,
-                    message_invitation=message_invitation,
-                    reinviter_profils_scrapes=reinviter_profils_scrapes,
-                    ile_de_france=ile_de_france,
-                    progress_callback=progress_callback,
-                    status_callback=status_callback
+            with session_linkedin(self.config_dir, "recherche"):
+                result = asyncio.run(
+                    self.scraper.run_scraper_async(
+                        cookie=cookie,
+                        keyword=keyword,
+                        entreprises=entreprises,
+                        nb_profils=nb_profils,
+                        ecoles_ids=ecoles_ids,
+                        secteurs_ids=secteurs_ids,
+                        inviter=inviter,
+                        email_notif=email_notif,
+                        message_invitation=message_invitation,
+                        reinviter_profils_scrapes=reinviter_profils_scrapes,
+                        ile_de_france=ile_de_france,
+                        progress_callback=progress_callback,
+                        status_callback=status_callback
+                    )
                 )
-            )
 
             # Copier les erreurs
             self.errors = self.scraper.errors.copy()
 
             return result
 
+        except VerrouOccupe as occupe:
+            self.errors = [str(occupe)]
+            return pd.DataFrame()
         except Exception as e:
             logger.error(f"❌ Erreur dans le wrapper synchrone: {e}", exc_info=True)
             self.errors.append(f"Erreur wrapper: {e}")
@@ -115,21 +121,25 @@ class LinkedInScraperV2Sync:
         try:
             logger.info(f"🔗 Lancement scraping URLs ({len(urls)} profils)")
 
-            result = asyncio.run(
-                self.scraper.run_url_scraper_async(
-                    cookie=cookie,
-                    urls=urls,
-                    inviter=inviter,
-                    message_invitation=message_invitation,
-                    message_direct=message_direct,
-                    progress_callback=progress_callback,
-                    status_callback=status_callback
+            with session_linkedin(self.config_dir, "récupération par URLs"):
+                result = asyncio.run(
+                    self.scraper.run_url_scraper_async(
+                        cookie=cookie,
+                        urls=urls,
+                        inviter=inviter,
+                        message_invitation=message_invitation,
+                        message_direct=message_direct,
+                        progress_callback=progress_callback,
+                        status_callback=status_callback
+                    )
                 )
-            )
 
             self.errors = self.scraper.errors.copy()
             return result
 
+        except VerrouOccupe as occupe:
+            self.errors = [str(occupe)]
+            return pd.DataFrame()
         except Exception as e:
             logger.error(f"❌ Erreur wrapper URL scraper: {e}", exc_info=True)
             self.errors.append(f"Erreur: {e}")
@@ -145,17 +155,21 @@ class LinkedInScraperV2Sync:
         try:
             logger.info(f"👥 Récolte des profils voisins de {url_reference}")
 
-            result = asyncio.run(
-                self.scraper.recolter_browsemap_async(
-                    cookie=cookie,
-                    url_reference=url_reference,
-                    status_callback=status_callback,
+            with session_linkedin(self.config_dir, "profils similaires"):
+                result = asyncio.run(
+                    self.scraper.recolter_browsemap_async(
+                        cookie=cookie,
+                        url_reference=url_reference,
+                        status_callback=status_callback,
+                    )
                 )
-            )
 
             self.errors = self.scraper.errors.copy()
             return result
 
+        except VerrouOccupe as occupe:
+            self.errors = [str(occupe)]
+            return [], None
         except Exception as e:
             logger.error(f"❌ Erreur récolte profils voisins: {e}", exc_info=True)
             self.errors.append(f"Erreur: {e}")
@@ -165,14 +179,18 @@ class LinkedInScraperV2Sync:
                               progress_callback=None, status_callback=None):
         """Version synchrone : détecte les invitations acceptées (1er degré)."""
         try:
-            result = asyncio.run(
-                self.scraper.verifier_acceptations_async(
-                    cookie=cookie, profils=profils, max_check=max_check,
-                    progress_callback=progress_callback, status_callback=status_callback,
+            with session_linkedin(self.config_dir, "vérification des acceptations"):
+                result = asyncio.run(
+                    self.scraper.verifier_acceptations_async(
+                        cookie=cookie, profils=profils, max_check=max_check,
+                        progress_callback=progress_callback, status_callback=status_callback,
+                    )
                 )
-            )
             self.errors = self.scraper.errors.copy()
             return result
+        except VerrouOccupe as occupe:
+            self.errors = [str(occupe)]
+            return []
         except Exception as e:
             logger.error(f"❌ Erreur vérification acceptations: {e}", exc_info=True)
             self.errors.append(f"Erreur: {e}")
@@ -182,14 +200,18 @@ class LinkedInScraperV2Sync:
                          progress_callback=None, status_callback=None):
         """Version synchrone : envoie un message aux relations sélectionnées."""
         try:
-            result = asyncio.run(
-                self.scraper.envoyer_messages_async(
-                    cookie=cookie, cibles=cibles, message=message, max_msg=max_msg,
-                    progress_callback=progress_callback, status_callback=status_callback,
+            with session_linkedin(self.config_dir, "envoi de messages"):
+                result = asyncio.run(
+                    self.scraper.envoyer_messages_async(
+                        cookie=cookie, cibles=cibles, message=message, max_msg=max_msg,
+                        progress_callback=progress_callback, status_callback=status_callback,
+                    )
                 )
-            )
             self.errors = self.scraper.errors.copy()
             return result
+        except VerrouOccupe as occupe:
+            self.errors = [str(occupe)]
+            return []
         except Exception as e:
             logger.error(f"❌ Erreur envoi messages: {e}", exc_info=True)
             self.errors.append(f"Erreur: {e}")

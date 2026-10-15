@@ -76,6 +76,19 @@ class DailyLimitsTracker:
         self._data["sessions"] = self._data.get("sessions", 0) + 1
         self._save()
 
+    def increment_pages_veille(self, n: int = 1):
+        """Pages LinkedIn chargées par la veille (« À propos », résultats).
+
+        Compteur à part : la veille ne récupère pas des profils un par un,
+        elle charge des pages ; son budget se règle en pages.
+        """
+        self._data["pages_veille"] = self._data.get("pages_veille", 0) + n
+        self._save()
+
+    @property
+    def pages_veille_today(self) -> int:
+        return self._data.get("pages_veille", 0)
+
     @property
     def profiles_today(self) -> int:
         return self._data.get("profiles_scraped", 0)
