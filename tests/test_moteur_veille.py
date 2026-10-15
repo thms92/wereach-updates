@@ -1030,6 +1030,42 @@ def test_un_site_injoignable_est_signale_sans_arreter_la_veille(base):
     assert "site" not in store.lectures(i)  # nouvel essai au prochain passage
 
 
+def test_un_site_en_panne_n_est_ni_reessaye_ni_redit_pendant_7_jours(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    appels = []
+
+    def lignes_site(r):  # le passage dit aussi autre chose (aucun profil trouvé…)
+        return [e for e in r.erreurs if "site" in e]
+
+    def panne(site):
+        appels.append(site)
+        raise veille.SiteInjoignable("HTTP 403")
+
+    r = passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=panne)
+    assert len(appels) == 1 and len(lignes_site(r)) == 1
+    assert store.lectures(i)["site_echec"] == "2026-10-15T08:00:00"
+    # Pendant le délai : aucune requête, aucune nouvelle ligne.
+    r = passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=panne, maintenant="2026-10-21T08:00:00")
+    assert len(appels) == 1 and lignes_site(r) == []
+    # Passé 7 jours : un nouvel essai, donc une nouvelle ligne si ça échoue encore.
+    r = passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=panne, maintenant="2026-10-22T08:00:00")
+    assert len(appels) == 2 and len(lignes_site(r)) == 1
+
+
+def test_une_lecture_reussie_efface_l_echec_du_site(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+
+    def panne(site):
+        raise veille.SiteInjoignable("délai dépassé")
+
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()), site_web=panne)
+    passer(store, db, FauxScraper(FaussePage(), FauxLimites()), maintenant="2026-10-23T08:00:00")  # site_muet : lu
+    lectures = store.lectures(i)
+    assert "site_echec" not in lectures and lectures["site"] == "2026-10-23T08:00:00"
+
+
 def test_sans_site_sur_la_fiche_rien_n_est_lu(base):
     store, db = base
     store.ajouter_entreprise("Orbique", "2026-10-14")
@@ -1273,3 +1309,17 @@ def test_une_coordonnee_que_le_site_ne_publie_plus_est_remplacee(base):
     assert fiche["site.telephone"]["valeur"] == "non publié"
     assert fiche["site.email"]["valeur"] == "non publié"
     assert fiche["site.telephone"]["releve_le"] == "2026-11-15T08:00:00"
+
+
+def test_le_telephone_d_une_personne_est_normalise_en_francais(base):
+    store, db = base
+    store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage(resultats={1: [personne("jeanne-exemple", "PM"), personne("paul-exemple", "PM")]})
+    page.degres = {"jeanne-exemple": "1er", "paul-exemple": "1er"}
+    page.fenetres = {
+        "jeanne-exemple": {"dialogue": True, "email": "", "telephone": "06 12 34 56 78", "html": ""},
+        "paul-exemple": {"dialogue": True, "email": "", "telephone": "+44 20 7946 0958", "html": ""}}
+    passer(store, db, FauxScraper(page, FauxLimites()))
+    # Texte « +33 6 12 34 56 78 » (jamais un nombre pour Excel) ; l'étranger reste tel que lu.
+    assert store.coordonnees(PROFIL.format("jeanne-exemple"))["telephone"] == "+33 6 12 34 56 78"
+    assert store.coordonnees(PROFIL.format("paul-exemple"))["telephone"] == "+44 20 7946 0958"

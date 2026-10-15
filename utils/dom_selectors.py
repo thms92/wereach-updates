@@ -971,7 +971,9 @@ class DOMSelectors:
             // Le badge est seul en fin de ligne (« Jeanne Exemple · 1er », « · 3e et + ») :
             // sans cette ancre, un titre « Consultante · 1er cabinet » ou « · 1st time
             // founder » ferait passer une inconnue pour une relation de 1er degré.
-            const motif = /[·•]\s*(1er|2e|3e|1st|2nd|3rd)(?:\s*(?:et\s*)?\+)?[ \t]*$/im;
+            // \u00a0 : innerText transforme un &nbsp; en espace insécable, que ni [ \t] ni
+            // `$` n'acceptent ; sans lui un badge « · 1er&nbsp; » ne serait pas lu.
+            const motif = /[·•]\s*(1er|2e|3e|1st|2nd|3rd)(?:\s*(?:et\s*)?\+)?[ \t ]*$/im;
             const vanityDe = href => {
                 const m = (href || '').match(/\/in\/([^/?#]+)/);
                 if (!m || /\/in\/[^/?#]+\/overlay\//.test(href)) return null;

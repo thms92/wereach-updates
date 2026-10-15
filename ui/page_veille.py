@@ -329,7 +329,7 @@ def afficher_page_veille() -> None:
                     f"**{c['apres']}** ({source}, {c['releve_le'][:10]})")
     for p in partages:
         quoi = [f"son {n} : {p[k]}" for k, n in (("email", "email"), ("telephone", "téléphone")) if p[k]]
-        st.markdown(f"- **{p['nom']}** ({p['entreprise']}) a partagé " + " et ".join(quoi)
+        st.markdown(f"- **{p['nom'] or p['url']}** ({p['entreprise']}) a partagé " + " et ".join(quoi)
                     + f" ({p['releve_le'][:10]})")
 
     # Le rapport d'un passage qui vient de finir est montré une fois, à la

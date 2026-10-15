@@ -214,3 +214,12 @@ def test_l_attente_ne_reconnait_que_la_fenetre_coordonnees(navigateur):
     autre = profil(PROFIL_D_AUTRUI, titre="Envoyer le profil")
     navigateur.set_content(autre.replace("Coordonnées", "Lien").replace("Modifier les coordonnées", "Modifier"))
     assert navigateur.evaluate(ouverte) is False
+
+
+def test_un_badge_suivi_d_un_espace_insecable_est_lu(navigateur):
+    # innerText transforme &nbsp; en U+00A0, que [ \t] n'accepte pas : sans lui
+    # le badge « · 1er&nbsp; » n'était pas reconnu et la relation était perdue.
+    navigateur.set_content("""<html><body><main><div role="list"><div role="listitem">
+      <a href="https://www.linkedin.com/in/jeanne-exemple/">Jeanne Exemple</a>
+      <div>· 1er&nbsp;</div><div>Consultante</div></div></div></main></body></html>""")
+    assert navigateur.evaluate(DOMSelectors.extract_degres_js()) == {"jeanne-exemple": "1er"}

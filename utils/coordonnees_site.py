@@ -31,6 +31,13 @@ _PLATEFORMES = (
 )
 
 
+# Beaucoup de sites répondent 403 à un client qui se présente comme « We.Reach »
+# (anti-robots) ; on se présente comme un navigateur de bureau courant. Ce sont
+# des pages publiques lues à raison de quelques requêtes par mois.
+USER_AGENT_NAVIGATEUR = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+
 class SiteInjoignable(Exception):
     """Aucune page du site n'a pu être lue."""
 
@@ -268,7 +275,7 @@ def extraire_coordonnees(html: str, domaine: str, avec_telephones: bool = True) 
 # --- Lecture HTTP -----------------------------------------------------------
 def _transport_http(url: str, delai: float, taille_max: int = 1_500_000):
     """(url finale, octets) ; la lecture est plafonnée pour ne pas avaler un fichier géant."""
-    requete = urllib.request.Request(url, headers={"User-Agent": "We.Reach"})
+    requete = urllib.request.Request(url, headers={"User-Agent": USER_AGENT_NAVIGATEUR})
     with urllib.request.urlopen(requete, timeout=delai) as reponse:
         return reponse.geturl(), reponse.read(taille_max)
 

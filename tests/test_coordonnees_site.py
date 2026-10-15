@@ -177,7 +177,9 @@ def test_transport_par_defaut_plafonne_et_signe(monkeypatch):
     url, brut = cs._transport_http("https://exemple.fr", 3.0, taille_max=100)
     assert url == "https://exemple.fr/final"
     assert len(brut) == 100
-    assert vu == {"ua": "We.Reach", "timeout": 3.0}
+    # Un navigateur courant, pas « We.Reach » : beaucoup de sites répondent 403 à ce dernier.
+    assert vu == {"ua": cs.USER_AGENT_NAVIGATEUR, "timeout": 3.0}
+    assert cs.USER_AGENT_NAVIGATEUR.startswith("Mozilla/5.0") and "Chrome/" in cs.USER_AGENT_NAVIGATEUR
 
 
 def test_lire_site_avec_transport_par_defaut(monkeypatch):

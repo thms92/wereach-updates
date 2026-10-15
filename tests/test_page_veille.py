@@ -536,3 +536,15 @@ def test_le_recap_montre_une_coordonnee_nouvellement_partagee(store):
     assert any("Jeanne Exemple" in m.value and "a partagé son email" in m.value for m in at.markdown)
     assert not any("Paul Exemple a partagé" in m.value for m in at.markdown)
     assert not any("Rien de nouveau" in x.value for x in at.info)
+
+
+def test_le_recap_n_ecrit_jamais_none_sans_nom(store):
+    i = _orbique_avec_contacts(store)
+    url = "https://www.linkedin.com/in/anonyme-exemple/"
+    store.relier_contact(i, {"nom": None, "poste": "PM", "url": url, "connexions": "1er"},
+                         "Product", "2026-10-14T08:00:00", set())
+    store.enregistrer_coordonnees(url, "anonyme@orbique.example", "", "2999-01-01T08:00:00")
+    at = _page()
+    lignes = [m.value for m in at.markdown if "a partagé" in m.value]
+    assert any(url in l for l in lignes)
+    assert not any("None" in l for l in lignes)

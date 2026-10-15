@@ -326,7 +326,7 @@ def test_rien_de_partage_est_enregistre_et_date(tmp_path):
     s.enregistrer_coordonnees("http://linkedin.com/in/Jeanne/", "", None, "2026-10-15T10:00:00")
     assert s.coordonnees("https://www.linkedin.com/in/jeanne/") == {
         "url": "https://www.linkedin.com/in/jeanne/", "email": "", "telephone": "",
-        "partage": "rien", "releve_le": "2026-10-15T10:00:00"}
+        "partage": "rien", "releve_le": "2026-10-15T10:00:00", "change_le": "2026-10-15T10:00:00"}
     # « Rien de partagé » compte comme une lecture : pas relue avant 90 jours.
     assert s.contacts_en_relation(i, "2026-10-16") == []
 
@@ -430,3 +430,39 @@ def test_coordonnees_nouvelles_depuis_la_derniere_visite(tmp_path):
     assert len(s.coordonnees_nouvelles_depuis(None)) == 2
     # Lecture seule : rien n'est consommé.
     assert len(s.coordonnees_nouvelles_depuis("2026-10-10T00:00:00")) == 1
+
+
+def test_une_relecture_identique_ne_redevient_pas_nouvelle(tmp_path):
+    s, _ = store(tmp_path)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("jeanne", connexions="1er"), "Product", "2026-10-01", set())
+    url = "https://www.linkedin.com/in/jeanne/"
+    s.enregistrer_coordonnees(url, "jeanne@orbique.example", "", "2026-10-15T09:00")
+    # 90 jours plus tard, mêmes coordonnées : relue (releve_le avance), pas nouvelle.
+    s.enregistrer_coordonnees(url, "jeanne@orbique.example", "", "2027-01-13T09:00")
+    assert s.coordonnees(url)["releve_le"] == "2027-01-13T09:00"
+    assert s.coordonnees_nouvelles_depuis("2027-01-01T00:00:00") == []
+    [n] = s.coordonnees_nouvelles_depuis("2026-10-01T00:00:00")
+    assert n["releve_le"] == "2026-10-15T09:00"
+    # Une valeur changée, elle, est une nouveauté.
+    s.enregistrer_coordonnees(url, "autre@orbique.example", "", "2027-04-13T09:00")
+    assert len(s.coordonnees_nouvelles_depuis("2027-04-01T00:00:00")) == 1
+
+
+def test_une_base_sans_date_de_changement_reste_lisible(tmp_path):
+    # Base créée avant la colonne `change_le` : ajoutée sans toucher aux lignes,
+    # qui retombent sur leur date de lecture.
+    s, db = store(tmp_path)
+    con = sqlite3.connect(db)
+    con.execute("DROP TABLE coordonnees_contacts")
+    con.execute("CREATE TABLE coordonnees_contacts (url TEXT PRIMARY KEY, email TEXT, telephone TEXT, "
+                "partage TEXT NOT NULL, releve_le TEXT NOT NULL)")
+    con.execute("INSERT INTO coordonnees_contacts VALUES ('https://www.linkedin.com/in/jeanne/', 'j@o.example', '', "
+                "'oui', '2026-10-15T09:00')")
+    con.commit(); con.close()
+    s = VeilleStore(db)
+    i = s.ajouter_entreprise("Orbique", "2026-10-15")
+    s.relier_contact(i, contact("jeanne", connexions="1er"), "Product", "2026-10-01", set())
+    s.enregistrer_coordonnees("https://www.linkedin.com/in/jeanne/", "j@o.example", "", "2027-01-13T09:00")
+    assert s.coordonnees_nouvelles_depuis("2027-01-01T00:00:00") == []
+    assert len(s.coordonnees_nouvelles_depuis("2026-10-01T00:00:00")) == 1

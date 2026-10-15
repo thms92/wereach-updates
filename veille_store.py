@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS coordonnees_contacts (
     email TEXT,
     telephone TEXT,
     partage TEXT NOT NULL,
-    releve_le TEXT NOT NULL
+    releve_le TEXT NOT NULL,
+    change_le TEXT
 );
 CREATE TABLE IF NOT EXISTS essais_coordonnees (
     url TEXT PRIMARY KEY,
@@ -114,6 +115,11 @@ class VeilleStore:
         self.db_file = db_file
         with self._con() as con:
             con.executescript(_SCHEMA)
+            # `CREATE TABLE IF NOT EXISTS` n'ajoute pas de colonne à une table
+            # déjà là : on l'ajoute à la main, sans toucher aux lignes existantes
+            # (NULL = « pas de date de changement connue », on retombe sur releve_le).
+            if "change_le" not in {c["name"] for c in con.execute("PRAGMA table_info(coordonnees_contacts)")}:
+                con.execute("ALTER TABLE coordonnees_contacts ADD COLUMN change_le TEXT")
 
     @contextmanager
     def _con(self):
@@ -266,6 +272,10 @@ class VeilleStore:
             con.execute("INSERT OR REPLACE INTO fiche_lectures (entreprise_id, source, lue_le) VALUES (?, ?, ?)",
                         (entreprise_id, source, quand))
 
+    def effacer_lecture(self, entreprise_id, source: str) -> None:
+        with self._con() as con:
+            con.execute("DELETE FROM fiche_lectures WHERE entreprise_id = ? AND source = ?", (entreprise_id, source))
+
     def lectures(self, entreprise_id) -> dict:
         """{source: date de dernière lecture}."""
         with self._con() as con:
@@ -364,8 +374,19 @@ class VeilleStore:
         email, telephone = (email or "").strip(), (telephone or "").strip()
         partage = "oui" if email or telephone else "rien"
         with self._con() as con:
-            con.execute("""INSERT OR REPLACE INTO coordonnees_contacts (url, email, telephone, partage, releve_le)
-                           VALUES (?, ?, ?, ?, ?)""", (url, email, telephone, partage, quand))
+            avant = con.execute("SELECT * FROM coordonnees_contacts WHERE url = ?", (url,)).fetchone()
+            # `releve_le` pilote la relecture (90 jours) ; `change_le` dit depuis
+            # quand ces valeurs-là sont connues. Une relecture à l'identique garde
+            # la date du premier partage : le récap ne la re-présente pas comme
+            # une nouveauté tous les 90 jours.
+            if avant and avant["partage"] == "oui" and partage == "oui" \
+                    and (avant["email"] or "", avant["telephone"] or "") == (email, telephone):
+                change = avant["change_le"] or avant["releve_le"]
+            else:
+                change = quand
+            con.execute("""INSERT OR REPLACE INTO coordonnees_contacts
+                               (url, email, telephone, partage, releve_le, change_le)
+                           VALUES (?, ?, ?, ?, ?, ?)""", (url, email, telephone, partage, quand, change))
             con.execute("DELETE FROM essais_coordonnees WHERE url = ?", (url,))
 
     def noter_echec_coordonnees(self, url, quand: str) -> None:
@@ -438,11 +459,12 @@ class VeilleStore:
         with self._con() as con:
             acceptees = self._urls_invitation_acceptee(con)
             lignes = [dict(l) for l in con.execute("""
-                SELECT e.nom AS entreprise, c.nom, c.url, c.degre, k.email, k.telephone, k.releve_le
+                SELECT e.nom AS entreprise, c.nom, c.url, c.degre, k.email, k.telephone,
+                       COALESCE(k.change_le, k.releve_le) AS releve_le
                 FROM coordonnees_contacts k
                 JOIN contacts_veille c ON c.url = k.url
                 JOIN entreprises_suivies e ON e.id = c.entreprise_id
-                WHERE k.partage = 'oui' AND k.releve_le > ?
+                WHERE k.partage = 'oui' AND COALESCE(k.change_le, k.releve_le) > ?
                 ORDER BY e.nom COLLATE NOCASE, c.nom""", (quand or "",)).fetchall()]
         return [l for l in lignes if self._en_relation(l, acceptees)]
 

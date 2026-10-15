@@ -31,7 +31,7 @@ from utils.annuaire import (
     normaliser_nom,
 )
 from utils.browsemap import normaliser_url
-from utils.coordonnees_site import SiteInjoignable, lire_site, motif_inutilisable
+from utils.coordonnees_site import SiteInjoignable, _normaliser_fr, lire_site, motif_inutilisable
 from utils.dom_selectors import DOMSelectors
 from utils.identification import choisir_entreprise, url_recherche_entreprises
 from utils.veille_regles import (
@@ -208,6 +208,13 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         age = store.age_fiche_jours(eid, "site", maintenant)
         if not site or (age is not None and age < RELECTURE_FICHE_JOURS):
             return
+        # Panne récente (réseau, HTTP, certificat) : on ne réessaie ni ne redit
+        # rien avant 7 jours. Source « site_echec » à part de « site » : un
+        # échec n'est pas une lecture (l'âge de la fiche reste celui de la
+        # dernière lecture réussie) et un succès l'efface.
+        echec = store.age_fiche_jours(eid, "site_echec", maintenant)
+        if echec is not None and echec < NOUVEL_ESSAI_COORDONNEES_JOURS:
+            return
         motif = motif_inutilisable(site)
         if motif:
             # Refus durable (réseau social, adresse locale…) : dit une fois dans
@@ -222,7 +229,10 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
             # quelques secondes chacune) ne doit pas figer le navigateur ouvert.
             lu = await asyncio.to_thread(site_web, site)
         except SiteInjoignable as e:
-            # Pas de date de lecture : nouvel essai au prochain passage.
+            # Pas de date de lecture, mais un échec daté : nouvel essai dans 7 jours.
+            # Seul un échec neuf arrive ici (le délai est tenu plus haut), donc
+            # la ligne n'est dite qu'une fois par essai.
+            store.marquer_lecture(eid, "site_echec", maintenant)
             rapport.erreurs.append(f"{nom} : site {site} injoignable ({e}) — coordonnées générales non relues.")
             return
         emails, telephones = (lu.get("emails") or [])[:3], (lu.get("telephones") or [])[:3]
@@ -233,6 +243,7 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
         store.enregistrer_fiche(eid, {"lecture": "site lu", "email": ", ".join(emails) or "non publié",
                                       "telephone": ", ".join(telephones) or "non publié"}, "site", maintenant)
         store.marquer_lecture(eid, "site", maintenant)
+        store.effacer_lecture(eid, "site_echec")
 
     async def lire_coordonnees(page, entreprise, contact):
         """La fenêtre « Coordonnées » d'une personne en relation.
@@ -273,7 +284,11 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                                    f"changé ({ou}) ; rien n'est enregistré.")
             store.noter_echec_coordonnees(contact["url"], maintenant)
             return
-        store.enregistrer_coordonnees(contact["url"], lu.get("email"), lu.get("telephone"), maintenant)
+        # Même forme « +33 6 12 34 56 78 » que les téléphones de site : un numéro
+        # collé sans espaces deviendrait un nombre dans Excel. Un numéro non
+        # français (ou illisible) reste tel que lu.
+        brut = (lu.get("telephone") or "").strip()
+        store.enregistrer_coordonnees(contact["url"], lu.get("email"), _normaliser_fr(brut) or brut, maintenant)
 
     async def traiter(page, entreprise, connus) -> bool:
         """Une entreprise ; False si elle n'a pas pu être passée.
