@@ -928,7 +928,14 @@ elif page == "🔍 Recherche":
 
             if sim_retenues:
                 st.markdown("---")
-                bloc_recuperer_inviter([p["url"] for p in sim_retenues], "sim")
+                st.markdown("**Étape 2 — récupérer les infos de ces profils**")
+                st.caption(
+                    "Chaque profil est ouvert pour en lire le poste et la "
+                    "société. Cochez la case pour envoyer en même temps une "
+                    "invitation."
+                )
+                bloc_recuperer_inviter([p["url"] for p in sim_retenues], "sim",
+                                       nom_export="profils_similaires")
 
 # ==============================================
 # PAGE 5: HISTORIQUE

@@ -22,3 +22,10 @@ def test_le_bloc_porte_les_garde_fous():
     source = Path("ui/invitations.py").read_text(encoding="utf-8")
     assert "remaining_invitations" in source
     assert 'setdefault(f"{prefixe}_inviter", False)' in source
+
+
+def test_le_nom_d_export_est_un_parametre():
+    source = Path("ui/invitations.py").read_text(encoding="utf-8")
+    assert 'nom_export: str = "profils_similaires"' in source
+    assert 'f"{nom_export}_{datetime' in source
+    assert "profils_similaires_{" not in source

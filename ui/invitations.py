@@ -16,14 +16,8 @@ import streamlit as st
 import scraper_v2_sync
 
 
-def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = "🚀 Récupérer les infos") -> None:
-    st.markdown("**Étape 2 — récupérer les infos de ces profils**")
-    st.caption(
-        "Chaque profil est ouvert pour en lire le poste et la "
-        "société. Cochez la case pour envoyer en même temps une "
-        "invitation."
-    )
-
+def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = "🚀 Récupérer les infos",
+                          nom_export: str = "profils_similaires") -> None:
     st.session_state.setdefault(f"{prefixe}_inviter", False)
     inviter = st.checkbox(
         "Envoyer des invitations", key=f"{prefixe}_inviter"
@@ -86,7 +80,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = "🚀 Récu
                     st.download_button(
                         label="📥 Télécharger Excel",
                         data=excel_data,
-                        file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        file_name=f"{nom_export}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"{prefixe}_dl_excel",
                     )
@@ -95,7 +89,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = "🚀 Récu
                     st.download_button(
                         label="📥 Télécharger CSV",
                         data=csv_data,
-                        file_name=f"profils_similaires_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        file_name=f"{nom_export}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv",
                         key=f"{prefixe}_dl_csv",
                     )
