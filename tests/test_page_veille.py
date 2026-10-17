@@ -405,7 +405,7 @@ def _tableau_contacts(at):
 def test_la_fiche_montre_les_coordonnees_de_l_entreprise_avec_leur_source(store):
     _orbique_avec_contacts(store)
     at = _page()
-    assert any("Coordonnées de l'entreprise" in m.value for m in list(at.markdown) + list(at.subheader))
+    assert any("Coordonnées de l'entreprise" in m.value for m in list(at.markdown) + list(at.subheader) + list(at.header))
     [coord] = [d.value for d in at.dataframe if "Source" in d.value.columns
                and "Email (site)" in set(d.value["Information"])]
     lignes = {r["Information"]: r for _, r in coord.iterrows()}

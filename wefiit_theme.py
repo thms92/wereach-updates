@@ -43,6 +43,24 @@ _DARK_VARS = """
 """
 
 
+# Couleurs des graphiques : l'accent d'abord, puis des teintes de la même
+# famille et l'orange du wordmark — jamais la palette par défaut de Plotly,
+# dont le rouge vif se lit comme une alerte.
+PALETTE_GRAPHIQUES = ["#172982", "#5B7CFA", "#F98F03", "#93A8FF", "#1F2F8F",
+                      "#FBC56B", "#6B7280", "#C7D2FE"]
+
+
+def declarer_langue_francaise() -> None:
+    """Passe `<html lang>` en français.
+
+    Streamlit sert la page en `lang="en"` et n'offre aucun réglage : un
+    lecteur d'écran prononce alors tout le texte français avec des règles
+    anglaises. Le script s'exécute dans la page (pas dans une iframe).
+    """
+    st.html("<script>document.documentElement.lang='fr';</script>",
+            unsafe_allow_javascript=True)
+
+
 def wordmark(size: float = 1.9, center: bool = True) -> str:
     """Retourne le HTML du logo « We.Reach » (accents orange)."""
     align = "center" if center else "left"
@@ -68,6 +86,11 @@ html, body, [class*="css"], .stApp {{ font-family:'Inter',system-ui,sans-serif !
 .block-container {{ padding-top:2.2rem !important; padding-bottom:3rem !important; max-width:1240px; }}
 h1,h2,h3 {{ color:var(--wf-text) !important; letter-spacing:-.02em; font-weight:800 !important; }}
 h1 {{ font-size:1.75rem !important; }}
+/* Echelle des titres d'outil (rapport ~1.2) : la section (h2) reste sous le
+   titre de page (h1). Par defaut Streamlit dessine h2 a 36px, plus gros que
+   notre h1 a 28px. */
+h2 {{ font-size:1.3rem !important; letter-spacing:-.015em; }}
+h3 {{ font-size:1.1rem !important; }}
 p, span, label, li, .stMarkdown {{ color:var(--wf-text); }}
 header[data-testid="stHeader"] {{ background:transparent; height:0; }}
 #MainMenu, footer {{ visibility:hidden; }}

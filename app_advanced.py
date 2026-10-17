@@ -33,7 +33,8 @@ from utils.user_context import (resolve_user_email, user_paths_for,
 from utils.proxy_store import load_proxy, save_proxy
 from utils.verrou_linkedin import message_occupe
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
-from wefiit_theme import inject_theme, wordmark
+from wefiit_theme import (PALETTE_GRAPHIQUES, declarer_langue_francaise,
+                          inject_theme, wordmark)
 from version import get_version
 from utils.nouveautes import charger_notes, doit_annoncer
 from utils.diagnostic import lien_mailto, ouvrir_mail, rapport
@@ -51,6 +52,7 @@ st.set_page_config(
 
 # Thème We.Reach (fond clair uniquement)
 inject_theme()
+declarer_langue_francaise()
 
 def current_user_email():
     try:
@@ -79,7 +81,7 @@ if _email is None:
     st.markdown(wordmark(size=2.4), unsafe_allow_html=True)
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
-        st.subheader("🔒 Connexion")
+        st.subheader("Connexion")
         with st.form("login_form"):
             _em = st.text_input("Email", placeholder=f"prenom.nom@{ALLOWED_DOMAIN}")
             _pw = st.text_input("Mot de passe", type="password")
@@ -114,7 +116,6 @@ if st.session_state.get('user_email') != _email:
 st.markdown(wordmark(), unsafe_allow_html=True)
 
 # Sidebar Navigation
-st.sidebar.title("🧭 Navigation")
 
 if st.session_state.get("auth_email"):
     st.sidebar.caption(f"👤 {st.session_state['auth_email']}")
@@ -144,6 +145,17 @@ ICONES_PAGES = {
     "📜 Logs": ":material/terminal:",
 }
 
+# Libellés affichés dans le menu. Les clés de PAGES restent les identifiants
+# internes (session, clés de widgets, tests) : seul l'affichage change.
+LIBELLES_PAGES = {
+    "📊 Dashboard": "Tableau de bord",
+    "🔍 Recherche": "Recherche",
+    "🏢 Veille": "Veille",
+    "✉️ Messages": "Messages",
+    "💾 Historique": "Historique",
+    "📜 Logs": "Journal",
+}
+
 _page_memorisee = st.session_state.get("page")
 if _page_memorisee not in PAGES:
     st.session_state["page"] = PAGES[0]
@@ -155,7 +167,7 @@ with st.sidebar.container(key="nav_menu"):
     for _libelle in PAGES:
         _actif = st.session_state["page"] == _libelle
         if st.button(
-            _libelle.split(" ", 1)[1],
+            LIBELLES_PAGES[_libelle],
             icon=ICONES_PAGES[_libelle],
             key=f"nav_{_libelle}",
             type="primary" if _actif else "secondary",
@@ -334,7 +346,7 @@ _bandeau_mise_a_jour()
 # PAGE 1: DASHBOARD
 # ==============================================
 if page == "📊 Dashboard":
-    st.header("📊 Tableau de bord")
+    st.title("Tableau de bord")
 
     # Récupérer les statistiques
     stats = st.session_state.db.get_statistiques()
@@ -344,23 +356,25 @@ if page == "📊 Dashboard":
 
     with col1:
         st.metric(
-            label="Total Profils",
+            label="Profils au fichier",
             value=stats.get('total_profils', 0),
             delta=None
         )
 
     with col2:
         st.metric(
-            label="Total Invitations",
+            label="Invitations envoyées",
             value=stats.get('total_invitations', 0),
             delta=None
         )
 
     with col3:
+        # Un plafond n'est pas une hausse : affiché « n / max » plutôt qu'en
+        # delta, que Streamlit dessine en flèche verte montante.
         st.metric(
-            label="Invitations Aujourd'hui",
-            value=stats.get('invitations_aujourdhui', 0),
-            delta=f"Limite: {ScraperConfig.MAX_INVITATIONS_PER_DAY}"
+            label="Invitations aujourd'hui",
+            value=f"{stats.get('invitations_aujourdhui', 0)} / {ScraperConfig.MAX_INVITATIONS_PER_DAY}",
+            help="Plafond quotidien de sécurité pour votre compte LinkedIn.",
         )
 
     with col4:
@@ -369,7 +383,7 @@ if page == "📊 Dashboard":
             taux = round((stats.get('total_invitations', 0) / stats.get('total_profils', 0)) * 100, 1)
         st.metric(
             label="Taux d'invitation",
-            value=f"{taux}%"
+            value=f"{taux:.1f} %".replace(".", ",")
         )
 
     st.markdown("---")
@@ -378,35 +392,38 @@ if page == "📊 Dashboard":
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📚 Profils par École")
+        st.header("Profils par école")
         if stats.get('par_ecole'):
             df_ecole = pd.DataFrame(
                 list(stats['par_ecole'].items()),
                 columns=['École', 'Nombre']
             )
+            # Couleurs de la marque, pas la palette par défaut de Plotly.
             fig = px.pie(
                 df_ecole,
                 values='Nombre',
                 names='École',
-                title='Répartition par école'
+                color_discrete_sequence=PALETTE_GRAPHIQUES,
             )
+            fig.update_layout(font_family="Inter, sans-serif",
+                              margin=dict(t=10, b=10, l=10, r=10))
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Aucune donnée disponible")
 
     with col2:
-        st.subheader("🕐 Dernière Recherche")
+        st.header("Dernière recherche")
         if stats.get('derniere_recherche'):
             dr = stats['derniere_recherche']
-            st.write(f"**Keyword:** {dr.get('keyword', 'N/A')}")
-            st.write(f"**Date:** {dr.get('date', 'N/A')}")
-            st.write(f"**Profils trouvés:** {dr.get('nb_profils', 0)}")
+            st.write(f"**Mots-clés :** {dr.get('keyword') or '—'}")
+            st.write(f"**Date :** {str(dr.get('date') or '—')[:16]}")
+            st.write(f"**Profils trouvés :** {dr.get('nb_profils', 0)}")
         else:
             st.info("Aucune recherche effectuée")
 
     # Alertes
     st.markdown("---")
-    st.subheader("⚠️ Alertes & Limites")
+    st.header("Alertes et limites")
 
     invitations_today = stats.get('invitations_aujourdhui', 0)
     max_invitations = ScraperConfig.MAX_INVITATIONS_PER_DAY
@@ -422,7 +439,7 @@ if page == "📊 Dashboard":
 # PAGE 2: RECHERCHE
 # ==============================================
 elif page == "🔍 Recherche":
-    st.header("🔍 Nouvelle Recherche")
+    st.title("Nouvelle recherche")
 
     # Compteur file d'attente pour le label de l'onglet
     qm = st.session_state.queue_manager
@@ -488,7 +505,7 @@ elif page == "🔍 Recherche":
 
     # TAB 1: CANDIDATS
     with tab1:
-        st.subheader("Recherche de candidats — écoles, entreprises et secteurs")
+        st.header("Recherche de candidats — écoles, entreprises et secteurs")
 
         col1, col2 = st.columns([1, 2])
 
@@ -502,6 +519,7 @@ elif page == "🔍 Recherche":
             )
             concurrents = st.multiselect(
                 "🎯 Cabinets concurrents (optionnel)", CONCURRENTS,
+                placeholder="Choisir des cabinets…",
                 help="Chasse : cible les profils actuellement dans ces cabinets.",
             )
             # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.
@@ -561,6 +579,7 @@ elif page == "🔍 Recherche":
             secteurs_noms = st.multiselect(
                 "🏭 Secteurs d'activité (optionnel)",
                 list(SECTEURS.keys()),
+                placeholder="Choisir des secteurs…",
                 help="Les secteurs se cumulent en OU, et se combinent en ET avec les écoles et entreprises.",
                 key="secteurs_candidat",
             )
@@ -631,7 +650,7 @@ elif page == "🔍 Recherche":
 
     # TAB 2: CLIENTS
     with tab2:
-        st.subheader("Recherche clients/entreprises (sans filtre école)")
+        st.header("Recherche clients/entreprises (sans filtre école)")
 
         cookie_client = st.session_state.global_cookie
 
@@ -747,7 +766,7 @@ elif page == "🔍 Recherche":
 
     # TAB 3: PROFILS SIMILAIRES
     with tab3:
-        st.subheader("Retrouver un profil comme celui-là, ailleurs")
+        st.header("Retrouver un profil comme celui-là, ailleurs")
         st.caption(
             "Partez d'un profil qui vous a donné satisfaction : LinkedIn "
             "propose lui-même les profils que les mêmes personnes consultent. "
@@ -945,7 +964,7 @@ elif page == "🔍 Recherche":
 # PAGE 5: HISTORIQUE
 # ==============================================
 elif page == "💾 Historique":
-    st.header("💾 Historique des Profils")
+    st.title("Historique des profils")
 
     # Filtres
     col1, col2, col3 = st.columns(3)
@@ -976,8 +995,19 @@ elif page == "💾 Historique":
 
         st.write(f"**{len(df)} profils trouvés**")
 
-        # Afficher le dataframe
-        st.dataframe(df, use_container_width=True)
+        # Colonnes lisibles : les noms techniques de la base et l'index pandas
+        # n'ont rien à faire à l'écran.
+        colonnes = {
+            "nom": "Nom", "poste": "Poste", "entreprise": "Entreprise",
+            "ecole": "École", "localisation": "Localisation",
+            "invitation_envoyee": "Invitation", "date_scraping": "Ajouté le",
+            "url": "Profil",
+        }
+        affichage = df[[c for c in colonnes if c in df.columns]].rename(columns=colonnes)
+        st.dataframe(
+            affichage, hide_index=True, width="stretch",
+            column_config={"Profil": st.column_config.LinkColumn("Profil", display_text="Ouvrir")},
+        )
 
         # Export
         col1, col2 = st.columns(2)
@@ -1009,7 +1039,7 @@ elif page == "🏢 Veille":
 # PAGE 6: CONFIGURATION
 # ==============================================
 elif page == "✉️ Messages":
-    st.header("✉️ Suivi & Messages")
+    st.title("Suivi et messages")
     st.caption("Détecte qui a accepté ton invitation, puis envoie-leur un message.")
 
     _ckm = st.session_state.global_cookie
@@ -1066,7 +1096,7 @@ elif page == "✉️ Messages":
         st.markdown("---")
 
         # ── 2. Envoyer les messages ──
-        st.subheader("💬 Message aux personnes qui ont accepté")
+        st.header("Message aux personnes qui ont accepté")
         acc = st.session_state.db.acceptees_non_messagees()
         if not acc:
             st.info("Personne à messager pour l'instant. Lance d'abord la vérification ci-dessus.")
@@ -1110,7 +1140,7 @@ elif page == "✉️ Messages":
                         st.rerun()
 
 elif page == "📜 Logs":
-    st.header("📜 Logs du scraper")
+    st.title("Journal d'exécution")
     st.caption("Journal d'exécution en temps réel — pour voir où en est un scraping ou pourquoi il s'arrête.")
 
     col_l1, col_l2 = st.columns([1, 3])
@@ -1139,10 +1169,5 @@ elif page == "📜 Logs":
 
     st.caption("ℹ️ Le journal est partagé par l'instance (pas encore séparé par utilisateur).")
 
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: gray;'>LinkedIn Scraper Pro v2.0 - "
-    "Développé avec ❤️ par votre équipe</div>",
-    unsafe_allow_html=True
-)
+# Pas de pied de page : le nom et la version vivent dans la barre latérale.
+# L'ancien (« LinkedIn Scraper Pro v2.0 ») contredisait « We.Reach v1.5.x ».

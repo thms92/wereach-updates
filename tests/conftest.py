@@ -38,7 +38,7 @@ APP = Path(__file__).resolve().parents[1] / "app_advanced.py"
 # touchent donc jamais au cookie ni à la base de l'utilisateur réel.
 EMAIL_DE_TEST = "tests@wefiit.com"
 
-TITRE_ECRAN_CONNEXION = "🔒 Connexion"
+TITRE_ECRAN_CONNEXION = "Connexion"
 
 
 def chemins_de_test():
@@ -81,7 +81,7 @@ def verifier_page_affichee(at: AppTest, page: str) -> None:
         f"la navigation n'a pas été rendue (boutons trouvés : {cles_nav})"
     )
 
-    assert at.header, "aucun en-tête : le corps de la page n'a pas été rendu"
+    assert at.title or at.header, "aucun titre : le corps de la page n'a pas été rendu"
     assert at.session_state["page"] == page
 
 

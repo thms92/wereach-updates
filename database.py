@@ -83,7 +83,9 @@ class DatabaseManager:
 
             conn.commit()
             conn.close()
-            logger.info("Base de données initialisée avec succès")
+            # Niveau debug : le message tombait à chaque scraper créé (chaque action)
+            # et noyait le journal que l'équipe consulte pour diagnostiquer.
+            logger.debug("Base de données initialisée avec succès")
 
         except Exception as e:
             logger.error(f"Erreur initialisation DB: {e}")

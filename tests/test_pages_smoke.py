@@ -36,7 +36,7 @@ def test_le_test_de_fumee_vire_au_rouge_devant_l_ecran_de_connexion(acces_config
     at = lancer_app("📊 Dashboard", authentifier=False)
 
     # L'app s'est bien arrêtée sur l'écran de connexion…
-    assert [s.value for s in at.subheader] == ["🔒 Connexion"]
+    assert [s.value for s in at.subheader] == ["Connexion"]
     assert not at.exception
 
     # … et la vérification du test de fumée le refuse.

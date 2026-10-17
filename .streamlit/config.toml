@@ -4,7 +4,15 @@ primaryColor             = "#172982"   # accent bleu — CTA, liens, focus, acti
 backgroundColor          = "#FBFBFA"   # off-white — fond principal
 secondaryBackgroundColor = "#FFFFFF"   # surfaces (sidebar, cards, inputs)
 textColor                = "#14181C"   # charcoal — texte
-font                     = "sans serif"
+# Inter déclarée ici, pas seulement en CSS : la règle CSS de wefiit_theme.py
+# perdait face aux styles de Streamlit, et tout s'affichait en Source Sans.
+font                     = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+codeFont                 = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+
+[client]
+# Cache les menus de développement de Streamlit (dont « Deploy ») : l'équipe
+# n'en a pas l'usage.
+toolbarMode = "minimal"
 
 [server]
 headless = true

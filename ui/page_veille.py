@@ -293,10 +293,10 @@ def _afficher_rapport(rapport) -> None:
 def afficher_page_veille() -> None:
     chemins = st.session_state.user_paths
     store = VeilleStore(str(chemins.db_file))
-    st.header("🏢 Veille entreprises")
+    st.title("Veille entreprises")
 
     # ── Nouveau aujourd'hui ────────────────────────────────────────────
-    st.subheader("Nouveau depuis votre dernière visite")
+    st.header("Nouveau depuis votre dernière visite")
     visite = _visite_precedente(chemins.config_dir)
     nouveautes = store.nouveautes_depuis(visite)
     partages = store.coordonnees_nouvelles_depuis(visite)
@@ -375,7 +375,7 @@ def afficher_page_veille() -> None:
 
     # ── Mes entreprises ────────────────────────────────────────────────
     st.markdown("---")
-    st.subheader("Mes entreprises")
+    st.header("Mes entreprises")
     entreprises = store.entreprises()
     if entreprises:
         st.dataframe(pd.DataFrame([{
@@ -389,7 +389,8 @@ def afficher_page_veille() -> None:
     with col1:
         proposees = [s for s in store.societes_du_fichier()
                      if s.lower() not in {e["nom"].lower() for e in entreprises}]
-        depuis_fichier = st.multiselect("Depuis mon fichier", proposees, key="veille_depuis_fichier")
+        depuis_fichier = st.multiselect("Depuis mon fichier", proposees, key="veille_depuis_fichier",
+                                        placeholder="Choisir des entreprises…")
         if st.button("Ajouter la sélection", key="veille_ajouter_fichier"):
             noms = [n for n in depuis_fichier if n.strip()]
             if not noms:
@@ -426,7 +427,7 @@ def afficher_page_veille() -> None:
 
         # ── Fiche ──────────────────────────────────────────────────────
         st.markdown("---")
-        st.subheader("Fiche entreprise")
+        st.header("Fiche entreprise")
         nom = st.selectbox("Entreprise", [e["nom"] for e in entreprises], key="veille_fiche")
         e = next(x for x in entreprises if x["nom"] == nom)
         fiche_complete = store.fiche(e["id"])
@@ -503,7 +504,8 @@ def afficher_page_veille() -> None:
     # ── Réglages ───────────────────────────────────────────────────────
     with st.expander("⚙️ Réglages de la veille"):
         r = charger_reglages(chemins.config_dir)
-        familles = st.multiselect("Familles de postes", list(FAMILLES), default=r.familles, key="veille_familles")
+        familles = st.multiselect("Familles de postes", list(FAMILLES), default=r.familles, key="veille_familles",
+                                  placeholder="Choisir des familles…")
         libres = st.text_input("Intitulés en plus (séparés par des virgules)",
                                value=", ".join(r.intitules_libres), key="veille_libres")
         pages = st.number_input("Pages LinkedIn par jour pour la veille", min_value=PAGES_MIN,
