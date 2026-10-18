@@ -62,9 +62,9 @@ def test_le_dashboard_compte_toujours_une_ecole_seule(tmp_path):
 
 def _nb_profils_affiches(at) -> int:
     """Le compteur « N profils trouvés » affiché par la page Historique."""
-    for bloc in at.main.markdown:
-        if bloc.value.endswith("profils trouvés**"):
-            return int(bloc.value.strip("*").split()[0])
+    for bloc in at.main.caption:
+        if bloc.value.endswith(("profil trouvé", "profils trouvés")):
+            return int(bloc.value.split()[0])
     raise AssertionError("compteur « N profils trouvés » absent de la page")
 
 
@@ -73,8 +73,7 @@ def _filtrer_historique(ecole: str):
     at = lancer_app("💾 Historique")
     verifier_page_affichee(at, "💾 Historique")
 
-    filtre = [s for s in at.selectbox if s.label == "Filtrer par école"][0]
-    filtre.set_value(ecole)
+    at.multiselect(key="hist_ecoles").set_value([ecole])
     at.run()
 
     assert not at.exception, [str(e.value) for e in at.exception]

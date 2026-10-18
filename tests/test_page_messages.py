@@ -3,7 +3,7 @@
 
 Les enveloppes synchrones rangent le refus du verrou parmi leurs erreurs et
 rendent une liste vide ; la page affichait alors « Aucune nouvelle
-acceptation » ou « 0 message(s) envoyé(s) », puis se relançait. Le scraper
+acceptation » ou « 0 message envoyé », puis se relançait. Le scraper
 est remplacé : aucune session LinkedIn ne s'ouvre.
 """
 
@@ -66,7 +66,7 @@ def test_message_occupe():
 
 def test_verification_refusee_par_le_verrou_le_dit(invitation):
     at = _page()
-    [b for b in at.button if b.label == "🔄 Vérifier qui a accepté"][0].click()
+    [b for b in at.button if b.label == "Vérifier qui a accepté"][0].click()
     at.run()
     assert not at.exception
     assert any(OCCUPE in e.value for e in at.error)
@@ -79,8 +79,8 @@ def test_envoi_refuse_par_le_verrou_le_dit_sans_relancer_la_page(invitation):
     at.checkbox(key=f"msg_{URL}").check()
     at.text_area[0].input("Bonjour !")
     at.run()
-    [b for b in at.button if b.label.startswith("✉️ Envoyer les messages")][0].click()
+    at.button(key="msg_envoyer").click()
     at.run()
     assert not at.exception
     assert any(OCCUPE in e.value for e in at.error)
-    assert not any("message(s) envoyé(s)" in s.value for s in at.success)
+    assert not any("envoy" in s.value for s in at.success)
