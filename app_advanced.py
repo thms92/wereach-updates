@@ -79,7 +79,7 @@ if _email is None:
         with st.form("login_form"):
             _em = st.text_input("Email", placeholder=f"prenom.nom@{ALLOWED_DOMAIN}")
             _pw = st.text_input("Mot de passe", type="password")
-            if st.form_submit_button("Se connecter", use_container_width=True):
+            if st.form_submit_button("Se connecter", width="stretch"):
                 if not email_domain_ok(_em):
                     st.error(f"Utilisez votre adresse email @{ALLOWED_DOMAIN}.")
                 elif verify_access(_em, _pw):
@@ -159,7 +159,7 @@ with st.sidebar.container(key="nav_menu"):
             icon=ICONES_PAGES[_libelle],
             key=f"nav_{_libelle}",
             type="primary" if _actif else "secondary",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["page"] = _libelle
             st.rerun()
@@ -226,7 +226,7 @@ if mode_admin():
             list(ECOLES.items()),
             columns=['École', 'ID LinkedIn']
         )
-        st.dataframe(df_ecoles, use_container_width=True)
+        st.dataframe(df_ecoles, width="stretch")
 
         st.markdown("---")
 
@@ -269,7 +269,7 @@ with st.sidebar.expander("Signaler un problème", icon=":material/bug_report:"):
     )
     _diagnostic = st.cache_data(ttl=120)(rapport)()
     _lien = lien_mailto(EMAIL_SUPPORT, _diagnostic)
-    if st.button("Préparer le mail", use_container_width=True, type="primary",
+    if st.button("Préparer le mail", width="stretch", type="primary",
                  icon=":material/mail:"):
         if ouvrir_mail(_lien):
             st.success("Votre logiciel de messagerie s'ouvre avec le mail déjà rédigé.")
@@ -313,7 +313,7 @@ if st.session_state.get("auth_email"):
 @st.dialog(f"Nouveautés de la version {get_version()}", width="large")
 def _annoncer_nouveautes(notes: str):
     st.markdown(notes)
-    if st.button("J'ai compris", type="primary", use_container_width=True):
+    if st.button("J'ai compris", type="primary", width="stretch"):
         st.rerun()
 
 
@@ -346,7 +346,7 @@ def _bandeau_mise_a_jour():
         )
     with col_btn:
         if st.button("Mettre à jour maintenant", type="primary",
-                     use_container_width=True, key="btn_maj"):
+                     width="stretch", key="btn_maj"):
             if relancer():
                 st.info("We.Reach redémarre avec la nouvelle version…")
             else:

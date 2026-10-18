@@ -155,7 +155,7 @@ def _session_linkedin(ck: str) -> None:
                 key="cookie_shared",
             )
             _new_ck = (_new_ck or "").strip()
-            if _cbtn.button("Enregistrer", type="primary", use_container_width=True):
+            if _cbtn.button("Enregistrer", type="primary", width="stretch"):
                 if _new_ck and st.session_state.cookie_manager.validate_cookie_format(_new_ck):
                     st.session_state.cookie_manager.save_cookie(_new_ck)
                     st.session_state.global_cookie = _new_ck
@@ -285,7 +285,7 @@ def afficher_page_recherche():
             nb_profils, "inviter_candidat", "reinviter_candidat", "message_candidat")
 
         if st.button(libelle_bouton_recherche(inviter), type="primary",
-                     use_container_width=True, key="btn_rechercher_candidats"):
+                     width="stretch", key="btn_rechercher_candidats"):
             if not st.session_state.global_cookie:
                 st.error(MESSAGE_SESSION_MANQUANTE)
             elif not criteres_suffisants(
@@ -344,7 +344,7 @@ def afficher_page_recherche():
             nb_client, "inviter_client", "reinviter_client", "message_client")
 
         if st.button(libelle_bouton_recherche(inviter_client), type="primary",
-                     use_container_width=True, key="btn_rechercher_clients"):
+                     width="stretch", key="btn_rechercher_clients"):
             if not st.session_state.global_cookie:
                 st.error(MESSAGE_SESSION_MANQUANTE)
             else:
@@ -408,7 +408,7 @@ def afficher_page_recherche():
             )
 
         if st.button("Rechercher des profils similaires", type="primary",
-                     use_container_width=True, key="sim_btn_trouver"):
+                     width="stretch", key="sim_btn_trouver"):
             # Un refus efface le résultat précédent : sinon la liste de
             # l'ancienne référence resterait affichée sous la nouvelle erreur.
             if (not st.session_state.global_cookie
@@ -529,7 +529,7 @@ def afficher_page_recherche():
                         "nom": "Nom", "degre": "Relation", "intitule": "Intitulé",
                         "invitable": "Invitable", "url": "Lien",
                     }),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     column_config={
                         "Lien": st.column_config.LinkColumn("Profil", display_text="Ouvrir"),

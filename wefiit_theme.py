@@ -230,6 +230,15 @@ section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button[kind="prima
    'span/p {color:var(--wf-text)}' rend le libellé illisible sur le bleu. */
 .stButton > button *, .stDownloadButton > button *, .stFormSubmitButton > button * { color:inherit !important; }
 .stButton > button[kind="primary"] *, .stFormSubmitButton > button[kind="primary"] * { color:var(--wf-on-accent) !important; }
+/* Désactivé : il doit se lire comme indisponible. Le bleu plein d'un bouton
+   principal désactivé passait pour cliquable (critique du 2026-10-18). */
+.stButton > button:disabled, .stDownloadButton > button:disabled, .stFormSubmitButton > button:disabled,
+.stButton > button:disabled *, .stDownloadButton > button:disabled *, .stFormSubmitButton > button:disabled * {
+  background:var(--wf-surface2) !important; color:var(--wf-muted) !important; cursor:not-allowed;
+}
+.stButton > button:disabled, .stDownloadButton > button:disabled, .stFormSubmitButton > button:disabled {
+  border:1px dashed var(--wf-border-strong) !important; opacity:1 !important;
+}
 
 /* ---------- Focus clavier visible ---------- */
 /* Filet de sécurité : tout bouton (copie du code, repli de la barre…) */

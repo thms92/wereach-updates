@@ -72,7 +72,7 @@ def afficher_resultats(df: pd.DataFrame, inviter: bool, nom_export: str,
                 config[col] = st.column_config.LinkColumn("Profil", display_text="Ouvrir")
         if "Invitation" in affiche.columns:
             config["Invitation"] = st.column_config.TextColumn("Invitation envoyée")
-        st.dataframe(affiche, use_container_width=True, hide_index=True,
+        st.dataframe(affiche, width="stretch", hide_index=True,
                      column_config=config)
 
         c1, c2 = st.columns(2)
@@ -81,14 +81,14 @@ def afficher_resultats(df: pd.DataFrame, inviter: bool, nom_export: str,
             data=st.session_state.export_manager.export_to_excel(df.to_dict('records')),
             file_name=f"{nom_export}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"{prefixe}_dl_excel", use_container_width=True,
+            key=f"{prefixe}_dl_excel", width="stretch",
         )
         c2.download_button(
             label="Télécharger (CSV)",
             data=df.to_csv(index=False, sep=';', encoding='utf-8-sig'),
             file_name=f"{nom_export}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
-            key=f"{prefixe}_dl_csv", use_container_width=True,
+            key=f"{prefixe}_dl_csv", width="stretch",
         )
 
     erreurs = list(erreurs or [])
@@ -135,7 +135,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         libelle_bouton = "Récupérer les infos et inviter" if inviter else "Récupérer les infos"
 
     if st.button(libelle_bouton, type="primary",
-                 use_container_width=True, key=f"{prefixe}_btn_recuperer"):
+                 width="stretch", key=f"{prefixe}_btn_recuperer"):
         if not st.session_state.global_cookie:
             st.error(MESSAGE_SESSION_MANQUANTE)
             return

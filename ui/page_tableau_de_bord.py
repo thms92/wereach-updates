@@ -159,7 +159,7 @@ def _bloc_a_faire(actions) -> None:
             afficher_carte_action(titre, detail, ton=ton, icone=icone)
         with col_bouton:
             st.button(libelle, key=cle, on_click=_aller_a, args=(cible,),
-                      use_container_width=True)
+                      width="stretch")
 
 
 def _bloc_derniere_recherche(derniere) -> None:
@@ -174,7 +174,7 @@ def _bloc_derniere_recherche(derniere) -> None:
             st.caption("Aucune recherche pour l'instant.")
         st.button("Nouvelle recherche", key="tdb_nouvelle_recherche",
                   icon=":material/search:", on_click=_aller_a,
-                  args=(PAGE_RECHERCHE,), use_container_width=True)
+                  args=(PAGE_RECHERCHE,), width="stretch")
 
 
 def _bloc_ecoles(par_ecole: dict) -> None:
@@ -202,7 +202,7 @@ def _bloc_ecoles(par_ecole: dict) -> None:
             yaxis=dict(title=None),
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig, use_container_width=True,
+        st.plotly_chart(fig, width="stretch",
                         config={"displayModeBar": False})
 
 
