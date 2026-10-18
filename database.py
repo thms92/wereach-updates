@@ -281,6 +281,43 @@ class DatabaseManager:
             logger.error(f"Erreur marquer_messagee: {e}")
             return False
 
+    def compter_parcours(self) -> Dict[str, int]:
+        """Effectifs du parcours, en profils distincts (lecture seule).
+
+        trouves  : profils au fichier ;
+        invites  : profils ayant au moins une invitation (envoyée ou acceptée) ;
+        acceptes : profils dont une invitation est acceptée ;
+        messages : profils acceptés à qui un message a été envoyé.
+
+        Une base créée avant la colonne `date_message` (ou dont la migration
+        a échoué) compte 0 message plutôt que de lever.
+        """
+        vide = {"trouves": 0, "invites": 0, "acceptes": 0, "messages": 0}
+        try:
+            conn = sqlite3.connect(self.db_file)
+            try:
+                cursor = conn.cursor()
+                colonnes = {c[1] for c in cursor.execute("PRAGMA table_info(invitations)")}
+                resultat = dict(vide)
+                resultat["trouves"] = cursor.execute(
+                    "SELECT COUNT(*) FROM profiles").fetchone()[0]
+                resultat["invites"] = cursor.execute(
+                    "SELECT COUNT(DISTINCT profile_id) FROM invitations "
+                    "WHERE statut IN ('envoyee', 'acceptee')").fetchone()[0]
+                resultat["acceptes"] = cursor.execute(
+                    "SELECT COUNT(DISTINCT profile_id) FROM invitations "
+                    "WHERE statut = 'acceptee'").fetchone()[0]
+                if "date_message" in colonnes:
+                    resultat["messages"] = cursor.execute(
+                        "SELECT COUNT(DISTINCT profile_id) FROM invitations "
+                        "WHERE statut = 'acceptee' AND date_message IS NOT NULL").fetchone()[0]
+                return resultat
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error(f"Erreur compter_parcours: {e}")
+            return vide
+
     def get_statistiques(self) -> Dict:
         """Récupère les statistiques globales"""
         try:

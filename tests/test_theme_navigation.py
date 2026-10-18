@@ -111,9 +111,9 @@ def test_les_boutons_hors_navigation_restent_hors_de_portee_de_la_regle(monkeypa
     }
 
     for libelle in (
-        "🚪 Déconnexion",
-        "💾 Enregistrer mon proxy",
-        "🗑️ Réinitialiser la base de données",
+        "Déconnexion",
+        "Enregistrer mon proxy",
+        "Réinitialiser la base de données",
     ):
         assert libelle in hors_nav, f"bouton « {libelle} » absent de la barre latérale"
     assert all(not (cle or "").startswith(PREFIXE_CLE_NAV) for cle in hors_nav.values())

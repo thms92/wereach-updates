@@ -27,6 +27,8 @@ from utils.user_context import (resolve_user_email, user_paths_for,
 from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import declarer_langue_francaise, inject_theme, wordmark
+from ui.composants import afficher_jauge_budget
+from utils.budget import budget_du_jour
 from version import get_version
 from utils.nouveautes import charger_notes, doit_annoncer
 from utils.diagnostic import lien_mailto, ouvrir_mail, rapport
@@ -79,12 +81,12 @@ if _email is None:
             _pw = st.text_input("Mot de passe", type="password")
             if st.form_submit_button("Se connecter", use_container_width=True):
                 if not email_domain_ok(_em):
-                    st.error(f"❌ Utilise ton adresse email @{ALLOWED_DOMAIN}.")
+                    st.error(f"Utilisez votre adresse email @{ALLOWED_DOMAIN}.")
                 elif verify_access(_em, _pw):
                     st.session_state.auth_email = _em.strip().lower()
                     st.rerun()
                 else:
-                    st.error("❌ Email ou mot de passe incorrect.")
+                    st.error("Email ou mot de passe incorrect.")
         st.caption(f"Réservé aux membres @{ALLOWED_DOMAIN}.")
     st.stop()
 
@@ -104,16 +106,10 @@ if st.session_state.get('user_email') != _email:
         str(paths.proxy_file), str(paths.key_file)
     )
 
-# Header
-st.markdown(wordmark(), unsafe_allow_html=True)
-
-# Sidebar Navigation
-
-if st.session_state.get("auth_email"):
-    st.sidebar.caption(f"👤 {st.session_state['auth_email']}")
-    if st.sidebar.button("🚪 Déconnexion"):
-        del st.session_state["auth_email"]
-        st.rerun()
+# Le wordmark vit en tête de la barre latérale : la zone principale
+# commence directement par le titre de la page.
+st.sidebar.markdown(wordmark(size=1.6, center=False, sur_fond_sombre=True),
+                    unsafe_allow_html=True)
 
 # Source de vérité du menu. tests/test_navigation.py la confronte aux
 # branches `if page == …` : toute page définie doit figurer ici.
@@ -170,6 +166,12 @@ with st.sidebar.container(key="nav_menu"):
 
 page = st.session_state["page"]
 
+# Le geste signature (DESIGN.md) : le budget d'invitations du jour, sous le
+# menu, sur toutes les pages. Lu dans le compteur du moteur, celui qui bloque.
+_budget = budget_du_jour(st.session_state.user_paths.config_dir)
+afficher_jauge_budget(_budget.utilisees, _budget.plafond, sur_fond_sombre=True,
+                      conteneur=st.sidebar)
+
 # Streamlit abandonne l'état d'un widget dès qu'un rerun ne le dessine pas, et
 # les pages sont ici des branches d'un même script : aller sur Historique puis
 # revenir vidait les filtres de « Profils similaires » alors que la liste
@@ -185,42 +187,40 @@ for _cle_filtre in ("sim_entreprise_exclue", "sim_mot", "sim_invitables"):
 # bouton qui efface toute la base. Deposer un fichier `admin` dans le
 # dossier de l'application les fait reapparaitre.
 if mode_admin():
-    with st.sidebar.expander("🌐 Mon proxy (recommandé)"):
+    with st.sidebar.expander("Mon proxy (recommandé)", icon=":material/vpn_lock:"):
         paths = st.session_state.user_paths
         cur = st.session_state.get('user_proxy') or {}
         server = st.text_input("Serveur (http://host:port)", value=cur.get("server", ""))
         p_user = st.text_input("Login proxy", value=cur.get("username", ""))
         p_pass = st.text_input("Mot de passe proxy", type="password",
                                value=cur.get("password", ""))
-        if st.button("💾 Enregistrer mon proxy"):
+        if st.button("Enregistrer mon proxy", icon=":material/save:"):
             if server.strip():
                 proxy = {"server": server.strip(),
                          "username": p_user.strip(),
                          "password": p_pass}
                 save_proxy(str(paths.proxy_file), str(paths.key_file), proxy)
                 st.session_state.user_proxy = proxy
-                st.success("Proxy enregistré ✅")
+                st.success("Proxy enregistré.")
             else:
-                st.warning("Indique au moins un serveur.")
+                st.warning("Indiquez au moins un serveur.")
 
-    with st.sidebar.expander("⚙️ Réglages"):
-        st.markdown("**🔧 Paramètres de scraping**")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write(f"**Max profils par run:** {ScraperConfig.MAX_PROFILES_PER_RUN}")
-            st.write(f"**Max invitations/jour:** {ScraperConfig.MAX_INVITATIONS_PER_DAY}")
-            st.write(f"**Timeout page:** {ScraperConfig.TIMEOUT_PAGE}ms")
-
-        with col2:
-            st.write(f"**Délai entre profils:** {ScraperConfig.DELAY_BETWEEN_PROFILES_MIN}-{ScraperConfig.DELAY_BETWEEN_PROFILES_MAX}ms")
-            st.write(f"**Mode headless:** {ScraperConfig.HEADLESS}")
-            st.write(f"**Retry attempts:** {ScraperConfig.MAX_RETRY_ATTEMPTS}")
+    with st.sidebar.expander("Réglages", icon=":material/settings:"):
+        st.markdown("**Paramètres de recherche**")
+        _ms = lambda v: f"{v / 1000:g} s".replace(".", ",")
+        st.markdown(
+            f"- Profils au plus par recherche : {ScraperConfig.MAX_PROFILES_PER_RUN}\n"
+            f"- Invitations au plus par jour : {ScraperConfig.MAX_INVITATIONS_PER_DAY}\n"
+            f"- Attente maximale d'une page : {_ms(ScraperConfig.TIMEOUT_PAGE)}\n"
+            f"- Pause entre deux profils : {_ms(ScraperConfig.DELAY_BETWEEN_PROFILES_MIN)}"
+            f" à {_ms(ScraperConfig.DELAY_BETWEEN_PROFILES_MAX)}\n"
+            f"- Navigateur invisible : {'oui' if ScraperConfig.HEADLESS else 'non'}\n"
+            f"- Nouvelles tentatives en cas d'échec : {ScraperConfig.MAX_RETRY_ATTEMPTS}"
+        )
 
         st.markdown("---")
 
-        st.markdown("**🏫 Écoles configurées**")
+        st.markdown("**Écoles configurées**")
 
         df_ecoles = pd.DataFrame(
             list(ECOLES.items()),
@@ -230,41 +230,59 @@ if mode_admin():
 
         st.markdown("---")
 
-        st.markdown("**💾 Base de données**")
+        st.markdown("**Base de données**")
 
         _user_db = str(st.session_state.user_paths.db_file)
         if os.path.exists(_user_db):
             db_size = os.path.getsize(_user_db) / 1024
-            st.success(f"✅ Base de données: {db_size:.2f} KB")
+            st.caption(f"Taille : {db_size:.0f} Ko".replace(".", ","))
         else:
-            st.warning("⚠️ Base de données non initialisée")
+            st.caption("Base de données pas encore créée.")
 
-        if st.button("🗑️ Réinitialiser la base de données", type="secondary"):
-            if st.checkbox("Je confirme vouloir supprimer toutes les données"):
-                try:
-                    if os.path.exists(_user_db):
-                        os.remove(_user_db)
-                    st.session_state.db = DatabaseManager(db_file=_user_db)
-                    st.success("✅ Base de données réinitialisée")
-                except Exception as e:
-                    st.error(f"❌ Erreur: {e}")
+        # La case d'abord, le bouton ensuite : cochée dans un rendu, elle
+        # déverrouille le bouton au rendu suivant. L'inverse (case affichée
+        # après le clic) ne pouvait jamais être cochée à temps.
+        # Le rappel décoche la case : le bouton ne reste pas armé après usage.
+        def _reinitialiser_base(chemin=_user_db):
+            st.session_state["confirm_reset_db"] = False
+            try:
+                if os.path.exists(chemin):
+                    os.remove(chemin)
+                st.session_state.db = DatabaseManager(db_file=chemin)
+                st.session_state["_reset_db_resultat"] = ("ok", "Base de données réinitialisée.")
+            except Exception as e:
+                st.session_state["_reset_db_resultat"] = ("erreur", f"Réinitialisation impossible : {e}")
 
-with st.sidebar.expander("🐞 Signaler un problème"):
+        _confirme = st.checkbox("Je confirme vouloir supprimer toutes les données",
+                                key="confirm_reset_db")
+        st.button("Réinitialiser la base de données", type="secondary",
+                  icon=":material/delete_forever:", disabled=not _confirme,
+                  on_click=_reinitialiser_base)
+        _resultat = st.session_state.pop("_reset_db_resultat", None)
+        if _resultat:
+            (st.success if _resultat[0] == "ok" else st.error)(_resultat[1])
+
+with st.sidebar.expander("Signaler un problème", icon=":material/bug_report:"):
     st.caption(
-        "Ouvre un mail déjà rédigé avec ce qui sert au diagnostic. "
+        "Nous ouvrons un mail déjà rédigé avec ce qui sert au diagnostic. "
         "Vous voyez tout avant d'envoyer, et rien ne part sans vous."
     )
     _diagnostic = st.cache_data(ttl=120)(rapport)()
     _lien = lien_mailto(EMAIL_SUPPORT, _diagnostic)
-    if st.button("✉️ Préparer le mail", use_container_width=True, type="primary"):
+    if st.button("Préparer le mail", use_container_width=True, type="primary",
+                 icon=":material/mail:"):
         if ouvrir_mail(_lien):
-            st.success("Ton logiciel de messagerie s'ouvre avec le mail déjà rédigé.")
+            st.success("Votre logiciel de messagerie s'ouvre avec le mail déjà rédigé.")
         else:
-            st.warning("Impossible d'ouvrir la messagerie — copie le texte ci-dessous.")
+            st.warning("Impossible d'ouvrir la messagerie : copiez le texte ci-dessous.")
     st.code(_diagnostic)
 
+# Pied de barre latérale, discret : compte connecté, version, vérification
+# des mises à jour, déconnexion.
 st.sidebar.divider()
-st.sidebar.caption(f"We.Reach v{get_version()}")
+if st.session_state.get("auth_email"):
+    st.sidebar.caption(st.session_state["auth_email"])
+st.sidebar.caption(f"We.Reach {get_version()}")
 
 # La verification est mise en cache 10 minutes pour ne pas solliciter le depot
 # a chaque clic. Ce bouton la force, pour qui vient d'etre prevenu qu'une
@@ -273,8 +291,8 @@ st.sidebar.caption(f"We.Reach v{get_version()}")
 # fragment qui surveille en arriere-plan obtient une valeur fraiche.
 _verifier_version = st.cache_data(ttl=60, show_spinner=False)(version_publiee)
 
-if st.sidebar.button("🔄 Vérifier les mises à jour", use_container_width=True,
-                     key="btn_verif_maj"):
+if st.sidebar.button("Vérifier les mises à jour", key="btn_verif_maj",
+                     type="tertiary", icon=":material/refresh:"):
     _verifier_version.clear()
     st.session_state["_maj_verifiee"] = True
     st.rerun()
@@ -282,6 +300,11 @@ if st.sidebar.button("🔄 Vérifier les mises à jour", use_container_width=Tru
 if st.session_state.pop("_maj_verifiee", False):
     if not mise_a_jour_disponible(get_version(), _verifier_version()):
         st.sidebar.success("Vous avez la dernière version.")
+
+if st.session_state.get("auth_email"):
+    if st.sidebar.button("Déconnexion", type="tertiary", icon=":material/logout:"):
+        del st.session_state["auth_email"]
+        st.rerun()
 
 
 # --- Annonce des nouveautés -----------------------------------------------
@@ -318,7 +341,7 @@ def _bandeau_mise_a_jour():
     col_msg, col_btn = st.columns([3, 1], vertical_alignment="center")
     with col_msg:
         st.warning(
-            f"⬆️ **Une nouvelle version est disponible ({distante}).** "
+            f"**Une nouvelle version est disponible ({distante}).** "
             f"Vous utilisez la {get_version()}."
         )
     with col_btn:
@@ -328,7 +351,7 @@ def _bandeau_mise_a_jour():
                 st.info("We.Reach redémarre avec la nouvelle version…")
             else:
                 st.error(
-                    "Ferme puis rouvre We.Reach pour installer la mise à jour."
+                    "Fermez puis rouvrez We.Reach pour installer la mise à jour."
                 )
 
 
