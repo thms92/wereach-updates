@@ -16,8 +16,10 @@ from tests.conftest import lancer_app, verifier_page_affichee
 
 SAISIE = "Thiga, Kering"
 LIBELLE_CANDIDATS = "Entreprises (optionnel)"
-BOUTON_CANDIDATS = "🔍 Lancer le scraping"
-BOUTON_CLIENTS = "🔍 Lancer recherche clients"
+# Les deux onglets portent le même libellé (« Rechercher ») : on les
+# distingue par leur clé.
+BOUTON_CANDIDATS = "btn_rechercher_candidats"
+BOUTON_CLIENTS = "btn_rechercher_clients"
 
 
 @pytest.fixture
@@ -45,8 +47,8 @@ def _page_recherche():
     return at
 
 
-def _bouton(at, libelle):
-    return [b for b in at.button if b.label == libelle][0]
+def _bouton(at, cle):
+    return at.button(key=cle)
 
 
 def _entreprises_transmises(at, appels, libelle_bouton) -> list:
