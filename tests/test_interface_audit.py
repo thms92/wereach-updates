@@ -56,14 +56,17 @@ def test_plus_de_libelles_anglais_dans_le_tableau_de_bord():
 def test_les_menus_deroulants_ont_un_texte_d_aide_en_francais():
     # « Choose options » est le texte par défaut de Streamlit : chaque
     # st.multiselect doit fournir le sien.
-    for f in ("app_advanced.py", "ui/page_veille.py"):
-        src = (RACINE / f).read_text(encoding="utf-8")
+    # Toute source qui en contient un : l'app et chaque module de page.
+    fichiers = [RACINE / "app_advanced.py"] + sorted((RACINE / "ui").glob("*.py"))
+    avec_menu = [f for f in fichiers if "st.multiselect(" in f.read_text(encoding="utf-8")]
+    assert RACINE / "ui/page_recherche.py" in avec_menu
+    for f in avec_menu:
+        src = f.read_text(encoding="utf-8")
         assert src.count("st.multiselect(") == src.count('placeholder="Choisir'), f
 
 
 def test_l_historique_masque_l_index_et_les_noms_techniques():
-    src = (RACINE / "app_advanced.py").read_text(encoding="utf-8")
-    bloc = src.split('elif page == "💾 Historique":')[1].split("elif page ==")[0]
+    bloc = (RACINE / "ui/page_historique.py").read_text(encoding="utf-8")
     assert "hide_index=True" in bloc and '"Poste"' in bloc
 
 
