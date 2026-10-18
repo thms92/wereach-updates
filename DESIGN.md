@@ -63,16 +63,16 @@ Tracking ≥ -0.03em.
 (bloc « À faire », variante `vedette` pour les acceptations ; icônes
 invitation, relance, message, alerte, ok, accepte, info, recherche, veille,
 vide), `entonnoir`, `puce` (états), `point_direct`, `etat_vide` (avec
-`etapes=` pour le premier lancement), `pluriel`.
+`etapes=` pour le premier lancement), `pluriel`. HTML statique + classes
+`wf-*` définies dans `wefiit_theme.py`. Aucun émoji comme icône : icônes
+Material (`:material/…:`) ou aucune.
 
 ## Actions irréversibles
 
 Toute action qui part du compte LinkedIn (inviter, envoyer un message)
 passe par un récapitulatif « Confirmer et lancer / Annuler »
 (`ui/invitations.py::confirmation`), annulé dès qu'un champ change. Une
-recherche sans invitation part directement. HTML statique + classes `wf-*`
-définies dans `wefiit_theme.py`. Aucun émoji comme icône : icônes
-Material (`:material/…:`) ou aucune.
+recherche sans invitation part directement.
 
 ## Interdits
 
