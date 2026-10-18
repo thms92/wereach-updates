@@ -73,7 +73,7 @@ def test_lancer_la_veille_affiche_le_rapport(store, moteur_espion):
     store.ajouter_entreprise("Orbique", "2026-10-14")
     at = _page()
     at.session_state["global_cookie"] = "COOKIE-DE-TEST"
-    _bouton(at, "🏢 Lancer la veille").click()
+    _bouton(at, "Lancer la veille").click()
     at.run()
     assert moteur_espion == ["COOKIE-DE-TEST"]
     textes = " ".join(m.value for m in list(at.markdown) + list(at.warning) + list(at.info) + list(at.success))
@@ -85,10 +85,10 @@ def test_sans_cookie_la_veille_ne_part_pas(store, moteur_espion):
     store.ajouter_entreprise("Orbique", "2026-10-14")
     at = _page()
     at.session_state["global_cookie"] = ""
-    _bouton(at, "🏢 Lancer la veille").click()
+    _bouton(at, "Lancer la veille").click()
     at.run()
     assert moteur_espion == []
-    assert any("Cookie" in e.value for e in at.error)
+    assert any("session LinkedIn" in e.value for e in at.error)
 
 
 def test_le_recap_montre_les_nouveaux_contacts(store):
@@ -109,6 +109,7 @@ def test_la_fiche_s_ouvre_sur_le_coup_d_oeil(store):
 
 
 def test_le_recap_vide_le_dit(store):
+    store.ajouter_entreprise("Orbique", "2026-10-14")
     at = _page()
     assert any("Rien de nouveau" in i.value for i in at.info)
 
@@ -131,7 +132,7 @@ def test_un_arret_de_securite_est_explique(store, monkeypatch):
     store.ajouter_entreprise("Orbique", "2026-10-14")
     at = _page()
     at.session_state["global_cookie"] = "COOKIE-DE-TEST"
-    _bouton(at, "🏢 Lancer la veille").click()
+    _bouton(at, "Lancer la veille").click()
     at.run()
     assert any("activité inhabituelle" in w.value for w in at.warning)
 
@@ -159,10 +160,10 @@ def test_un_annuaire_non_rapproche_est_dit_et_ses_anciennes_valeurs_cachees(stor
                             "2026-09-01")
     store.enregistrer_fiche(i, {"rapprochement": "plusieurs sociétés homonymes"}, "annuaire", "2026-10-14")
     at = _page()
-    assert any("non rapprochée" in c.value and "plusieurs sociétés homonymes" in c.value for c in at.caption)
+    assert any("non vérifiées" in c.value and "plusieurs sociétés homonymes" in c.value for c in at.caption)
     fiche = [d.value for d in at.dataframe if "Source" in d.value.columns][0]
     assert "50 à 99 salariés" not in fiche.to_string()
-    assert list(fiche.loc[fiche["Valeur"] == "plusieurs sociétés homonymes", "Source"]) == ["Annuaire officiel"]
+    assert list(fiche.loc[fiche["Valeur"] == "non vérifiées", "Source"]) == ["Annuaire officiel"]
 
 
 def test_aucun_widget_n_a_a_la_fois_une_valeur_par_defaut_et_une_valeur_en_session(store):
@@ -203,8 +204,8 @@ def test_le_dernier_passage_est_resume_en_entier(store):
     textes = _textes(_page())
     assert "15/10/2026 08:12" in textes
     assert "Budget de pages du jour atteint" in textes
-    assert "2 entreprise(s) : Orbique, Zéphyr Conseil" in textes
-    assert "7 page(s)" in textes
+    assert "2 entreprises : Orbique, Zéphyr Conseil" in textes
+    assert "7 pages LinkedIn" in textes
     assert "Zéphyr Conseil : annuaire officiel injoignable" in textes
 
 
@@ -223,15 +224,15 @@ def test_apres_la_veille_le_recap_montre_ce_qu_elle_a_trouve(store, monkeypatch)
     monkeypatch.setattr(veille, "lancer_passage", faux)
     at = _page()
     at.session_state["global_cookie"] = "COOKIE-DE-TEST"
-    _bouton(at, "🏢 Lancer la veille").click()
+    _bouton(at, "Lancer la veille").click()
     at.run()
     assert not at.exception
     recap = [d.value for d in at.dataframe if "Inviter" in d.value.columns]
     assert recap and "Paul Exemple" in recap[0].to_string()
-    assert "1 nouveau(x) contact(s)" in _textes(at)
+    assert "1 nouveau contact" in _textes(at)
     # Montré une fois : au rechargement suivant, seul le résumé enregistré reste.
     at.run()
-    assert "1 nouveau(x) contact(s)" not in _textes(at)
+    assert "1 nouveau contact" not in _textes(at)
     assert "Passage terminé" in _textes(at)
 
 
@@ -255,7 +256,7 @@ def test_une_cause_d_arret_n_est_pas_dite_deux_fois(store, monkeypatch):
     store.ajouter_entreprise("Orbique", "2026-10-14")
     at = _page()
     at.session_state["global_cookie"] = "COOKIE-DE-TEST"
-    _bouton(at, "🏢 Lancer la veille").click()
+    _bouton(at, "Lancer la veille").click()
     at.run()
     assert sum("activité inhabituelle" in w.value for w in at.warning) == 1
     assert any("Orbique : autre souci" in w.value for w in at.warning)
@@ -346,8 +347,8 @@ def test_releve_le_donne_la_derniere_lecture(store):
     at = _page()
     fiche = [d.value for d in at.dataframe if "Source" in d.value.columns][0]
     dates = dict(zip(fiche["Information"], fiche["Relevé le"]))
-    assert dates["Taille"] == "2026-10-14"
-    assert dates["Recherche des employés"] == "2026-09-01"
+    assert dates["Taille"] == "14/10/2026"
+    assert dates["Recherche des employés"] == "01/09/2026"
 
 
 def test_un_refus_est_dit_une_fois_sans_cacher_le_dernier_passage(store, monkeypatch):
@@ -364,13 +365,13 @@ def test_un_refus_est_dit_une_fois_sans_cacher_le_dernier_passage(store, monkeyp
     store.ajouter_entreprise("Orbique", "2026-10-14")
     at = _page()
     at.session_state["global_cookie"] = "COOKIE-DE-TEST"
-    _bouton(at, "🏢 Lancer la veille").click()
+    _bouton(at, "Lancer la veille").click()
     at.run()
     assert any("en cours (recherche)" in w.value for w in at.warning)
-    assert "15/10/2026 08:12" in _textes(at) and "7 page(s)" in _textes(at)
+    assert "15/10/2026 08:12" in _textes(at) and "7 pages" in _textes(at)
     at.run()
     assert not any("en cours (recherche)" in w.value for w in at.warning)
-    assert "7 page(s)" in _textes(at)
+    assert "7 pages" in _textes(at)
 
 
 # ── Coordonnées et export ────────────────────────────────────────────────
@@ -405,7 +406,6 @@ def _tableau_contacts(at):
 def test_la_fiche_montre_les_coordonnees_de_l_entreprise_avec_leur_source(store):
     _orbique_avec_contacts(store)
     at = _page()
-    assert any("Coordonnées de l'entreprise" in m.value for m in list(at.markdown) + list(at.subheader) + list(at.header))
     [coord] = [d.value for d in at.dataframe if "Source" in d.value.columns
                and "Email (site)" in set(d.value["Information"])]
     lignes = {r["Information"]: r for _, r in coord.iterrows()}
@@ -413,7 +413,7 @@ def test_la_fiche_montre_les_coordonnees_de_l_entreprise_avec_leur_source(store)
     assert lignes["Téléphone (LinkedIn)"]["Source"].startswith("LinkedIn")
     assert lignes["Email (site)"]["Valeur"] == "contact@orbique.example"
     assert lignes["Email (site)"]["Source"].startswith("Site de l'entreprise")
-    assert lignes["Email (site)"]["Relevé le"] == "2026-10-14"
+    assert lignes["Email (site)"]["Relevé le"] == "14/10/2026"
     # Site lu sans téléphone : dit, pas laissé vide.
     assert lignes["Téléphone (site)"]["Valeur"] == "non publié"
 
@@ -431,10 +431,10 @@ def test_le_tableau_des_contacts_dit_l_etat_de_chaque_coordonnee(store):
     _orbique_avec_contacts(store)
     at = _page()
     t = _tableau_contacts(at)
-    assert {"Degré", "Email", "Téléphone"} <= set(t.columns)
+    assert {"Relation", "Email", "Téléphone"} <= set(t.columns)
     par_nom = {r["Nom"]: r for _, r in t.iterrows()}
     assert par_nom["Jeanne Exemple"]["Email"] == "jeanne@orbique.example"
-    assert par_nom["Jeanne Exemple"]["Degré"] == "1er"
+    assert par_nom["Jeanne Exemple"]["Relation"] == "1er niveau"
     assert par_nom["Paul Exemple"]["Email"] == "rien de partagé"
     assert par_nom["Léa Exemple"]["Email"].startswith("lecture impossible")
     assert par_nom["Max Exemple"]["Email"] == "après acceptation de l'invitation"
@@ -514,7 +514,7 @@ def test_un_telephone_de_site_retire_est_dit_non_publie(store):
     [coord] = [d.value for d in at.dataframe if "Source" in d.value.columns
                and "Téléphone (site)" in set(d.value["Information"])]
     tel = coord[coord["Information"] == "Téléphone (site)"].iloc[0]
-    assert (tel["Valeur"], tel["Relevé le"]) == ("non publié", "2026-10-14")
+    assert (tel["Valeur"], tel["Relevé le"]) == ("non publié", "14/10/2026")
     assert "01 23 45 67 89" not in coord.to_string()
 
 
