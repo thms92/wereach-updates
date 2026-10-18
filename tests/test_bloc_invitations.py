@@ -11,11 +11,14 @@ from pathlib import Path
 
 
 def test_profils_similaires_utilise_le_bloc_partage():
-    source = Path("app_advanced.py").read_text(encoding="utf-8")
+    # L'onglet Profils similaires vit dans ui/page_recherche.py.
+    source = Path("ui/page_recherche.py").read_text(encoding="utf-8")
     appels = [n for n in ast.walk(ast.parse(source))
               if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "bloc_recuperer_inviter"]
     assert appels, "l'onglet Profils similaires doit appeler bloc_recuperer_inviter"
-    assert "remaining_invitations" not in source, "le plafond ne doit plus être recodé dans app_advanced.py"
+    for fichier in ("app_advanced.py", "ui/page_recherche.py"):
+        assert "remaining_invitations" not in Path(fichier).read_text(encoding="utf-8"), (
+            f"le plafond ne doit plus être recodé dans {fichier}")
 
 
 def test_le_bloc_porte_les_garde_fous():
