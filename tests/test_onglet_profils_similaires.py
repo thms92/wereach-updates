@@ -17,7 +17,7 @@ import scraper_v2_sync
 from tests.conftest import lancer_app, verifier_page_affichee
 
 URL_REFERENCE = "https://www.linkedin.com/in/jean-dupont-12345/"
-BOUTON_TROUVER = "👥 Trouver des profils similaires"
+BOUTON_TROUVER = "Rechercher des profils similaires"
 
 
 def voisin(nom, vanity, degre="2e", intitule="Product Manager, Kering", invitable=True):
@@ -156,7 +156,7 @@ def test_une_liste_entierement_ecartee_affiche_ses_motifs(recolte_espionne):
     )
     at = _trouver(_page_recherche())
 
-    expanders = [e for e in at.expander if "1 profil(s) écarté(s)" in e.label]
+    expanders = [e for e in at.expander if "1 profil écarté" in e.label]
     assert expanders, f"pas d'expander des écartés : {[e.label for e in at.expander]}"
     textes = [m.value for m in expanders[0].markdown]
     assert any("déjà dans ton réseau (1er degré)" in t for t in textes), textes
@@ -204,17 +204,17 @@ def test_un_cookie_absent_est_signale(recolte_espionne):
     at = _trouver(at)
 
     assert recolte_espionne["appels"] == []
-    assert any("Cookie manquant" in e.value for e in at.error), [e.value for e in at.error]
+    assert any("Session LinkedIn manquante" in e.value for e in at.error), [e.value for e in at.error]
 
 
 # --- Étape 2 : récupérer et inviter --------------------------------------
 
-BOUTON_RECUPERER = "🚀 Récupérer les infos"
+BOUTON_RECUPERER = "Récupérer les infos"
 
 
 def test_l_etape_2_n_apparait_pas_avant_d_avoir_trouve():
     at = _page_recherche()
-    assert not [b for b in at.button if b.label == BOUTON_RECUPERER], (
+    assert not [b for b in at.button if b.key == "sim_btn_recuperer" or b.label.startswith(BOUTON_RECUPERER)], (
         "le bouton de récupération s'affiche alors qu'aucune liste n'existe"
     )
 
@@ -227,7 +227,7 @@ def test_les_urls_retenues_partent_dans_la_chaine_existante(recolte_espionne):
     at = _trouver(_page_recherche())
     recolte_espionne["appels"].clear()
 
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
 
@@ -244,7 +244,7 @@ def test_les_invitations_ne_partent_pas_sans_l_avoir_demande(recolte_espionne):
     at = _trouver(_page_recherche())
     recolte_espionne["appels"].clear()
 
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
 
     assert recolte_espionne["appels"][0]["inviter"] is False
@@ -257,7 +257,7 @@ def test_la_case_cochee_fait_partir_les_invitations(recolte_espionne):
     at.run()
     recolte_espionne["appels"].clear()
 
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
 
     assert recolte_espionne["appels"][0]["inviter"] is True
@@ -269,7 +269,7 @@ def test_la_liste_trouvee_survit_au_rerun_de_l_etape_2(recolte_espionne):
     recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
     at = _trouver(_page_recherche())
 
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
 
     assert [p["nom"] for p in at.session_state["sim_retenues"]] == ["Marie Martin"]
@@ -390,7 +390,7 @@ def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
     assert at.checkbox(key="sim_inviter").value is False
 
     recolte_espionne["appels"].clear()
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
     assert recolte_espionne["appels"][0]["inviter"] is False
 
@@ -407,12 +407,12 @@ def test_au_dela_du_plafond_du_jour_rien_ne_part(recolte_espionne):
     recolte_espionne["invitations_restantes"] = 2
     recolte_espionne["appels"].clear()
 
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
 
     assert recolte_espionne["appels"] == []
     messages = [e.value for e in at.error]
-    assert any("2 invitation(s)" in m and "3 profil(s)" in m for m in messages), messages
+    assert any("2 invitations" in m and "3 profils retenus" in m for m in messages), messages
 
 
 def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
@@ -425,7 +425,7 @@ def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
     recolte_espionne["appels"].clear()
 
     # Plafond atteint mais pas d'invitation demandée : le scrape part.
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
     assert len(recolte_espionne["appels"]) == 1
 
@@ -433,7 +433,7 @@ def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
     at.checkbox(key="sim_inviter").set_value(True)
     at.run()
     recolte_espionne["appels"].clear()
-    _bouton(at, BOUTON_RECUPERER).click()
+    at.button(key="sim_btn_recuperer").click()
     at.run()
     assert recolte_espionne["appels"][0]["inviter"] is True
 
@@ -541,7 +541,7 @@ def test_l_avancement_de_la_recolte_reste_affiche(recolte_espionne):
     etats = [n for n in _dans_l_ordre(at) if getattr(n, "type", None) == "status"
              and "voisin" in str(getattr(n, "label", ""))]
     assert etats, "aucun bloc d'avancement à l'écran"
-    assert "2 profil(s) voisin(s) lu(s)" in etats[0].label
+    assert "2 profils voisins lus" in etats[0].label
 
 
 @pytest.fixture
