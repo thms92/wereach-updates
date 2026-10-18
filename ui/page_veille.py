@@ -21,7 +21,8 @@ import streamlit as st
 
 import veille
 from config import ScraperConfig
-from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel, ton_budget
+from ui.composants import (afficher_bandeau_contexte, afficher_etat_vide, pluriel,
+                           texte_budget, ton_budget)
 from ui.invitations import bloc_recuperer_inviter
 from utils.budget import budget_du_jour
 from utils.veille_regles import (FAMILLES, PAGES_MAX, PAGES_MIN, ReglagesVeille, charger_reglages,
@@ -471,7 +472,7 @@ def _afficher_bandeau(chemins, entreprises: list, dernier) -> None:
              (f"Dernier passage : {_date_fr(dernier['fin'])}" if dernier else "Veille jamais lancée", "neutre")]
     try:
         b = budget_du_jour(chemins.config_dir)
-        puces.append((f"Invitations du jour : {b.utilisees}/{b.plafond}", ton_budget(b.utilisees, b.plafond)))
+        puces.append((texte_budget(b.utilisees, b.plafond), ton_budget(b.utilisees, b.plafond)))
     except Exception:
         pass
     afficher_bandeau_contexte("Chaque jour, We.Reach repère les personnes Product, Data et IA de vos "

@@ -53,7 +53,7 @@ def test_le_bandeau_dit_ce_que_fait_la_veille_et_son_etat(store):
     assert "repère les personnes Product, Data et IA" in bandeau
     assert "2 entreprises suivies" in bandeau
     assert "Dernier passage : 15/10/2026 08:12" in bandeau
-    assert re.search(r"Invitations du jour : \d+/\d+", bandeau)
+    assert re.search(r"\d+ restantes? sur \d+", bandeau)
 
 
 def test_le_bandeau_sans_passage_ni_entreprise(store, monkeypatch):
