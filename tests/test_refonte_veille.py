@@ -206,4 +206,4 @@ def test_ni_jargon_ni_emoji_ni_pluriel_bricole(store):
 
 def test_la_cause_cookie_ne_nomme_pas_le_cookie_technique():
     from ui.page_veille import _CAUSES
-    assert "li_at" not in _CAUSES["cookie"] and "session LinkedIn" in _CAUSES["cookie"]
+    assert "li_at" not in _CAUSES["cookie"] and "session linkedin" in _CAUSES["cookie"].lower()

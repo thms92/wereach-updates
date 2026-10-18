@@ -53,7 +53,7 @@ class CookieManager:
                 os.chmod(self.cookie_file, 0o600)
             except OSError:
                 pass
-            logger.info("Cookie sauvegardé avec succès")
+            logger.info("Session LinkedIn enregistrée")
             return True
         except Exception as e:
             logger.error(f"Erreur sauvegarde cookie: {e}")

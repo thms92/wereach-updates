@@ -20,8 +20,34 @@ from datetime import datetime
 from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
-FICHIER_JOURNAL = RACINE / "scraper.log"
+
+
+def chemin_journal() -> Path:
+    """Le fichier journal, en chemin absolu : celui que montre la page Journal.
+
+    `ScraperConfig.LOG_FILE` est relatif (« scraper.log ») : on le rattache
+    au dossier de l'application plutôt qu'au dossier courant, qui dépend de
+    la façon dont l'application a été lancée.
+    """
+    from config import ScraperConfig
+
+    chemin = Path(ScraperConfig.LOG_FILE).expanduser()
+    return chemin if chemin.is_absolute() else RACINE / chemin
+
+
+FICHIER_JOURNAL = chemin_journal()
 LIGNES_JOURNAL = 12
+
+# Émojis et pictogrammes en tête de message (« 🚀 Lancement… ») : du bruit
+# dans un mail. Seuls les pictogrammes sont retirés, pas la ponctuation.
+_PICTOGRAMMES = "\U0001F000-\U0001FAFF←-⇿⌀-⏿①-⓿■-➿⬀-⯿️‍"
+_EN_TETE = re.compile(r"^(?P<tete>.*? - (?:DEBUG|INFO|WARNING|ERROR|CRITICAL) - )?"
+                      rf"[{_PICTOGRAMMES}]+\s*")
+
+
+def sans_emoji_de_tete(ligne: str) -> str:
+    """« … - INFO - 🚀 Lancement » → « … - INFO - Lancement » (ligne sans en-tête aussi)."""
+    return _EN_TETE.sub(lambda m: m.group("tete") or "", ligne, count=1)
 
 # Le cookie li_at, les clés Fernet et tout jeton de la même famille. On masque
 # par la forme plutôt que par la provenance : un futur message de log pourrait
@@ -54,7 +80,7 @@ def _commande(args) -> str:
 def _fin_du_journal() -> str:
     try:
         lignes = FICHIER_JOURNAL.read_text(encoding="utf-8", errors="replace").splitlines()
-        return "\n".join(lignes[-LIGNES_JOURNAL:]) or "(journal vide)"
+        return "\n".join(sans_emoji_de_tete(l) for l in lignes[-LIGNES_JOURNAL:]) or "(journal vide)"
     except Exception:
         return "(journal introuvable)"
 

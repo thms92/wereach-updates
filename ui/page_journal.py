@@ -9,17 +9,17 @@ ses traces techniques, reste disponible dans un dépliant pour le support.
 Les fonctions d'analyse sont pures (testables sans Streamlit).
 """
 
-import os
 import re
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 import streamlit as st
 
-from config import ScraperConfig
 from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel
+from utils import diagnostic
 
 # « 2026-10-18 02:26:14 - linkedin_scraper - ERROR - message »
 _LIGNE = re.compile(
@@ -39,8 +39,29 @@ _CHEMIN_CITE = re.compile(r"(['\"])(?:[A-Za-z]:)?[/\\][^'\"]*\1")
 _CHEMIN = re.compile(r"(?:[A-Za-z]:)?(?:[/\\][^\s/\\'\"«»(),]+){2,}|\b[\w.-]+/[\w./-]+\.\w+\b")
 # Ce qui précède la première lettre ou le premier chiffre : émojis, flèches, puces.
 _DEBUT_DECORATIF = re.compile(r"^[^\w«\"'(]+", re.UNICODE)
-# Messages internes de diagnostic, sans intérêt pour l'utilisateur.
-_TECHNIQUE = re.compile(r"\bdump", re.IGNORECASE)
+# Messages internes (diagnostic, rouages du moteur), sans intérêt pour
+# l'utilisateur. Ils restent dans le journal brut du dépliant technique.
+_TECHNIQUE = re.compile(
+    r"\bdump|\bURN\b|\(seed\)|scraper V2|mode synchrone|Base de données initialisée",
+    re.IGNORECASE)
+# Messages internes reformulés pour l'utilisateur (après nettoyage).
+_LANCEMENT_URLS = re.compile(r"^Lancement scraping URLs \((\d+) profils?\)$")
+_REFORMULATIONS = {
+    "Cookie sauvegardé avec succès": "Session LinkedIn enregistrée",
+}
+
+
+def reformuler(texte: str) -> str:
+    """Un message interne connu, dit avec les mots de l'interface."""
+    m = _LANCEMENT_URLS.match(texte)
+    if m:
+        return f"Récupération de {pluriel(int(m.group(1)), 'profil')}"
+    return _REFORMULATIONS.get(texte, texte)
+
+
+def chemin_journal() -> Path:
+    """Le fichier journal, le même que celui du rapport de problème."""
+    return diagnostic.chemin_journal()
 
 
 def nettoyer_message(message: str) -> str:
@@ -99,7 +120,7 @@ def evenement_lisible(ev: Dict) -> Optional[Dict]:
     type_ = TYPES.get(ev["niveau"])
     if type_ is None or _TECHNIQUE.search(ev["message"]):
         return None
-    texte = nettoyer_message(ev["message"])
+    texte = reformuler(nettoyer_message(ev["message"]))
     exception = derniere_ligne_exception(ev["suite"]) if any(
         l.startswith("Traceback") for l in ev["suite"]) else None
     if exception:
@@ -130,15 +151,26 @@ def _dernieres_lignes(chemin: str, n: int) -> List[str]:
         return list(deque(f, maxlen=n))
 
 
+_CLE_FILTRE = "journal_filtre"
+
+
+def _filtre_jamais_vide() -> None:
+    """Un second clic sur le choix actif le désélectionne : on revient à « Tout »,
+    pour que l'écran montre toujours le filtre réellement appliqué."""
+    if st.session_state.get(_CLE_FILTRE) is None:
+        st.session_state[_CLE_FILTRE] = FILTRE_TOUT
+
+
 def afficher_page_journal():
-    st.title("Journal d'exécution")
+    st.title("Journal d'exécution", anchor=False)
     afficher_bandeau_contexte("Ce que We.Reach a fait récemment.")
 
     col_filtre, col_nb, col_btn = st.columns([3, 2, 1], vertical_alignment="bottom")
     with col_filtre:
+        _filtre_jamais_vide()
         filtre = st.segmented_control(
-            "Afficher", [FILTRE_TOUT, FILTRE_ALERTES], default=FILTRE_TOUT,
-            key="journal_filtre",
+            "Afficher", [FILTRE_TOUT, FILTRE_ALERTES], key=_CLE_FILTRE,
+            on_change=_filtre_jamais_vide,
         ) or FILTRE_TOUT
     with col_nb:
         nb_lignes = st.number_input("Lignes du journal à parcourir", min_value=20,
@@ -147,8 +179,8 @@ def afficher_page_journal():
         if st.button("Actualiser", icon=":material/refresh:", width="stretch"):
             st.rerun()
 
-    log_path = ScraperConfig.LOG_FILE
-    if not os.path.exists(log_path):
+    log_path = chemin_journal()
+    if not log_path.exists():
         afficher_etat_vide(
             "Rien à afficher pour l'instant",
             "Les recherches, invitations et messages lancés depuis We.Reach "

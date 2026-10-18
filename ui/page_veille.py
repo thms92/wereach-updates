@@ -28,12 +28,18 @@ from utils.veille_regles import (FAMILLES, PAGES_MAX, PAGES_MIN, ReglagesVeille,
                                  nom_depuis_lien, resume_fiche, sauver_reglages)
 from veille_store import VeilleStore, normaliser_degre
 
-_VISITE = "derniere_visite_veille.txt"
+# Lu aussi par le tableau de bord (nouveautés de la veille).
+FICHIER_VISITE_VEILLE = "derniere_visite_veille.txt"
 _MOTIF_LIEN = re.compile(r"^https?://([a-z]+\.)?linkedin\.com/company/[^/?#]+", re.I)
 
 ONGLETS = ["Nouveautés", "Mes entreprises", "Fiche entreprise", "Réglages"]
 _CLE_ONGLET = "veille_onglet"
 _CLE_TABLEAU = "veille_tableau_entreprises"
+# Génération du tableau « Mes entreprises » : changer sa clé efface la ligne
+# choisie. Sans cela, la ligne restait cochée et un nouveau clic dessus (ou sur
+# une autre après un retrait) n'ouvrait pas la fiche du premier coup.
+_CLE_GENERATION = "_veille_tableau_generation"
+_CLE_RETRAIT = "_veille_retrait_message"
 
 _CAUSES = {
     "termine": "Passage terminé.",
@@ -45,9 +51,15 @@ _CAUSES = {
     # Mêmes phrases que le moteur : voir `_afficher_passage`, qui retire la
     # ligne d'erreur identique.
     **veille.MESSAGES_ARRET,
-    # Formulation d'écran : la phrase du moteur nomme le cookie technique.
-    "cookie": "Session LinkedIn invalide ou expirée : reconnectez votre session LinkedIn dans la page Recherche.",
 }
+# Phrases d'arrêt enregistrées en base par une version précédente du moteur :
+# relues avec la formulation actuelle, et donc reconnues comme déjà dites.
+_ANCIENS_MESSAGES = {
+    "Cookie LinkedIn invalide ou expiré — renseignez un nouveau cookie li_at dans la page Recherche.":
+        veille.MESSAGES_ARRET["cookie"],
+}
+# Caractères qui changeraient le rendu Markdown d'un texte venu de LinkedIn.
+_MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!$~|>])")
 # Causes qui arrêtent la veille avant son terme : seules elles valent un avertissement.
 _ARRETS = ("erreur", "cookie", "deconnecte", "securite", "interrompu")
 # « Orbique : aucun profil Product / Data / IA trouvé. » (moteur, une ligne par entreprise)
@@ -112,7 +124,7 @@ def _visite_precedente(config_dir) -> str | None:
     partir de la dernière fois où la page a réellement été vue, pas de la
     première de la session précédente.
     """
-    chemin = Path(config_dir) / _VISITE
+    chemin = Path(config_dir) / FICHIER_VISITE_VEILLE
     if "veille_visite_precedente" not in st.session_state:
         try:
             precedente = chemin.read_text(encoding="utf-8").strip() or None
@@ -347,6 +359,16 @@ def _cibles_lisibles(cibles: str) -> str:
     return ", ".join(morceaux[:-1]) + " ou " + morceaux[-1]
 
 
+def _md(texte) -> str:
+    """Texte venu de LinkedIn ou de l'annuaire, rendu tel quel dans du Markdown."""
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", str(texte if texte is not None else ""))
+
+
+def _erreurs_actuelles(erreurs) -> list:
+    """Les erreurs d'un passage, les anciennes phrases du moteur remises à jour."""
+    return [_ANCIENS_MESSAGES.get(e, e) for e in erreurs or []]
+
+
 def _texte_passage(fin, cause, entreprises, pages, erreurs, nouveaux_contacts=None) -> tuple:
     """(ton, texte) du résumé d'un passage : un seul message, qui dit tout.
 
@@ -361,7 +383,7 @@ def _texte_passage(fin, cause, entreprises, pages, erreurs, nouveaux_contacts=No
     lignes = [f"**Passage du {_date_fr(fin)}** — {_CAUSES.get(cause, cause)} — " + ", ".join(morceaux) + "."]
     # Le moteur consigne aussi la cause d'arrêt parmi les erreurs : déjà dite
     # en tête, on ne la répète pas.
-    restantes = [e for e in erreurs if e != veille.MESSAGES_ARRET.get(cause)]
+    restantes = [e for e in _erreurs_actuelles(erreurs) if e != veille.MESSAGES_ARRET.get(cause)]
     sans_resultat, cibles, autres = [], "", []
     for e in restantes:
         m = _MOTIF_SANS_RESULTAT.match(e)
@@ -402,14 +424,30 @@ def _afficher_rapport(rapport) -> None:
 
 # ── Rappels (callbacks) : exécutés avant le script, ils peuvent écrire l'état des widgets ──
 
+def _cle_tableau() -> str:
+    """Clé actuelle du tableau « Mes entreprises » (voir `_CLE_GENERATION`)."""
+    generation = st.session_state.get(_CLE_GENERATION, 0)
+    return _CLE_TABLEAU if not generation else f"{_CLE_TABLEAU}_{generation}"
+
+
+def _vider_selection_tableau() -> None:
+    """Nouvelle clé pour le tableau : il revient sans ligne choisie."""
+    st.session_state[_CLE_GENERATION] = st.session_state.get(_CLE_GENERATION, 0) + 1
+
+
 def _ouvrir_fiche_selectionnee() -> None:
-    """Une ligne choisie dans « Mes entreprises » ouvre sa fiche."""
-    etat = st.session_state.get(_CLE_TABLEAU) or {}
+    """Une ligne choisie dans « Mes entreprises » ouvre sa fiche.
+
+    La sélection est aussitôt effacée : au retour sur l'onglet, un clic sur
+    n'importe quelle ligne, la même comprise, ouvre de nouveau sa fiche.
+    """
+    etat = st.session_state.get(_cle_tableau()) or {}
     lignes = (etat.get("selection") or {}).get("rows") or []
     noms = st.session_state.get("_veille_noms_tableau") or []
     if lignes and lignes[0] < len(noms):
         st.session_state["veille_fiche"] = noms[lignes[0]]
         st.session_state[_CLE_ONGLET] = "Fiche entreprise"
+    _vider_selection_tableau()
 
 
 def _retirer(db_file: str, entreprise_id: int, nom: str) -> None:
@@ -421,6 +459,9 @@ def _retirer(db_file: str, entreprise_id: int, nom: str) -> None:
     st.session_state.pop(f"veille_retirer_confirme_{entreprise_id}", None)
     if st.session_state.get("veille_fiche") == nom:
         st.session_state.pop("veille_fiche", None)
+    # Les lignes ont bougé : une sélection gardée viserait une autre entreprise.
+    _vider_selection_tableau()
+    st.session_state[_CLE_RETRAIT] = f"{nom} retirée de la veille."
 
 
 # ── Bandeau ──────────────────────────────────────────────────────────────
@@ -440,7 +481,7 @@ def _afficher_bandeau(chemins, entreprises: list, dernier) -> None:
 # ── Onglet Nouveautés ────────────────────────────────────────────────────
 
 def _onglet_nouveautes(store, chemins, entreprises, dernier) -> None:
-    st.subheader("Nouveau depuis votre dernière visite")
+    st.header("Nouveau depuis votre dernière visite", anchor=False)
     visite = _visite_precedente(chemins.config_dir)
     nouveautes = store.nouveautes_depuis(visite)
     partages = store.coordonnees_nouvelles_depuis(visite)
@@ -467,29 +508,30 @@ def _onglet_nouveautes(store, chemins, entreprises, dernier) -> None:
         )
         urls = list(choix.loc[choix["Inviter"], "Lien"])
         if urls:
-            bloc_recuperer_inviter(urls, "veille", libelle_bouton="Récupérer les infos", nom_export="veille")
+            bloc_recuperer_inviter(urls, "veille", nom_export="veille")
     if autres:
         with st.expander(f"Autres postes trouvés ({len(autres)}) — hors des familles visées"):
             st.dataframe(pd.DataFrame(autres)[list(colonnes)].rename(columns=colonnes),
                          hide_index=True, width="stretch", column_config={"Lien": _LIEN_PROFIL})
     for c in nouveautes["changements"]:
         source = "LinkedIn" if c["source"] == "linkedin" else "Annuaire officiel"
-        st.markdown(f"- **{c['entreprise']}** — {_CHAMPS.get(c['champ'], c['champ'])} : {c['avant']} → "
-                    f"**{c['apres']}** ({source}, {_jour_fr(c['releve_le'])})")
+        st.markdown(f"- **{_md(c['entreprise'])}** — {_md(_CHAMPS.get(c['champ'], c['champ']))} : "
+                    f"{_md(c['avant'])} → **{_md(c['apres'])}** ({source}, {_jour_fr(c['releve_le'])})")
     for p in partages:
-        quoi = [f"son {n} : {p[k]}" for k, n in (("email", "email"), ("telephone", "téléphone")) if p[k]]
-        st.markdown(f"- **{p['nom'] or p['url']}** ({p['entreprise']}) a partagé " + " et ".join(quoi)
+        quoi = [f"son {n} : {_md(p[k])}" for k, n in (("email", "email"), ("telephone", "téléphone")) if p[k]]
+        # Sans nom, le lien du profil (adresse LinkedIn normalisée) est montré tel quel.
+        st.markdown(f"- **{_md(p['nom']) if p['nom'] else p['url']}** ({_md(p['entreprise'])}) a partagé " + " et ".join(quoi)
                     + f" ({_jour_fr(p['releve_le'])})")
 
     # ── Lancer ─────────────────────────────────────────────────────────
-    st.subheader("Lancer la veille")
+    st.header("Lancer la veille", anchor=False)
     # Le rapport d'un passage qui vient de finir est montré une fois, à la
     # place du résumé enregistré (même passage, avec ses compteurs en plus).
     rapport = st.session_state.pop("veille_rapport", None)
     if rapport is not None and rapport.cause in ("occupe", "rien_a_faire"):
         # Un refus n'est pas un passage : il est dit une fois, et le résumé
         # du dernier vrai passage reste en dessous.
-        st.warning(" ".join([_CAUSES[rapport.cause]] + list(rapport.erreurs)))
+        st.warning(" ".join([_CAUSES[rapport.cause]] + _erreurs_actuelles(rapport.erreurs)))
         rapport = None
     if rapport is not None:
         _afficher_rapport(rapport)
@@ -525,15 +567,23 @@ def _onglet_nouveautes(store, chemins, entreprises, dernier) -> None:
 
 # ── Onglet Mes entreprises ───────────────────────────────────────────────
 
+def _nb_contacts_cibles(contacts: list) -> int:
+    """Même règle que la fiche (`resume_fiche`) : « Autre » n'est pas un poste visé."""
+    return sum(1 for c in contacts if c.get("famille") != "Autre")
+
+
 def _onglet_entreprises(store, entreprises) -> None:
+    retrait = st.session_state.pop(_CLE_RETRAIT, None)
+    if retrait:
+        st.success(retrait)
     if entreprises:
         noms = [e["nom"] for e in entreprises]
         st.session_state["_veille_noms_tableau"] = noms
         st.dataframe(pd.DataFrame([{
             "Entreprise": e["nom"], "État": _etat_lisible(e, store.fiche(e["id"])),
             "Dernier passage": _jour_fr(e["derniere_veille"]) if e["derniere_veille"] else "jamais",
-            "Contacts": e["nb_contacts"],
-        } for e in entreprises]), hide_index=True, width="stretch", key=_CLE_TABLEAU,
+            "Contacts ciblés": _nb_contacts_cibles(store.contacts(e["id"])),
+        } for e in entreprises]), hide_index=True, width="stretch", key=_cle_tableau(),
             on_select=_ouvrir_fiche_selectionnee, selection_mode="single-row")
         st.caption("Cliquez sur une ligne pour ouvrir la fiche de l'entreprise.")
     else:
@@ -669,14 +719,14 @@ def _onglet_fiche(store, entreprises) -> None:
                 data=st.session_state.export_manager.export_to_excel(tableau.to_dict("records")),
                 file_name=f"{fichier}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"veille_dl_xlsx_{e['id']}", width="stretch")
+                key=f"veille_dl_xlsx_{e['id']}", width="stretch", on_click="ignore")
         with col_c:
             # Point-virgule et BOM : ouvert tel quel par Excel en français, accents compris.
             st.download_button(
                 "Exporter en CSV", icon=":material/download:",
                 data=tableau.to_csv(index=False, sep=";").encode("utf-8-sig"),
                 file_name=f"{fichier}.csv", mime="text/csv",
-                key=f"veille_dl_csv_{e['id']}", width="stretch")
+                key=f"veille_dl_csv_{e['id']}", width="stretch", on_click="ignore")
     elif e["derniere_veille"]:
         st.caption(f"Aucun contact trouvé au passage du {_jour_fr(e['derniere_veille'])} : rien à exporter.")
     else:
@@ -710,7 +760,7 @@ def afficher_page_veille() -> None:
     store = VeilleStore(str(chemins.db_file))
     entreprises = store.entreprises()
     dernier = store.dernier_passage()
-    st.title("Veille entreprises")
+    st.title("Veille entreprises", anchor=False)
     _afficher_bandeau(chemins, entreprises, dernier)
 
     # Onglets suivis (clé + rerun) pour qu'une ligne du tableau puisse ouvrir
