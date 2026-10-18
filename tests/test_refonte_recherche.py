@@ -116,7 +116,8 @@ def test_bandeau_de_contexte_avec_session_et_budget(budget_dicte):
 
 def test_la_jauge_n_apparait_qu_avec_les_invitations(budget_dicte):
     at = _page()
-    jauges = lambda: [m for m in at.markdown if m.value.startswith('<div class="wf-jauge')]
+    # La barre latérale porte sa propre jauge, sur toutes les pages.
+    jauges = lambda: [m for m in at.main.markdown if m.value.startswith('<div class="wf-jauge')]
     assert not jauges()
     at.toggle(key="inviter_candidat").set_value(True)
     at.run()

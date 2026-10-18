@@ -1132,6 +1132,17 @@ class LinkedInScraperV2:
                 await browser.close()
         return envoyes
 
+    def _nouvelle_session_humaine(self) -> HumanBehavior:
+        """Comportement humain neuf (fatigue remise à zéro), même compteur.
+
+        Recréer `HumanBehavior` sans `limits_file` repartait du fichier
+        partagé `config/daily_limits.json` : les recherches Candidats et
+        Clients comptaient alors les invitations ailleurs que dans le
+        compteur de la personne, celui que lit la jauge du budget.
+        """
+        return HumanBehavior(fatigue_factor=0.0,
+                             limits_file=self.human.daily_limits.limits_file)
+
     async def run_scraper_async(
         self,
         cookie: str,
@@ -1173,7 +1184,7 @@ class LinkedInScraperV2:
         self.errors = []
 
         # Réinitialiser la fatigue pour chaque nouvelle session
-        self.human = HumanBehavior(fatigue_factor=0.0)
+        self.human = self._nouvelle_session_humaine()
 
         # Vérifier les limites quotidiennes AVANT de lancer
         if not self.human.daily_limits.can_scrape():
