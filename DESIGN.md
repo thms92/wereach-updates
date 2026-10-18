@@ -10,8 +10,11 @@
 
 **Le budget du jour.** Les 20 invitations quotidiennes sont la ressource
 rare de l'outil. Elles sont dessinées comme une jauge de 20 crans
-(`jauge_budget()`), présente dans la barre latérale, au tableau de bord et
-à chaque endroit où une action en consomme. C'est le geste signature :
+(`jauge_budget()`), présente en permanence dans la barre latérale et dans
+chaque bloc « Invitations » où une action en consomme. Ailleurs, une puce
+dit la même chose en mots : « N restantes sur 20 » (`texte_budget()`).
+Une seule formulation partout : on compte ce qui reste, jamais ce qui est
+utilisé. C'est le geste signature :
 on le reconnaît partout, et il porte une information réelle.
 
 ## Coque
@@ -56,8 +59,18 @@ Tracking ≥ -0.03em.
 
 ## Composants (`ui/composants.py`)
 
-`entete_page`, `jauge_budget`, `carte_action` (bloc « À faire »),
-`entonnoir`, `puce` (états), `etat_vide`. HTML statique + classes `wf-*`
+`bandeau_contexte`, `jauge_budget`, `texte_budget`, `carte_action`
+(bloc « À faire », variante `vedette` pour les acceptations ; icônes
+invitation, relance, message, alerte, ok, accepte, info, recherche, veille,
+vide), `entonnoir`, `puce` (états), `point_direct`, `etat_vide` (avec
+`etapes=` pour le premier lancement), `pluriel`.
+
+## Actions irréversibles
+
+Toute action qui part du compte LinkedIn (inviter, envoyer un message)
+passe par un récapitulatif « Confirmer et lancer / Annuler »
+(`ui/invitations.py::confirmation`), annulé dès qu'un champ change. Une
+recherche sans invitation part directement. HTML statique + classes `wf-*`
 définies dans `wefiit_theme.py`. Aucun émoji comme icône : icônes
 Material (`:material/…:`) ou aucune.
 

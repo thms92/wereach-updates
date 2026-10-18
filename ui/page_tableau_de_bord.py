@@ -16,6 +16,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from ui.page_veille import FICHIER_VISITE_VEILLE
+
 from ui.composants import (afficher_bandeau_contexte, afficher_carte_action,
                            afficher_entonnoir, afficher_etat_vide, pluriel,
                            texte_budget, ton_budget)
@@ -29,7 +31,6 @@ PAGE_VEILLE = "🏢 Veille"
 
 # Fichier où la page Veille note la date de la visite précédente. Lu ici
 # seulement : c'est la page Veille qui l'écrit quand on la consulte.
-_VISITE_VEILLE = "derniere_visite_veille.txt"
 
 
 def _aller_a(page: str) -> None:
@@ -147,7 +148,7 @@ def _nouveaux_contacts_veille(chemins) -> int:
         if "veille_visite_precedente" in st.session_state:
             visite = st.session_state["veille_visite_precedente"]
         else:
-            chemin = Path(chemins.config_dir) / _VISITE_VEILLE
+            chemin = Path(chemins.config_dir) / FICHIER_VISITE_VEILLE
             visite = ((chemin.read_text(encoding="utf-8").strip() or None)
                       if chemin.exists() else None)
         if visite is None:
