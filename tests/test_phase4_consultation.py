@@ -312,3 +312,9 @@ def test_le_cookie_enregistre_se_dit_session(tmp_path, caplog):
     messages = [r.getMessage() for r in caplog.records]
     assert "Session LinkedIn enregistrée" in messages
     assert not any("Cookie sauvegardé" in m for m in messages)
+
+
+def test_le_logger_ecrit_la_ou_le_journal_lit():
+    import logger as module_logger
+    from utils.diagnostic import chemin_journal
+    assert module_logger._fichier_journal() == str(chemin_journal())
