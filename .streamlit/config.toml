@@ -1,13 +1,25 @@
 [theme]
 base                     = "light"
-primaryColor             = "#172982"   # accent bleu — CTA, liens, focus, actif
-backgroundColor          = "#FBFBFA"   # off-white — fond principal
-secondaryBackgroundColor = "#FFFFFF"   # surfaces (sidebar, cards, inputs)
+primaryColor             = "#172982"   # marine WEFIIT — CTA, liens, actif
+backgroundColor          = "#F6F7FB"   # fond de travail, neutre légèrement froid
+secondaryBackgroundColor = "#FFFFFF"   # surfaces (cards, inputs)
 textColor                = "#14181C"   # charcoal — texte
+borderColor              = "#E3E6EE"
 # Inter déclarée ici, pas seulement en CSS : la règle CSS de wefiit_theme.py
 # perdait face aux styles de Streamlit, et tout s'affichait en Source Sans.
 font                     = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
 codeFont                 = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+chartCategoricalColors   = ["#172982", "#5B7CFA", "#F98F03", "#93A8FF", "#1F2F8F", "#FBC56B", "#6B7280", "#C7D2FE"]
+
+# Coque marine (DESIGN.md) : Streamlit dessine lui-même les widgets de la
+# barre latérale en blanc sur marine ; wefiit_theme.py ajoute le dégradé vers
+# #101D5E en bas, la pilule de l'item actif et le focus blanc.
+[theme.sidebar]
+backgroundColor          = "#172982"
+secondaryBackgroundColor = "#1F2F8F"
+textColor                = "#FFFFFF"
+primaryColor             = "#F98F03"
+borderColor              = "#3A4A9E"
 
 [client]
 # Cache les menus de développement de Streamlit (dont « Deploy ») : l'équipe
