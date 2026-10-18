@@ -159,7 +159,7 @@ def test_une_liste_entierement_ecartee_affiche_ses_motifs(recolte_espionne):
     expanders = [e for e in at.expander if "1 profil écarté" in e.label]
     assert expanders, f"pas d'expander des écartés : {[e.label for e in at.expander]}"
     textes = [m.value for m in expanders[0].markdown]
-    assert any("déjà dans ton réseau (1er degré)" in t for t in textes), textes
+    assert any("déjà dans votre réseau (relation directe)" in t for t in textes), textes
 
 
 def test_aucun_voisin_propose_n_est_pas_presente_comme_un_tri(recolte_espionne):

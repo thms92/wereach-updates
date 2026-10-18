@@ -69,7 +69,7 @@ def url_panneau(url):
 
 
 MOTIF_URL_ILLISIBLE = "lien de profil illisible"
-MOTIF_PREMIER_DEGRE = "déjà dans ton réseau (1er degré)"
+MOTIF_PREMIER_DEGRE = "déjà dans votre réseau (relation directe)"
 MOTIF_DEJA_AU_FICHIER = "déjà dans ton fichier"
 MOTIF_NON_INVITABLE = "non invitable (« Suivre » seulement)"
 
