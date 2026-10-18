@@ -118,3 +118,23 @@ def donnees_de_test_isolees(tmp_path_factory):
         os.environ.pop("WEREACH_DATA_DIR", None)
     else:
         os.environ["WEREACH_DATA_DIR"] = ancien
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _journal_de_l_application_epargne():
+    """Les tests n'écrivent pas dans le journal réel (`scraper.log`).
+
+    La page Journal le montre aux gens : les lignes produites par les tests
+    (entreprises fictives, erreurs simulées, chemins vers `tests/`) s'y
+    mêlaient aux vraies actions. On retire le fichier du logger pour la
+    durée de la session de tests, puis on le remet.
+    """
+    import logging
+    from logging.handlers import RotatingFileHandler
+    journal = logging.getLogger("linkedin_scraper")
+    fichiers = [h for h in journal.handlers if isinstance(h, RotatingFileHandler)]
+    for h in fichiers:
+        journal.removeHandler(h)
+    yield
+    for h in fichiers:
+        journal.addHandler(h)
