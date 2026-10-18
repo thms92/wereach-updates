@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from scraper_v2 import LinkedInScraperV2
+from scraper_v2 import SESSION_EXPIREE, LinkedInScraperV2
 from scraper_v2_sync import LinkedInScraperV2Sync
 from utils.dom_selectors import DOMSelectors
 
@@ -300,7 +300,7 @@ def test_une_vraie_page_de_connexion_est_refusee_et_le_navigateur_ferme(scraper,
     )
 
     assert suggestions == []
-    assert any("login" in e for e in scraper.errors)
+    assert SESSION_EXPIREE in scraper.errors
     assert navigateur.ferme
 
 
@@ -483,7 +483,7 @@ def test_un_clic_renvoye_vers_la_connexion_est_refuse(scraper, faux):
     )
 
     assert suggestions == []
-    assert any("login" in e for e in scraper.errors)
+    assert SESSION_EXPIREE in scraper.errors
     assert navigateur.ferme
 
 

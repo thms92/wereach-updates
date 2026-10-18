@@ -68,7 +68,7 @@ class RapportPassage:
 # phrase en tête du rapport et retire la ligne d'erreur identique, pour ne pas
 # dire deux fois la même chose avec des mots différents.
 MESSAGES_ARRET = {
-    "cookie": "Cookie LinkedIn invalide ou expiré — renseignez un nouveau cookie li_at dans la page Recherche.",
+    "cookie": "Session LinkedIn invalide ou expirée : mettez-la à jour dans la page Recherche.",
     "deconnecte": "LinkedIn a demandé de se reconnecter : passage interrompu.",
     "securite": ("LinkedIn a signalé une activité inhabituelle (vérification ou limitation) : veille arrêtée "
                  "par sécurité. Réessayez plus tard."),

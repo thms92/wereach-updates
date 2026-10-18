@@ -35,6 +35,12 @@ from utils.stealth_profile import StealthProfileManager
 from utils.ecoles import composer_libelle
 
 
+
+# Message montré quand LinkedIn renvoie vers la connexion : la personne doit
+# savoir quoi faire, pas quel cookie technique a expiré.
+SESSION_EXPIREE = ("Session LinkedIn expirée : mettez-la à jour dans la page "
+                   "Recherche.")
+
 class LinkedInScraperV2:
     """
     Scraper LinkedIn V2 - Version améliorée avec async/await
@@ -1039,7 +1045,7 @@ class LinkedInScraperV2:
             await page.add_init_script(StealthProfileManager.get_stealth_init_script(profile))
         self.human.attach_monitor(page)
         if status_callback:
-            status_callback("🌡️ Warm-up session...")
+            status_callback("Préparation de la session LinkedIn…")
         if not await self.human.warmup_session(page):
             await browser.close()
             return None, None
@@ -1056,23 +1062,23 @@ class LinkedInScraperV2:
             return acceptees
         async with async_playwright() as p:
             if status_callback:
-                status_callback("🚀 Lancement du navigateur...")
+                status_callback("Ouverture du navigateur…")
             browser, page = await self._open_linkedin_page(p, cookie, status_callback)
             if page is None:
-                self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                self.errors.append(SESSION_EXPIREE)
                 return acceptees
             try:
                 total = len(profils)
                 for i, prof in enumerate(profils):
                     url = prof.get("url"); nom = prof.get("nom", "")
                     if status_callback:
-                        status_callback(f"🔎 [{i+1}/{total}] {nom}")
+                        status_callback(f"Vérification {i+1} sur {total} : {nom}")
                     try:
                         clean_url = url.split('?')[0].rstrip('/') + '/'
                         if not await self.network_manager.safe_page_goto(page, clean_url):
                             continue
                         if any(x in page.url for x in ["login", "authwall"]):
-                            self.errors.append("Redirigé vers login — cookie invalide.")
+                            self.errors.append(SESSION_EXPIREE)
                             break
                         await self.human.human_delay(1500, 400)
                         btn = page.locator(
@@ -1105,17 +1111,17 @@ class LinkedInScraperV2:
             return envoyes
         async with async_playwright() as p:
             if status_callback:
-                status_callback("🚀 Lancement du navigateur...")
+                status_callback("Ouverture du navigateur…")
             browser, page = await self._open_linkedin_page(p, cookie, status_callback)
             if page is None:
-                self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                self.errors.append(SESSION_EXPIREE)
                 return envoyes
             try:
                 total = len(cibles)
                 for i, c in enumerate(cibles):
                     url = c.get("url"); nom = c.get("nom", "")
                     if status_callback:
-                        status_callback(f"✉️ [{i+1}/{total}] {nom}")
+                        status_callback(f"Message {i+1} sur {total} : {nom}")
                     try:
                         if await self.envoyer_message(page, url, nom, message):
                             envoyes.append({"url": url, "nom": nom})
@@ -1188,14 +1194,14 @@ class LinkedInScraperV2:
 
         # Vérifier les limites quotidiennes AVANT de lancer
         if not self.human.daily_limits.can_scrape():
-            msg = (f"🚫 Limite quotidienne atteinte ({self.human.daily_limits.profiles_today} profils). "
+            msg = (f"Limite du jour atteinte ({self.human.daily_limits.profiles_today} profils consultés). "
                    f"Réessayez demain.")
             logger.error(msg)
             self.errors.append(msg)
             return pd.DataFrame()
 
         if inviter and not self.human.daily_limits.can_invite():
-            msg = (f"🚫 Limite d'invitations quotidienne atteinte ({self.human.daily_limits.invitations_today}). "
+            msg = (f"Budget d'invitations du jour épuisé ({self.human.daily_limits.invitations_today} envoyées). "
                    f"Réessayez demain.")
             logger.error(msg)
             self.errors.append(msg)
@@ -1221,7 +1227,7 @@ class LinkedInScraperV2:
             async with async_playwright() as p:
 
                 if status_callback:
-                    status_callback("🚀 Lancement du navigateur...")
+                    status_callback("Ouverture du navigateur…")
 
                 logger.info("Démarrage Playwright (async)…")
 
@@ -1286,19 +1292,19 @@ class LinkedInScraperV2:
 
                 # ═══ WARM-UP SESSION ═══
                 if status_callback:
-                    status_callback("🌡️ Warm-up session...")
+                    status_callback("Préparation de la session LinkedIn…")
 
                 warmup_ok = await self.human.warmup_session(page)
                 if not warmup_ok:
                     logger.error("❌ Warm-up échoué — cookie invalide ?")
-                    self.errors.append("Cookie invalide ou expiré (échec warm-up)")
+                    self.errors.append(SESSION_EXPIREE)
                     await browser.close()
                     return pd.DataFrame()
 
                 # Vérifier la sécurité après le warm-up
                 if not await self.human.check_safety(page):
                     logger.error("❌ Arrêt de sécurité post warm-up")
-                    self.errors.append("Détection d'un problème de sécurité LinkedIn")
+                    self.errors.append("LinkedIn demande une vérification de sécurité : ouvrez linkedin.com dans Chrome, puis relancez.")
                     await browser.close()
                     return pd.DataFrame()
 
@@ -1309,7 +1315,7 @@ class LinkedInScraperV2:
                 # que la stratégie "AND keyword").
                 for entreprise in entreprises:
                     if status_callback:
-                        status_callback(f"🏢 Résolution URN entreprise '{entreprise}'…")
+                        status_callback(f"Identification de l'entreprise « {entreprise} »…")
                     urn = await self._resoudre_company_urn_via_typeahead(entreprise, page)
                     # Fallback navigation désactivé : /search/results/companies
                     # boucle en redirections depuis une IP datacenter et n'apporte
@@ -1326,7 +1332,7 @@ class LinkedInScraperV2:
                 )
 
                 if status_callback:
-                    status_callback("🔗 Chargement recherche…")
+                    status_callback("Chargement des résultats LinkedIn…")
 
                 logger.info(f"Accès URL : {url_recherche}")
 
@@ -1345,10 +1351,10 @@ class LinkedInScraperV2:
                     except Exception:
                         pass
                     if "ERR_TOO_MANY_REDIRECTS" in last_err or "login" in page.url:
-                        msg = ("Cookie LinkedIn expiré ou invalidé (boucle de "
+                        msg = ("Session LinkedIn expirée (boucle de "
                                "redirections). Reconnectez-vous à linkedin.com, "
-                               "copiez le nouveau cookie 'li_at' et mettez-le à jour "
-                               "dans l'application.")
+                               "puis mettez à jour votre session dans la page "
+                               "Recherche.")
                         logger.error(f"❌ {msg}")
                         self.errors.append(msg)
                     else:
@@ -1363,7 +1369,7 @@ class LinkedInScraperV2:
                 # Vérifier qu'on n'est pas redirigé vers login
                 if "login" in page.url:
                     logger.error("❌ Cookie invalide ou expiré")
-                    self.errors.append("Cookie invalide ou expiré")
+                    self.errors.append(SESSION_EXPIREE)
                     await browser.close()
                     return pd.DataFrame()
 
@@ -1382,14 +1388,14 @@ class LinkedInScraperV2:
                 while (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils):
 
                     if status_callback:
-                        status_callback(f"📄 Page {current_page}…")
+                        status_callback(f"Lecture de la page {current_page} des résultats…")
 
                     logger.info(f"═══ Scraping page {current_page} ═══")
 
                     # ═══ CHECK SÉCURITÉ à chaque page ═══
                     if not await self.human.check_safety(page):
                         logger.error("🛑 Arrêt de sécurité en cours de scraping")
-                        self.errors.append("Arrêt de sécurité — signal LinkedIn détecté")
+                        self.errors.append("Arrêt par précaution : LinkedIn a montré un signal de limitation. Réessayez plus tard.")
                         break
 
                     # Vérifier la limite quotidienne en cours de route
@@ -1436,7 +1442,7 @@ class LinkedInScraperV2:
                                     f"{self.human.daily_limits.max_invitations}) — arrêt sécurité."
                                 )
                                 if status_callback:
-                                    status_callback("🛑 Plafond quotidien d'invitations atteint")
+                                    status_callback("Budget d'invitations du jour atteint : les invitations reprendront demain.")
                                 break
                         else:
                             if profils_scrapes >= nb_profils:
@@ -1471,7 +1477,7 @@ class LinkedInScraperV2:
                         invite_envoyee = False
                         if inviter:
                             if status_callback:
-                                status_callback(f"📨 Invitation pour {nom}")
+                                status_callback(f"Invitation de {nom}…")
 
                             try:
                                 invite_envoyee = await self.envoyer_invitation(
@@ -1980,23 +1986,23 @@ class LinkedInScraperV2:
 
         async with async_playwright() as p:
             if status_callback:
-                status_callback("🚀 Lancement du navigateur...")
+                status_callback("Ouverture du navigateur…")
 
             browser, page = await self._open_linkedin_page(p, cookie, status_callback)
             if page is None:
-                self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                self.errors.append(SESSION_EXPIREE)
                 return [], None
 
             try:
                 if status_callback:
-                    status_callback("👤 Ouverture du profil de référence...")
+                    status_callback("Ouverture du profil de référence…")
 
                 if not await self.network_manager.safe_page_goto(page, cible):
                     self.errors.append(f"Impossible d'ouvrir le profil : {cible}")
                     return [], None
 
                 if self._est_page_de_connexion(page.url):
-                    self.errors.append("Redirigé vers login — cookie invalide.")
+                    self.errors.append(SESSION_EXPIREE)
                     return [], None
 
                 await self.human.human_delay(2000, 500)
@@ -2007,18 +2013,18 @@ class LinkedInScraperV2:
                 entreprise = await self._entreprise_reference(page)
 
                 if status_callback:
-                    status_callback("👥 Ouverture des profils voisins...")
+                    status_callback("Ouverture des profils similaires…")
                 echec_ouverture = await self._ouvrir_panneau(page)
 
                 # Le clic change l'URL (routage côté client) : une session
                 # expirée peut s'y révéler.
                 if self._est_page_de_connexion(page.url):
-                    self.errors.append("Redirigé vers login — cookie invalide.")
+                    self.errors.append(SESSION_EXPIREE)
                     return [], None
 
                 if echec_ouverture is None:
                     if status_callback:
-                        status_callback("📜 Déroulement de la liste...")
+                        status_callback("Lecture de la liste…")
                     await self._derouler_panneau(page)
                     brut = await page.evaluate(DOMSelectors.extract_browsemap_js(), "panneau")
                 else:
@@ -2026,7 +2032,7 @@ class LinkedInScraperV2:
                     # serait un changement de structure, qu'on crie plus bas
                     # au lieu de le masquer derrière les 5 de la section.
                     if status_callback:
-                        status_callback("📋 Lecture de la section du profil...")
+                        status_callback("Lecture de la section du profil…")
                     brut = await page.evaluate(DOMSelectors.extract_browsemap_js(), "section")
 
                 entrees = brut.get("entrees", [])
@@ -2140,7 +2146,7 @@ class LinkedInScraperV2:
             async with async_playwright() as p:
 
                 if status_callback:
-                    status_callback("🚀 Lancement du navigateur...")
+                    status_callback("Ouverture du navigateur…")
 
                 # ═══ STEALTH PROFILE ═══
                 profile = StealthProfileManager.load_or_generate(prefer_mac=True)
@@ -2197,12 +2203,12 @@ class LinkedInScraperV2:
 
                 # ═══ WARM-UP SESSION ═══
                 if status_callback:
-                    status_callback("🌡️ Warm-up session...")
+                    status_callback("Préparation de la session LinkedIn…")
 
                 warmup_ok = await self.human.warmup_session(page)
                 if not warmup_ok:
                     logger.error("❌ Cookie invalide ou expiré (warm-up)")
-                    self.errors.append("Cookie invalide ou expiré — reconnectez-vous.")
+                    self.errors.append(SESSION_EXPIREE)
                     await browser.close()
                     return pd.DataFrame()
 
@@ -2214,7 +2220,7 @@ class LinkedInScraperV2:
                     logger.info(f"[{i+1}/{total}] {nom_affiche}")
 
                     if status_callback:
-                        status_callback(f"👤 [{i+1}/{total}] {nom_affiche}")
+                        status_callback(f"Profil {i+1} sur {total} : {nom_affiche}")
 
                     try:
                         success = await self.network_manager.safe_page_goto(page, url)
@@ -2226,7 +2232,7 @@ class LinkedInScraperV2:
                         # Vérifier la redirection login
                         if any(x in page.url for x in ["login", "authwall"]):
                             logger.error("  ❌ Redirigé vers login — arrêt")
-                            self.errors.append("Déconnecté de LinkedIn pendant le scraping")
+                            self.errors.append("Déconnecté de LinkedIn pendant la recherche : mettez à jour votre session dans la page Recherche.")
                             break
 
                         # Comportement humain : scroll + lecture
