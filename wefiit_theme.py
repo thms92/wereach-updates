@@ -75,6 +75,17 @@ _VARS_SUR_SOMBRE = """
   --wf-shadow:none; --wf-shadow-hover:none;
 """
 
+# Icône d'onglet : la marque We.Reach (« W » blanc et point orange sur
+# marine), dessinée en SVG. Streamlit la sert en data URI : rien à
+# télécharger, lisible sur un onglet clair comme sombre.
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    f'<rect width="64" height="64" rx="14" fill="{WF_MARINE}"/>'
+    '<path d="M9 19 17 45 27.5 27 38 45 46 19" fill="none" stroke="#FFFFFF" '
+    'stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>'
+    f'<circle cx="54" cy="44" r="5" fill="{WF_ORANGE}"/></svg>'
+)
+
 # Couleurs des graphiques : l'accent d'abord, puis des teintes de la même
 # famille et l'orange du wordmark — jamais la palette par défaut de Plotly,
 # dont le rouge vif se lit comme une alerte.
@@ -104,9 +115,42 @@ def declarer_langue_francaise() -> None:
     Streamlit sert la page en `lang="en"` et n'offre aucun réglage : un
     lecteur d'écran prononce alors tout le texte français avec des règles
     anglaises. Le script s'exécute dans la page (pas dans une iframe).
+
+    Il traduit aussi les deux libellés anglais que Streamlit 1.58 ajoute en
+    tête de la liste de chaque `st.multiselect` (« Select all », « Select
+    N matches ») : aucun paramètre ne les retire ni ne les traduit, et
+    l'option n'a ni data-testid ni attribut propre (seulement `role="option"`
+    et un id `…val-0` que porte aussi la première vraie option quand elle
+    est seule). La masquer en CSS aurait aussi laissé un trou de 40 px dans
+    la liste virtualisée (positions absolues). Traduire garde le geste utile.
     """
-    st.html("<script>document.documentElement.lang='fr';</script>",
-            unsafe_allow_javascript=True)
+    st.html(f"<script>{_SCRIPT_FRANCAIS}</script>", unsafe_allow_javascript=True)
+
+
+# Traductions des textes que Streamlit écrit lui-même (voir
+# declarer_langue_francaise). Le texte exact est remplacé, rien d'autre.
+TRADUCTIONS_INTERFACE = (
+    (r"^Select all$", "Tout sélectionner"),
+    (r"^Select (\d+) matches$", "Sélectionner les $1 résultats"),
+)
+
+# AUCUN caractère « < » dans ce script : DOMPurify (qui filtre st.html)
+# supprime tout élément dont le texte contient « < » suivi d'une lettre ou
+# d'un chiffre — `i<T.length` faisait disparaître le script entier, y compris
+# la déclaration de langue. D'où `forEach` et `=== -1`.
+_SCRIPT_FRANCAIS = (
+    "document.documentElement.lang='fr';"
+    "(function(){if(window.__wfTraduction)return;window.__wfTraduction=true;"
+    "var T=[" + ",".join(f"[/{motif}/,'{fr}']" for motif, fr in TRADUCTIONS_INTERFACE) + "];"
+    "function tr(n){var v=(n.nodeValue||'').trim();if(v.indexOf('Select ')!==0)return;"
+    "T.some(function(t){if(t[0].test(v)){n.nodeValue=v.replace(t[0],t[1]);return true;}return false;});}"
+    "function parcourir(r){if(r.nodeType===3){tr(r);return;}"
+    "if(r.nodeType!==1||(r.textContent||'').indexOf('Select ')===-1)return;"
+    "var w=document.createTreeWalker(r,NodeFilter.SHOW_TEXT),n;while((n=w.nextNode()))tr(n);}"
+    "new MutationObserver(function(ms){ms.forEach(function(m){"
+    "if(m.type==='characterData')tr(m.target);else m.addedNodes.forEach(parcourir);});})"
+    ".observe(document.body,{childList:true,subtree:true,characterData:true});})();"
+)
 
 
 def wordmark(size: float = 1.9, center: bool = True,
@@ -170,8 +214,10 @@ section[data-testid="stSidebar"] {
 }
 [data-testid="stSidebarContent"], [data-testid="stSidebarHeader"] { background:transparent !important; }
 section[data-testid="stSidebar"] * { color:var(--wf-text); }
+/* Légendes (version, compte) : Streamlit leur met une opacité de 0.6, qui
+   ramenait #C9CEE6 à #818BBA sur la marine (4.0:1). Opacité pleine : 8:1. */
 section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
-section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * { color:var(--wf-muted) !important; }
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * { color:var(--wf-muted) !important; opacity:1 !important; }
 section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button,
 section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] svg { color:#FFFFFF !important; fill:currentColor; }
 section[data-testid="stSidebar"] hr { border-color:var(--wf-border) !important; background:var(--wf-border) !important; }
@@ -367,7 +413,9 @@ __CODE__
 /* Point « en direct » */
 .wf-direct { position:relative; display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--wf-success); flex:none; }
 .wf-puce .wf-direct { background:currentColor; width:7px; height:7px; }
-.wf-direct::after { content:""; position:absolute; inset:0; border-radius:50%; background:inherit; animation:wf-pouls 1.8s var(--wf-ease) infinite; }
+/* Trois pulsations puis immobile : le point signale l'état, il ne doit pas
+   tirer l'œil pendant toute la session. */
+.wf-direct::after { content:""; position:absolute; inset:0; border-radius:50%; background:inherit; animation:wf-pouls 1.8s var(--wf-ease) 3; }
 @keyframes wf-pouls { 0% { transform:scale(1); opacity:.6; } 100% { transform:scale(2.8); opacity:0; } }
 
 /* Jauge du budget : le geste signature */
@@ -376,8 +424,7 @@ __CODE__
 .wf-jauge--sombre { --wf-j-reste:#FFFFFF; background:rgba(255,255,255,.07); box-shadow:none; }
 .wf-jauge__tete { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:2px 8px; font-size:.78rem; font-weight:600; color:var(--wf-muted); font-variant-numeric:tabular-nums; }
 .wf-jauge__libelle { color:var(--wf-text); font-weight:700; white-space:nowrap; }
-.wf-jauge__compte { white-space:nowrap; }
-.wf-jauge__compte { color:var(--wf-muted); }
+.wf-jauge__compte { white-space:nowrap; color:var(--wf-muted); font-size:.78rem; font-weight:600; font-variant-numeric:tabular-nums; }
 .wf-jauge__valeur { color:var(--wf-text); font-size:.9rem; font-weight:600; line-height:1.15; }
 .wf-jauge__nombre { font-size:1.65rem; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; margin-right:2px; }
 .wf-jauge--attention .wf-jauge__valeur { color:var(--wf-warn); }
@@ -399,7 +446,8 @@ ol.wf-entonnoir { list-style:none !important; margin:0 0 1rem !important; paddin
 .wf-entonnoir__nombre { font-size:1.6rem; font-weight:800; letter-spacing:-.02em; color:var(--wf-text); font-variant-numeric:tabular-nums; line-height:1.1; }
 .wf-entonnoir__barre { height:6px; border-radius:3px; background:var(--wf-grid); overflow:hidden; }
 .wf-entonnoir__barre > span { display:block; height:100%; border-radius:3px; background:var(--wf-accent-vif); transform-origin:0 50%; animation:wf-barre .5s var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 60ms); }
-.wf-entonnoir__etape:last-child .wf-entonnoir__barre > span { background:var(--wf-orange); }
+/* Dernière étape (message envoyé) en marine : l'orange est réservé au budget. */
+.wf-entonnoir__etape:last-child .wf-entonnoir__barre > span { background:var(--wf-accent); }
 @keyframes wf-barre { from { transform:scaleX(0); } }
 @media (max-width: 720px) {
   ol.wf-entonnoir { grid-template-columns:1fr !important; gap:14px; }
@@ -415,9 +463,23 @@ ol.wf-entonnoir { list-style:none !important; margin:0 0 1rem !important; paddin
 .wf-action--attention .wf-action__icone { color:var(--wf-warn); background:var(--wf-warn-tint); }
 .wf-action--danger .wf-action__icone { color:var(--wf-danger); background:var(--wf-danger-tint); }
 .wf-action--accent .wf-action__icone { color:var(--wf-accent); background:var(--wf-accent-tint); }
+/* Carte vedette : la réussite à exploiter (des personnes ont accepté). */
+.wf-action--vedette { background:var(--wf-success-tint); box-shadow:inset 0 0 0 1px rgba(21,128,61,.22); }
+.wf-action--vedette .wf-action__icone { color:#FFFFFF; background:var(--wf-success); }
+.wf-action--vedette .wf-action__titre { font-size:1rem; }
 .wf-action__corps { min-width:0; }
 .wf-action__titre { font-weight:700; font-size:.92rem; color:var(--wf-text); }
 .wf-action__detail { font-size:.84rem; color:var(--wf-muted); margin-top:2px; }
+
+/* Carte « À faire » avec son bouton : le conteneur (clé `wf_carte_…`) porte
+   la surface, le bouton se range sous le texte, aligné sur lui. */
+/* margin-bottom négative : le bloc parent ajoute 1rem entre éléments, la
+   carte doit garder les 8px d'écart des cartes simples. */
+[class*="st-key-wf_carte_"] { gap:.6rem !important; padding:12px 16px 14px; border-radius:var(--wf-radius); background:var(--wf-surface); box-shadow:var(--wf-shadow); margin-bottom:calc(8px - 1rem); }
+[class*="st-key-wf_carte_"] [data-testid="stMarkdownContainer"] { margin-bottom:0 !important; }
+[class*="st-key-wf_carte_"] .wf-action { padding:0; margin:0; background:transparent; box-shadow:none; transform:none !important; }
+[class*="st-key-wf_carte_"]:has(.wf-action--vedette) { background:var(--wf-success-tint); box-shadow:inset 0 0 0 1px rgba(21,128,61,.22); }
+[class*="st-key-wf_carte_"] .stButton { margin-left:48px; }
 
 /* État vide qui explique */
 .wf-vide { display:flex; gap:14px; align-items:flex-start; padding:20px 22px; border-radius:var(--wf-radius); border:1px dashed var(--wf-border-strong); background:transparent; margin-bottom:1rem; }
@@ -425,6 +487,9 @@ ol.wf-entonnoir { list-style:none !important; margin:0 0 1rem !important; paddin
 .wf-vide__icone svg { width:18px; height:18px; }
 .wf-vide__titre { font-weight:700; font-size:.98rem; color:var(--wf-text); }
 .wf-vide__texte { margin:.25rem 0 0; font-size:.9rem; color:var(--wf-muted); line-height:1.5; max-width:65ch; }
+ol.wf-vide__etapes { margin:.7rem 0 0 !important; padding-left:1.25rem !important; display:grid; gap:.3rem; }
+ol.wf-vide__etapes li { margin:0 !important; font-size:.9rem; color:var(--wf-text); padding-left:.2rem; }
+ol.wf-vide__etapes li::marker { color:var(--wf-accent); font-weight:700; }
 
 /* ---------- Mouvement ---------- */
 /* Entrée du contenu de page : fondu + montée de 8px, une fois par montage.

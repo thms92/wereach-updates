@@ -30,6 +30,8 @@ ICONES = {
     "recherche": f'<svg {_TRAIT}><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>',
     "veille": f'<svg {_TRAIT}><path d="M4 20V6.5L12 3l8 3.5V20"/><path d="M9 20v-5h6v5M8 9h.01M12 9h.01M16 9h.01"/></svg>',
     "vide": f'<svg {_TRAIT}><path d="M3 13.5 5.5 5h13l2.5 8.5V19H3Z"/><path d="M3 13.5h5l1.5 2.5h5l1.5-2.5h5"/></svg>',
+    # Une personne et une coche : quelqu'un a dit oui (le pic de réussite).
+    "accepte": f'<svg {_TRAIT}><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="m15.5 11.5 2.2 2.2 4.3-4.4"/></svg>',
 }
 _ICONE_PAR_TON = {"ok": "ok", "attention": "alerte", "danger": "alerte",
                   "accent": "info", "neutre": "info"}
@@ -101,6 +103,13 @@ def ton_budget(utilisees: int, plafond: int) -> str:
     return "ok"
 
 
+def texte_budget(utilisees: int, plafond: int) -> str:
+    """« 3 restantes sur 20 » : la formulation courte du budget (puces)."""
+    plafond = max(int(plafond), 0)
+    restantes = plafond - min(max(int(utilisees), 0), plafond)
+    return f"{pluriel(restantes, 'restante')} sur {plafond}"
+
+
 def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) -> str:
     """Le budget d'invitations du jour, dessiné en `plafond` crans.
 
@@ -127,11 +136,13 @@ def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) ->
     aria = (f'role="meter" aria-label="Invitations restantes aujourd\'hui" '
             f'aria-valuemin="0" aria-valuemax="{plafond}" aria-valuenow="{restantes}" '
             f'aria-valuetext="{escape(pluriel(restantes, "invitation restante", "invitations restantes"))} sur {plafond}"')
+    # Une seule formulation partout (critique phase 4) : on compte ce qui
+    # RESTE, jamais ce qui est « utilisé ». Voir aussi texte_budget().
     return (
         f'<div class="{classes}" {aria}>'
-        '<div class="wf-jauge__tete"><span class="wf-jauge__libelle">Budget du jour</span>'
-        f'<span class="wf-jauge__compte">{pluriel(utilisees, "utilisée")} sur {plafond}</span></div>'
-        f'<div class="wf-jauge__valeur"><span class="wf-jauge__nombre">{restantes}</span> {mot_restantes}</div>'
+        '<div class="wf-jauge__tete"><span class="wf-jauge__libelle">Budget du jour</span></div>'
+        f'<div class="wf-jauge__valeur"><span class="wf-jauge__nombre">{restantes}</span> {mot_restantes}'
+        f' <span class="wf-jauge__compte">sur {plafond} aujourd\'hui</span></div>'
         f'<div class="wf-jauge__crans" style="--wf-crans:{max(plafond, 1)}" aria-hidden="true">{crans}</div>'
         f'{note}</div>'
     )
@@ -181,27 +192,37 @@ def entonnoir(etapes: Sequence[Tuple[str, int]],
 # --------------------------------------------------- cartes et état vide
 
 def carte_action(titre: str, detail: str, ton: str = "neutre",
-                 icone: Optional[str] = None) -> str:
-    """Ligne « À faire » : icône dessinée (selon le ton par défaut), titre, détail."""
+                 icone: Optional[str] = None, vedette: bool = False) -> str:
+    """Ligne « À faire » : icône dessinée (selon le ton par défaut), titre, détail.
+
+    `vedette=True` : la carte la plus forte de la liste (une réussite à
+    exploiter), teintée de son ton. Une seule par liste.
+    """
     _verifier_ton(ton)
     nom = icone or _ICONE_PAR_TON[ton]
     if nom not in ICONES:
         raise ValueError(f"Icône inconnue : {nom!r} (attendu : {', '.join(ICONES)})")
     detail_html = f'<div class="wf-action__detail">{escape(detail)}</div>' if detail else ""
+    classes = f"wf-action wf-action--{ton}" + (" wf-action--vedette" if vedette else "")
     return (
-        f'<div class="wf-action wf-action--{ton}">'
+        f'<div class="{classes}">'
         f'<span class="wf-action__icone">{ICONES[nom]}</span>'
         f'<div class="wf-action__corps"><div class="wf-action__titre">{escape(titre)}</div>{detail_html}</div>'
         '</div>'
     )
 
 
-def etat_vide(titre: str, explication: str) -> str:
-    """État vide qui apprend : ce qui manque et comment le remplir."""
+def etat_vide(titre: str, explication: str, etapes: Sequence[str] = ()) -> str:
+    """État vide qui apprend : ce qui manque et comment le remplir.
+
+    `etapes` : quelques gestes courts, numérotés, pour en sortir.
+    """
+    liste = ("".join(f"<li>{escape(e)}</li>" for e in etapes))
+    bloc_etapes = f'<ol class="wf-vide__etapes">{liste}</ol>' if liste else ""
     return (
         f'<div class="wf-vide"><span class="wf-vide__icone">{ICONES["vide"]}</span>'
         f'<div><div class="wf-vide__titre">{escape(titre)}</div>'
-        f'<p class="wf-vide__texte">{escape(explication)}</p></div></div>'
+        f'<p class="wf-vide__texte">{escape(explication)}</p>{bloc_etapes}</div></div>'
     )
 
 
@@ -227,12 +248,14 @@ def afficher_entonnoir(etapes: Sequence[Tuple[str, int]], conteneur=None) -> Non
 
 
 def afficher_carte_action(titre: str, detail: str, ton: str = "neutre",
-                          icone: Optional[str] = None, conteneur=None) -> None:
-    _ecrire(carte_action(titre, detail, ton, icone), conteneur)
+                          icone: Optional[str] = None, conteneur=None,
+                          vedette: bool = False) -> None:
+    _ecrire(carte_action(titre, detail, ton, icone, vedette), conteneur)
 
 
-def afficher_etat_vide(titre: str, explication: str, conteneur=None) -> None:
-    _ecrire(etat_vide(titre, explication), conteneur)
+def afficher_etat_vide(titre: str, explication: str, conteneur=None,
+                       etapes: Sequence[str] = ()) -> None:
+    _ecrire(etat_vide(titre, explication, etapes), conteneur)
 
 
 def afficher_puce(texte: str, ton: str = "neutre", en_direct: bool = False,

@@ -83,8 +83,10 @@ def test_rien_d_urgent_quand_tout_est_a_jour():
 def test_actions_qui_s_appliquent():
     actions = actions_du_jour(3, 12, 0, True, False)
     titres = [a[0] for a in actions]
-    assert titres[0] == "Connectez votre session LinkedIn"
-    assert actions[0][4][2] == PAGE_RECHERCHE
+    # La réussite d'abord (phase 4), puis la session manquante.
+    assert titres[0] == "3 personnes ont accepté votre invitation"
+    assert titres[1] == "Connectez votre session LinkedIn"
+    assert actions[1][4][2] == PAGE_RECHERCHE
     assert "3 personnes ont accepté votre invitation" in titres
     assert [a for a in actions if a[0].startswith("3 personnes")][0][4][2] == PAGE_MESSAGES
     assert "12 invitations en attente de réponse" in titres
@@ -101,14 +103,20 @@ def test_singulier():
 
 # --- page rendue ------------------------------------------------------------
 
-def test_la_page_repond_a_que_faire_aujourd_hui():
+def test_la_page_repond_a_que_faire_aujourd_hui(tmp_path, monkeypatch):
+    # Données propres à ce test : la base partagée de la session de tests
+    # peut contenir des profils laissés par d'autres tests.
+    monkeypatch.setenv("WEREACH_DATA_DIR", str(tmp_path))
     at = lancer_app("📊 Dashboard")
     verifier_page_affichee(at, "📊 Dashboard")
     html = " ".join(m.value for m in at.main.markdown)
     assert "Ce qui vous attend aujourd&#x27;hui." in html or "Ce qui vous attend aujourd'hui." in html
-    assert "wf-entonnoir" in html and "Message envoyé" in html
+    # Base vide : l'état vide apprend quoi faire au lieu d'un mur de zéros
+    # (l'entonnoir rempli est vérifié dans tests/test_phase4_coque.py).
+    assert '<div class="wf-vide">' in html and "Lancez votre première recherche" in html
+    assert '<ol class="wf-entonnoir"' not in html
     assert "wf-action" in html
-    assert [s.value for s in at.subheader][:1] == ["À faire"]
+    assert [h.value for h in at.header][:1] == ["À faire"]
     # Plus de bandeau « Alertes et limites » ni de camembert.
     assert "Alertes et limites" not in [h.value for h in at.header]
 

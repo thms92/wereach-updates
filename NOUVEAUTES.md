@@ -10,7 +10,7 @@ ce qui change dans le code.
 **L'onglet « Par URLs » disparaît de Recherche.**
 Il faisait doublon avec les autres manières de constituer une liste, en
 particulier le nouvel onglet Profils similaires. La page Recherche compte
-désormais trois onglets : Candidats, Clients/Entreprises et Profils similaires.
+désormais trois onglets : Candidats, « Clients et entreprises » et Profils similaires.
 
 ## 1.5.0
 

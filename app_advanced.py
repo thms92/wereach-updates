@@ -20,13 +20,13 @@ from config import ScraperConfig, ECOLES, EMAIL_SUPPORT
 from database import DatabaseManager
 from cookie_utils import CookieManager
 from export_utils import ExportManager
-from queue_manager import QueueManager
 from logger import logger
 from utils.user_context import (resolve_user_email, user_paths_for,
                                 DEFAULT_DEV_EMAIL, mode_admin)
 from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
-from wefiit_theme import declarer_langue_francaise, inject_theme, wordmark
+from wefiit_theme import (FAVICON_SVG, declarer_langue_francaise, inject_theme,
+                          wordmark)
 from ui.composants import afficher_jauge_budget
 from utils.budget import budget_du_jour
 from version import get_version
@@ -37,11 +37,14 @@ from utils.mise_a_jour import (mise_a_jour_disponible, relancer,
 
 
 # Configuration Streamlit
+# Icône d'onglet : la marque We.Reach en SVG (plus d'émoji). Barre latérale
+# « auto » : ouverte sur ordinateur, repliée sur téléphone, où elle couvrait
+# toute la page à l'ouverture.
 st.set_page_config(
     page_title="We.Reach",
-    page_icon="💼",
+    page_icon=FAVICON_SVG,
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 
 # Thème We.Reach (fond clair uniquement)
@@ -75,7 +78,7 @@ if _email is None:
     st.markdown(wordmark(size=2.4), unsafe_allow_html=True)
     _c1, _c2, _c3 = st.columns([1, 2, 1])
     with _c2:
-        st.subheader("Connexion")
+        st.subheader("Connexion", anchor=False)
         with st.form("login_form"):
             _em = st.text_input("Email", placeholder=f"prenom.nom@{ALLOWED_DOMAIN}")
             _pw = st.text_input("Mot de passe", type="password")
@@ -98,8 +101,6 @@ if st.session_state.get('user_email') != _email:
     st.session_state.db = DatabaseManager(db_file=str(paths.db_file))
     st.session_state.cookie_manager = CookieManager(config_dir=str(paths.config_dir))
     st.session_state.export_manager = ExportManager()
-    st.session_state.queue_manager = QueueManager(queue_file=str(paths.queue_file))
-    st.session_state.queue_manager.charger()
     cookie_saved = st.session_state.cookie_manager.load_cookie()
     st.session_state.global_cookie = cookie_saved or ""
     st.session_state.user_proxy = load_proxy(
@@ -168,9 +169,20 @@ page = st.session_state["page"]
 
 # Le geste signature (DESIGN.md) : le budget d'invitations du jour, sous le
 # menu, sur toutes les pages. Lu dans le compteur du moteur, celui qui bloque.
-_budget = budget_du_jour(st.session_state.user_paths.config_dir)
-afficher_jauge_budget(_budget.utilisees, _budget.plafond, sur_fond_sombre=True,
-                      conteneur=st.sidebar)
+# Réservée ici, redessinée en fin de script : la barre latérale est écrite
+# AVANT la page, et une recherche lancée depuis la page laissait la jauge sur
+# l'ancien compte. Un premier dessin tout de suite garde la jauge visible si
+# la page s'arrête en chemin (st.stop, erreur).
+_jauge = st.sidebar.empty()
+
+
+def _dessiner_jauge() -> None:
+    _budget = budget_du_jour(st.session_state.user_paths.config_dir)
+    afficher_jauge_budget(_budget.utilisees, _budget.plafond, sur_fond_sombre=True,
+                          conteneur=_jauge)
+
+
+_dessiner_jauge()
 
 # Streamlit abandonne l'état d'un widget dès qu'un rerun ne le dessine pas, et
 # les pages sont ici des branches d'un même script : aller sur Historique puis
@@ -377,6 +389,9 @@ elif page == "✉️ Messages":
 
 elif page == "📜 Logs":
     afficher_page_journal()
+
+# Après la page : le compteur a pu bouger (recherche, invitations envoyées).
+_dessiner_jauge()
 
 # Pas de pied de page : le nom et la version vivent dans la barre latérale.
 # L'ancien (« LinkedIn Scraper Pro v2.0 ») contredisait « We.Reach v1.5.x ».

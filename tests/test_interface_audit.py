@@ -45,10 +45,14 @@ def test_les_titres_de_page_sont_des_h1_sans_emoji():
 def test_le_plafond_d_invitations_n_est_pas_une_hausse():
     # Le plafond se lit en crans restants (jauge « Budget du jour », rôle
     # meter, « n sur max »), plus en métrique : aucune flèche de hausse.
+    # Phase 4 : la jauge vit dans la barre latérale (toujours visible) ; la
+    # page n'en reprend que la puce courte « N restantes sur P ».
     at = lancer_app("📊 Dashboard")
-    jauges = [m.value for m in at.main.markdown if 'role="meter"' in m.value]
-    assert jauges, "la jauge du budget n'est pas dessinée sur le tableau de bord"
+    jauges = [m.value for m in at.sidebar.markdown if 'role="meter"' in m.value]
+    assert jauges, "la jauge du budget n'est pas dessinée à côté du tableau de bord"
     assert "Budget du jour" in jauges[0] and " sur " in jauges[0]
+    page = " ".join(m.value for m in at.main.markdown)
+    assert "restantes sur 20" in page or "restante sur 20" in page
     assert not [x for x in at.metric if x.delta]
 
 

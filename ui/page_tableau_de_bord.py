@@ -3,8 +3,9 @@
 
 Trois questions, dans l'ordre où on se les pose en ouvrant l'outil :
 qu'est-ce que je dois faire maintenant (bloc « À faire »), combien
-d'invitations me reste-t-il (la jauge du budget), où en sont mes prospects
-(le parcours trouvés → invités → acceptés → message envoyé).
+d'invitations me reste-t-il (la puce du bandeau ; la jauge, elle, vit dans la
+barre latérale), où en sont mes prospects (le parcours trouvés → invités →
+acceptés → message envoyé).
 """
 
 from datetime import datetime, timezone
@@ -16,8 +17,8 @@ import plotly.express as px
 import streamlit as st
 
 from ui.composants import (afficher_bandeau_contexte, afficher_carte_action,
-                           afficher_entonnoir, afficher_jauge_budget, pluriel,
-                           ton_budget)
+                           afficher_entonnoir, afficher_etat_vide, pluriel,
+                           texte_budget, ton_budget)
 from utils.budget import budget_du_jour
 from wefiit_theme import PALETTE_GRAPHIQUES
 
@@ -63,31 +64,42 @@ def taux_acceptation(invites: int, acceptes: int) -> str:
     return f"{round(acceptes * 100 / invites)}\u202f%"
 
 
+# Icône de la carte « ont accepté » : la seule mise en vedette (pic de réussite).
+ICONE_REUSSITE = "accepte"
+# Le bouton de cette action est LE bouton principal de l'écran au premier
+# lancement : sans session, rien d'autre ne peut se faire.
+CLE_CONNEXION = "tdb_aller_recherche"
+
+
 def actions_du_jour(nb_a_messager: int, nb_en_attente: int, nb_nouveaux_veille: int,
-                    budget_epuise: bool, session_active: bool
+                    budget_epuise: bool, session_active: bool,
+                    budget_utilisees: int = 0, budget_plafond: int = 0,
                     ) -> List[Tuple[str, str, str, str, Optional[Tuple[str, str, str]]]]:
-    """Les cartes « À faire » qui s'appliquent, de la plus urgente à la moins.
+    """Les cartes « À faire » qui s'appliquent, la réussite d'abord.
 
     Chaque entrée : (titre, détail, ton, icône, bouton) où bouton vaut
     (libellé, clé, page cible) ou None. Liste vide = rien d'urgent.
+    Des personnes qui ont accepté passent en tête : c'est le moment que
+    l'outil sert à produire. `budget_utilisees`/`budget_plafond` donnent
+    l'alerte « il vous reste N invitations » dès 80 % consommés.
     Pure : testée sans Streamlit.
     """
     actions = []
+    if nb_a_messager:
+        verbe = "a accepté" if nb_a_messager < 2 else "ont accepté"
+        actions.append((
+            f"{pluriel(nb_a_messager, 'personne')} {verbe} votre invitation",
+            "Envoyez-leur un message depuis la page Messages.",
+            "ok", ICONE_REUSSITE,
+            ("Ouvrir Messages", "tdb_ouvrir_messages", PAGE_MESSAGES),
+        ))
     if not session_active:
         actions.append((
             "Connectez votre session LinkedIn",
             "Sans elle, aucune recherche ni invitation ne peut partir. "
             "Elle se renseigne depuis la page Recherche.",
             "attention", "alerte",
-            ("Aller à Recherche", "tdb_aller_recherche", PAGE_RECHERCHE),
-        ))
-    if nb_a_messager:
-        verbe = "a accepté" if nb_a_messager < 2 else "ont accepté"
-        actions.append((
-            f"{pluriel(nb_a_messager, 'personne')} {verbe} votre invitation",
-            "Envoyez-leur un message depuis la page Messages.",
-            "accent", "message",
-            ("Ouvrir Messages", "tdb_ouvrir_messages", PAGE_MESSAGES),
+            ("Connecter la session LinkedIn", CLE_CONNEXION, PAGE_RECHERCHE),
         ))
     if nb_nouveaux_veille:
         actions.append((
@@ -109,6 +121,14 @@ def actions_du_jour(nb_a_messager: int, nb_en_attente: int, nb_nouveaux_veille: 
             "Les invitations reprennent demain : en attendant, préparez vos "
             "recherches ou vos messages.",
             "danger", "alerte", None,
+        ))
+    elif budget_plafond > 0 and ton_budget(budget_utilisees, budget_plafond) == "attention":
+        restantes = budget_plafond - budget_utilisees
+        actions.append((
+            f"Il vous reste {pluriel(restantes, 'invitation')} aujourd'hui",
+            "Gardez-les pour les profils les plus prometteurs ; le compteur "
+            "repart à zéro demain.",
+            "attention", "invitation", None,
         ))
     return actions
 
@@ -140,7 +160,7 @@ def _nouveaux_contacts_veille(chemins) -> int:
 
 
 def _bloc_a_faire(actions) -> None:
-    st.subheader("À faire")
+    st.header("À faire", anchor=False)
     if not actions:
         afficher_carte_action(
             "Rien d'urgent",
@@ -150,16 +170,19 @@ def _bloc_a_faire(actions) -> None:
         )
         return
     for titre, detail, ton, icone, bouton in actions:
+        vedette = icone == ICONE_REUSSITE
         if bouton is None:
-            afficher_carte_action(titre, detail, ton=ton, icone=icone)
+            afficher_carte_action(titre, detail, ton=ton, icone=icone, vedette=vedette)
             continue
         libelle, cle, cible = bouton
-        col_carte, col_bouton = st.columns([3, 1], vertical_alignment="center")
-        with col_carte:
-            afficher_carte_action(titre, detail, ton=ton, icone=icone)
-        with col_bouton:
+        # Le bouton vit DANS la carte, sous le texte (le thème stylise les
+        # conteneurs `wf_carte_…`) : en colonne étroite à droite, « Ouvrir
+        # Messages » passait sur deux lignes à 1440 px.
+        with st.container(key=f"wf_carte_{cle}"):
+            afficher_carte_action(titre, detail, ton=ton, icone=icone, vedette=vedette)
             st.button(libelle, key=cle, on_click=_aller_a, args=(cible,),
-                      width="stretch")
+                      type="primary" if cle == CLE_CONNEXION else "secondary",
+                      width="content")
 
 
 def _bloc_derniere_recherche(derniere) -> None:
@@ -206,41 +229,19 @@ def _bloc_ecoles(par_ecole: dict) -> None:
                         config={"displayModeBar": False})
 
 
-def afficher_page_tableau_de_bord():
-    st.title("Tableau de bord")
-
-    db = st.session_state.db
-    chemins = st.session_state.user_paths
-    stats = db.get_statistiques()
-    parcours = db.compter_parcours()
-    budget = budget_du_jour(chemins.config_dir)
-    session_active = bool(st.session_state.get("global_cookie"))
-
-    afficher_bandeau_contexte("Ce qui vous attend aujourd'hui.", [
-        ("Session LinkedIn active", "ok", True) if session_active
-        else ("Session LinkedIn absente", "attention"),
-        (f"{budget.utilisees} / {budget.plafond} invitations",
-         ton_budget(budget.utilisees, budget.plafond)),
-    ])
-
-    actions = actions_du_jour(
-        nb_a_messager=len(db.acceptees_non_messagees()),
-        nb_en_attente=len(db.invitations_en_attente()),
-        nb_nouveaux_veille=_nouveaux_contacts_veille(chemins),
-        budget_epuise=budget.epuise,
-        session_active=session_active,
-    )
-
-    col_gauche, col_droite = st.columns([2, 1], gap="large")
-    with col_gauche:
-        _bloc_a_faire(actions)
-    with col_droite:
-        # La jauge remplace l'ancienne métrique « n / max » : un plafond
-        # n'est pas une hausse, il se lit en crans restants.
-        afficher_jauge_budget(budget.utilisees, budget.plafond)
-        _bloc_derniere_recherche(stats.get("derniere_recherche"))
-
-    st.subheader("Parcours de vos prospects")
+def _bloc_parcours(parcours: dict) -> None:
+    st.header("Parcours de vos prospects", anchor=False)
+    if not parcours["trouves"]:
+        # Un mur de zéros n'apprend rien : on dit comment le remplir.
+        afficher_etat_vide(
+            "Lancez votre première recherche",
+            "Le parcours de vos prospects s'affichera ici dès les premiers "
+            "profils trouvés.",
+            etapes=("Connecter la session LinkedIn",
+                    "Lancer une recherche",
+                    "Suivre les réponses dans Messages"),
+        )
+        return
     afficher_entonnoir([
         ("Profils trouvés", parcours["trouves"]),
         ("Invités", parcours["invites"]),
@@ -255,5 +256,44 @@ def afficher_page_tableau_de_bord():
     else:
         st.caption("Aucune invitation envoyée pour l'instant : le taux d'acceptation "
                    "apparaîtra dès la première.")
+
+
+def afficher_page_tableau_de_bord():
+    st.title("Tableau de bord", anchor=False)
+
+    db = st.session_state.db
+    chemins = st.session_state.user_paths
+    stats = db.get_statistiques()
+    parcours = db.compter_parcours()
+    budget = budget_du_jour(chemins.config_dir)
+    session_active = bool(st.session_state.get("global_cookie"))
+
+    afficher_bandeau_contexte("Ce qui vous attend aujourd'hui.", [
+        ("Session LinkedIn active", "ok", True) if session_active
+        else ("Session LinkedIn absente", "attention"),
+        (texte_budget(budget.utilisees, budget.plafond),
+         ton_budget(budget.utilisees, budget.plafond)),
+    ])
+
+    actions = actions_du_jour(
+        nb_a_messager=len(db.acceptees_non_messagees()),
+        nb_en_attente=len(db.invitations_en_attente()),
+        nb_nouveaux_veille=_nouveaux_contacts_veille(chemins),
+        budget_epuise=budget.epuise,
+        session_active=session_active,
+        budget_utilisees=budget.utilisees,
+        budget_plafond=budget.plafond,
+    )
+
+    col_gauche, col_droite = st.columns([2, 1], gap="large")
+    with col_gauche:
+        _bloc_a_faire(actions)
+    with col_droite:
+        # Pas de jauge ici : celle de la barre latérale est toujours visible,
+        # et la puce du bandeau la reprend en court (budget au plus deux
+        # fois par écran, critique phase 4).
+        _bloc_derniere_recherche(stats.get("derniere_recherche"))
+
+    _bloc_parcours(parcours)
 
     _bloc_ecoles(stats.get("par_ecole") or {})
