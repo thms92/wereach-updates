@@ -11,9 +11,10 @@ from scraper_v2 import LinkedInScraperV2 as _S
 # scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
 import scraper_v2_sync
 from ui.composants import (afficher_bandeau_contexte, afficher_jauge_budget,
-                           pluriel, ton_budget)
+                           pluriel)
 from ui.invitations import (AIDE_MESSAGE, MESSAGE_SESSION_MANQUANTE,
-                            afficher_resultats, bloc_recuperer_inviter, budget)
+                            afficher_resultats, bloc_recuperer_inviter, budget,
+                            confirmation, echapper_markdown, recap_invitations)
 from utils.browsemap import filtrer_suggestions, vanity_depuis_url
 from utils.search_filters import (criteres_suffisants,
                                   ecoles_sans_identifiant,
@@ -24,26 +25,38 @@ MAX_ENTREPRISES = _S.MAX_VALEURS_PAR_FACETTE
 ONGLETS = ["Candidats", "Clients et entreprises", "Profils similaires"]
 
 
-def libelle_bouton_recherche(inviter: bool) -> str:
-    return "Rechercher et inviter" if inviter else "Rechercher"
+SESSION_REQUISE = "Connectez d'abord votre session LinkedIn (ci-dessus)."
+
+
+def libelle_bouton_recherche(inviter: bool, jusqu_a: int = 0) -> str:
+    """« Rechercher », ou « Rechercher et inviter (jusqu'à 3) » : le vrai
+    nombre d'invitations qui peuvent partir."""
+    if not inviter:
+        return "Rechercher"
+    if jusqu_a > 0:
+        return f"Rechercher et inviter (jusqu'à {jusqu_a})"
+    return "Rechercher et inviter"
 
 
 def avertissement_budget(nb_profils: int, restantes: int, reinviter: bool = False) -> str:
     """Ce qui se passera réellement si l'on demande plus que le budget.
 
     Avec les invitations, le moteur vise `nb_profils` invitations, saute les
-    profils déjà dans le fichier (sauf réinvitation), cesse d'inviter au
-    plafond du jour, et ne garde que les profils invités.
+    profils déjà dans le fichier (sauf réinvitation) et s'arrête dès que le
+    plafond du jour est atteint (scraper_v2.BUDGET_ATTEINT).
     """
-    nouveaux = "" if reinviter else " nouveaux"
+    nouveau = "" if reinviter else " nouveau"
     if restantes == 1:
-        cible = f"seul le premier profil{nouveaux.rstrip('x')} sera invité"
+        reste = "il ne reste qu'une invitation"
+        cible = f"seul le premier{nouveau} profil sera invité"
+        arret = "après la première invitation"
     else:
-        cible = f"seuls les {restantes} premiers profils{nouveaux} seront invités"
+        reste = f"il ne reste que {pluriel(restantes, 'invitation')}"
+        cible = f"seuls les {restantes} premiers{nouveau and ' nouveaux'} profils seront invités"
+        arret = f"après la {restantes}e invitation"
     return (
-        f"Vous demandez {pluriel(nb_profils, 'profil')} mais il ne reste que "
-        f"{pluriel(restantes, 'invitation')} aujourd'hui : {cible}. "
-        "Au-delà, la recherche n'invite plus et ne garde plus aucun profil."
+        f"Vous demandez {pluriel(nb_profils, 'profil')} mais {reste} "
+        f"aujourd'hui : la recherche s'arrêtera {arret} ; {cible}."
     )
 
 
@@ -58,7 +71,7 @@ def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
                       cle_message: str):
     """L'interrupteur d'invitations, son budget et ses options, groupés.
 
-    Rend (inviter, reinviter, message).
+    Rend (inviter, reinviter, message, budget ou None).
     """
     with st.container(border=True):
         st.markdown("**Invitations**")
@@ -68,7 +81,7 @@ def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
                  "irréversible et limité chaque jour.",
         )
         if not inviter:
-            return False, False, ""
+            return False, False, "", None
 
         b = budget()
         afficher_jauge_budget(b.utilisees, b.plafond)
@@ -92,7 +105,34 @@ def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
             alerte.error(MESSAGE_BUDGET_EPUISE)
         elif nb_profils > b.restantes:
             alerte.warning(avertissement_budget(nb_profils, b.restantes, reinviter))
-    return inviter, reinviter, message
+    return inviter, reinviter, message, b
+
+
+def _bouton_lancer(cle: str, inviter: bool, nb_profils: int, b) -> bool:
+    """Le bouton principal d'un onglet : inactif sans session, et quand on
+    invite, il annonce le nombre d'invitations qui peuvent partir."""
+    jusqu_a = min(nb_profils, b.restantes) if (inviter and b is not None) else 0
+    sans_session = not st.session_state.global_cookie
+    clic = st.button(libelle_bouton_recherche(inviter, jusqu_a), type="primary",
+                     width="stretch", key=cle, disabled=sans_session)
+    if sans_session:
+        st.caption(SESSION_REQUISE)
+    return clic
+
+
+def _recap_recherche(inviter: bool, nb_profils: int, b, message: str) -> str:
+    if not inviter or b is None:
+        return ""
+    return recap_invitations(min(nb_profils, b.restantes), b.restantes, message)
+
+
+def _refus_lancement(inviter: bool, b):
+    """Pourquoi le clic ne peut rien lancer, ou None."""
+    if not st.session_state.global_cookie:
+        return MESSAGE_SESSION_MANQUANTE
+    if inviter and b is not None and b.epuise:
+        return MESSAGE_BUDGET_EPUISE
+    return None
 
 
 def _nouveau_scraper():
@@ -143,29 +183,78 @@ def _tester_session():
         st.code(output[-3000:], language="text")
 
 
+ETAPES_SESSION = (
+    "1. Dans Chrome, connectez-vous sur **linkedin.com**.\n"
+    "2. Appuyez sur **F12** (ou clic droit, puis **Inspecter**) pour ouvrir les outils de développement.\n"
+    "3. Ouvrez l'onglet **Application** (s'il n'apparaît pas, cliquez sur `»`).\n"
+    "4. À gauche : **Cookies**, puis **https://www.linkedin.com**.\n"
+    "5. Repérez le cookie de session, nommé **`li_at`** dans Chrome.\n"
+    "6. **Double-cliquez sur sa valeur** (longue suite de caractères) et copiez-la (**Ctrl/Cmd + C**).\n"
+    "7. **Collez** la valeur dans le champ ci-dessous, puis **Enregistrer**."
+)
+AVERTISSEMENT_SESSION = (
+    "**Ne partagez jamais cette valeur** : elle donne accès à votre compte "
+    "LinkedIn. Si elle expire (déconnexion), refaites l'opération."
+)
+PLACEHOLDER_SESSION = "Collez ici la valeur copiée depuis Chrome"
+
+
+def _quitter_edition() -> None:
+    st.session_state.cookie_editing = False
+
+
+def _champ_session(ck: str, annulable: bool) -> None:
+    """Le champ de saisie, Enregistrer et, en modification, Annuler."""
+    _cin, _cbtn = st.columns([4, 1], vertical_alignment="bottom")
+    _new_ck = _cin.text_input(
+        "Session LinkedIn", value=ck, type="password",
+        label_visibility="collapsed",
+        placeholder=PLACEHOLDER_SESSION,
+        key="cookie_shared",
+    )
+    _new_ck = (_new_ck or "").strip()
+    enregistrer = _cbtn.button("Enregistrer", type="primary", width="stretch",
+                               key="cookie_enregistrer")
+    if annulable:
+        st.button("Annuler", key="cookie_annuler", on_click=_quitter_edition)
+    if enregistrer:
+        if _new_ck and st.session_state.cookie_manager.validate_cookie_format(_new_ck):
+            st.session_state.cookie_manager.save_cookie(_new_ck)
+            st.session_state.global_cookie = _new_ck
+            st.session_state.cookie_editing = False
+            st.session_state.session_a_tester = True
+            st.rerun()
+        else:
+            st.warning("Valeur vide ou au format inattendu : vérifiez la copie.")
+
+
+def _premiere_connexion() -> None:
+    """Aucune session : l'étape unique, dépliée, avec le champ sur place."""
+    with st.container(border=True, key="premiere_connexion"):
+        st.header("Première connexion à LinkedIn", anchor=False)
+        st.markdown(
+            "We.Reach agit depuis votre compte LinkedIn. Pour cela, il lui faut "
+            "votre session : une valeur à copier depuis Chrome, **une seule "
+            "fois**. Elle est ensuite conservée de façon sécurisée."
+        )
+        st.markdown(ETAPES_SESSION)
+        _champ_session("", annulable=False)
+        st.caption(AVERTISSEMENT_SESSION.replace("**", ""))
+
+
 def _session_linkedin(ck: str) -> None:
-    if st.session_state.get("cookie_editing") or not ck:
-        with st.container(border=True):
+    if not ck:
+        _premiere_connexion()
+        return
+
+    if st.session_state.get("cookie_editing"):
+        with st.container(border=True, key="session_edition"):
             st.markdown("**Session LinkedIn**")
-            _cin, _cbtn = st.columns([4, 1], vertical_alignment="bottom")
-            _new_ck = _cin.text_input(
-                "Session LinkedIn", value=ck, type="password",
-                label_visibility="collapsed",
-                placeholder="Collez ici la valeur du cookie de session…",
-                key="cookie_shared",
-            )
-            _new_ck = (_new_ck or "").strip()
-            if _cbtn.button("Enregistrer", type="primary", width="stretch"):
-                if _new_ck and st.session_state.cookie_manager.validate_cookie_format(_new_ck):
-                    st.session_state.cookie_manager.save_cookie(_new_ck)
-                    st.session_state.global_cookie = _new_ck
-                    st.session_state.cookie_editing = False
-                    st.rerun()
-                else:
-                    st.warning("Valeur vide ou au format inattendu : vérifiez la copie.")
+            _champ_session(ck, annulable=True)
             st.caption("Conservée de façon sécurisée, nécessaire pour lancer les recherches.")
         return
 
+    a_tester = st.session_state.get("session_a_tester")
     masque = f"{ck[:6]}…{ck[-4:]}" if len(ck) > 12 else "…"
     with st.container(border=True, horizontal=True, vertical_alignment="center",
                       key="session_ligne"):
@@ -175,44 +264,42 @@ def _session_linkedin(ck: str) -> None:
             f'font-size:.75rem;color:var(--wf-muted)">{masque}</div></div>',
             unsafe_allow_html=True, width="stretch",
         )
-        tester = st.button("Tester", key="test_cookie_btn",
+        tester = st.button("Tester la session" if a_tester else "Tester",
+                           key="test_cookie_btn",
+                           type="primary" if a_tester else "secondary",
                            help="Vérifie que LinkedIn accepte encore la session.")
-        if st.button("Modifier"):
+        if st.button("Modifier", key="cookie_modifier"):
             st.session_state.cookie_editing = True
+            st.session_state.pop("session_a_tester", None)
             st.rerun()
+    if a_tester and not tester:
+        st.caption("Session enregistrée. Testez-la une fois : la vérification "
+                   "prend 10 à 20 secondes.")
     if tester:
+        st.session_state.pop("session_a_tester", None)
         _tester_session()
 
 
 def afficher_page_recherche():
-    st.title("Nouvelle recherche")
+    st.title("Nouvelle recherche", anchor=False)
 
     ck = st.session_state.global_cookie
-    b = budget()
+    # Le budget du jour est sous le menu, sur toutes les pages, et dans le
+    # bloc Invitations dès qu'on invite : pas de troisième rappel ici.
     puce_session = (("Session LinkedIn active", "ok", True) if ck
                     else ("Session LinkedIn à renseigner", "attention"))
-    puce_budget = (f"{pluriel(b.restantes, 'invitation restante', 'invitations restantes')} "
-                   "aujourd'hui", ton_budget(b.utilisees, b.plafond))
     afficher_bandeau_contexte(
         "Trouvez des profils et invitez-les, dans la limite du budget du jour.",
-        puces=[puce_session, puce_budget],
+        puces=[puce_session],
     )
 
     _session_linkedin(ck)
 
-    with st.expander("Comment récupérer votre session LinkedIn ?"):
-        st.markdown(
-            "**Sur ordinateur, dans Chrome :**\n\n"
-            "1. Connectez-vous sur **linkedin.com**.\n"
-            "2. Appuyez sur **F12** (ou clic droit, puis **Inspecter**) pour ouvrir les outils de développement.\n"
-            "3. Ouvrez l'onglet **Application** (s'il n'apparaît pas, cliquez sur `»`).\n"
-            "4. À gauche : **Cookies**, puis **https://www.linkedin.com**.\n"
-            "5. Repérez le cookie de session, nommé **`li_at`** dans Chrome.\n"
-            "6. **Double-cliquez sur sa valeur** (longue suite de caractères) et copiez-la (**Ctrl/Cmd + C**).\n"
-            "7. Revenez ici, **collez** la valeur dans le champ ci-dessus, puis **Enregistrer**.\n\n"
-            "**Ne partagez jamais cette valeur** : elle donne accès à votre compte LinkedIn. "
-            "Si elle expire (déconnexion), refaites l'opération."
-        )
+    if ck:
+        with st.expander("Comment récupérer votre session LinkedIn ?"):
+            st.markdown(ETAPES_SESSION.replace(
+                "dans le champ ci-dessous", "dans le champ de la session (bouton **Modifier**)")
+                + "\n\n" + AVERTISSEMENT_SESSION)
 
     st.write("")
     tab1, tab2, tab3 = st.tabs(ONGLETS)
@@ -281,35 +368,38 @@ def afficher_page_recherche():
             )
             secteurs_selectionnes = [SECTEURS[s] for s in secteurs_noms]
 
-        inviter, reinviter_profils_scrapes, message_personnalise = _bloc_invitations(
+        inviter, reinviter_profils_scrapes, message_personnalise, b_cand = _bloc_invitations(
             nb_profils, "inviter_candidat", "reinviter_candidat", "message_candidat")
 
-        if st.button(libelle_bouton_recherche(inviter), type="primary",
-                     width="stretch", key="btn_rechercher_candidats"):
-            if not st.session_state.global_cookie:
-                st.error(MESSAGE_SESSION_MANQUANTE)
-            elif not criteres_suffisants(
+        clic = _bouton_lancer("btn_rechercher_candidats", inviter, nb_profils, b_cand)
+        if clic:
+            refus = _refus_lancement(inviter, b_cand)
+            if refus is None and not criteres_suffisants(
                 keyword, ecoles_selectionnees, entreprises, secteurs_selectionnes
             ):
-                st.error(
-                    "Saisissez des mots-clés, ou choisissez au moins un filtre. "
-                    "Sans aucun critère, LinkedIn renverrait des profils au hasard."
-                )
-            else:
-                df, scraper = _lancer(
-                    keyword=keyword,
-                    entreprises=entreprises,
-                    nb_profils=nb_profils,
-                    ecoles_ids=ecoles_selectionnees,
-                    secteurs_ids=secteurs_selectionnes,
-                    inviter=inviter,
-                    message_invitation=message_personnalise,
-                    reinviter_profils_scrapes=reinviter_profils_scrapes,
-                    ile_de_france=ile_de_france,
-                )
-                if df.empty:
-                    st.warning("Aucun profil trouvé.")
-                afficher_resultats(df, inviter, "candidats", "candidats", scraper.errors)
+                refus = ("Saisissez des mots-clés, ou choisissez au moins un filtre. "
+                         "Sans aucun critère, LinkedIn renverrait des profils au hasard.")
+            if refus:
+                st.error(refus)
+                st.session_state.pop("confirmer_candidats", None)
+                clic = False
+        parametres = dict(
+            keyword=keyword,
+            entreprises=entreprises,
+            nb_profils=nb_profils,
+            ecoles_ids=ecoles_selectionnees,
+            secteurs_ids=secteurs_selectionnes,
+            inviter=inviter,
+            message_invitation=message_personnalise,
+            reinviter_profils_scrapes=reinviter_profils_scrapes,
+            ile_de_france=ile_de_france,
+        )
+        if confirmation("candidats", clic, inviter, parametres,
+                        _recap_recherche(inviter, nb_profils, b_cand, message_personnalise)):
+            df, scraper = _lancer(**parametres)
+            if df.empty:
+                st.warning("Aucun profil trouvé.")
+            afficher_resultats(df, inviter, "candidats", "candidats", scraper.errors)
 
     # TAB 2: CLIENTS
     with tab2:
@@ -340,33 +430,38 @@ def afficher_page_recherche():
                 "Île-de-France uniquement", value=False, key="idf_client",
                 help="Ne garde que les profils situés en Île-de-France.")
 
-        inviter_client, reinviter_profils_scrapes_client, message_client = _bloc_invitations(
+        inviter_client, reinviter_profils_scrapes_client, message_client, b_cli = _bloc_invitations(
             nb_client, "inviter_client", "reinviter_client", "message_client")
 
-        if st.button(libelle_bouton_recherche(inviter_client), type="primary",
-                     width="stretch", key="btn_rechercher_clients"):
-            if not st.session_state.global_cookie:
-                st.error(MESSAGE_SESSION_MANQUANTE)
-            else:
-                df, scraper = _lancer(
-                    keyword=keyword_client,
-                    entreprises=entreprises_client,
-                    nb_profils=nb_client,
-                    ecoles_ids=[],
-                    inviter=inviter_client,
-                    message_invitation=message_client,
-                    reinviter_profils_scrapes=reinviter_profils_scrapes_client,
-                    ile_de_france=ile_de_france_client,
+        clic = _bouton_lancer("btn_rechercher_clients", inviter_client, nb_client, b_cli)
+        if clic:
+            refus = _refus_lancement(inviter_client, b_cli)
+            if refus:
+                st.error(refus)
+                st.session_state.pop("confirmer_clients", None)
+                clic = False
+        parametres = dict(
+            keyword=keyword_client,
+            entreprises=entreprises_client,
+            nb_profils=nb_client,
+            ecoles_ids=[],
+            inviter=inviter_client,
+            message_invitation=message_client,
+            reinviter_profils_scrapes=reinviter_profils_scrapes_client,
+            ile_de_france=ile_de_france_client,
+        )
+        if confirmation("clients", clic, inviter_client, parametres,
+                        _recap_recherche(inviter_client, nb_client, b_cli, message_client)):
+            df, scraper = _lancer(**parametres)
+            if df.empty:
+                st.warning(
+                    "Aucun profil trouvé : LinkedIn n'a renvoyé aucun résultat. "
+                    "Cause fréquente : le filtre entreprise n'a pas pu être "
+                    "identifié, et combiné aux mots-clés il devient trop "
+                    "restrictif. Essayez sans entreprise, ou consultez le "
+                    "Journal pour le détail."
                 )
-                if df.empty:
-                    st.warning(
-                        "Aucun profil trouvé : LinkedIn n'a renvoyé aucun résultat. "
-                        "Cause fréquente : le filtre entreprise n'a pas pu être "
-                        "identifié, et combiné aux mots-clés il devient trop "
-                        "restrictif. Essayez sans entreprise, ou consultez le "
-                        "Journal pour le détail."
-                    )
-                afficher_resultats(df, inviter_client, "clients", "clients", scraper.errors)
+            afficher_resultats(df, inviter_client, "clients", "clients", scraper.errors)
 
     # TAB 3: PROFILS SIMILAIRES
     with tab3:
@@ -407,8 +502,13 @@ def afficher_page_recherche():
                      "ne vous intéresse pas.",
             )
 
-        if st.button("Rechercher des profils similaires", type="primary",
-                     width="stretch", key="sim_btn_trouver"):
+        _sans_session = not st.session_state.global_cookie
+        _sim_clic = st.button("Rechercher des profils similaires", type="primary",
+                              width="stretch", key="sim_btn_trouver",
+                              disabled=_sans_session)
+        if _sans_session:
+            st.caption(SESSION_REQUISE)
+        if _sim_clic:
             # Un refus efface le résultat précédent : sinon la liste de
             # l'ancienne référence resterait affichée sous la nouvelle erreur.
             if (not st.session_state.global_cookie
@@ -484,11 +584,11 @@ def afficher_page_recherche():
             )
             entreprise_lue = st.session_state.get("sim_entreprise")
             if entreprise_lue:
-                st.caption(f"Entreprise du profil de départ : **{entreprise_lue}**")
+                st.caption(f"Entreprise du profil de départ : **{echapper_markdown(entreprise_lue)}**")
                 # Le rappel s'exécute avant le rerun, donc avant que le champ
                 # soit redessiné : seul endroit sûr pour écrire sa clé.
                 st.button(
-                    f"Écarter {entreprise_lue}",
+                    f"Écarter {echapper_markdown(entreprise_lue)}",
                     key="sim_btn_ecarter_ref",
                     on_click=lambda: st.session_state.__setitem__(
                         "sim_entreprise_exclue", entreprise_lue),
@@ -555,7 +655,8 @@ def afficher_page_recherche():
             if sim_ecartees:
                 with st.expander(f"{pluriel(len(sim_ecartees), 'profil écarté', 'profils écartés')} : pourquoi"):
                     for e in sim_ecartees:
-                        st.markdown(f"- **{e.get('nom') or 'Sans nom'}** : {e['motif']}")
+                        st.markdown(f"- **{echapper_markdown(e.get('nom') or 'Sans nom')}** : "
+                                    f"{e['motif']}")
 
             if sim_retenues:
                 st.divider()

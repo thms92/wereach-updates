@@ -77,6 +77,7 @@ def test_onglets_sans_emoji_et_bouton_qui_dit_l_action():
     assert ONGLETS == ["Candidats", "Clients et entreprises", "Profils similaires"]
     assert libelle_bouton_recherche(False) == "Rechercher"
     assert libelle_bouton_recherche(True) == "Rechercher et inviter"
+    assert libelle_bouton_recherche(True, 3) == "Rechercher et inviter (jusqu'à 3)"
 
 
 def test_le_bouton_devient_rechercher_et_inviter_quand_on_invite(budget_dicte):
@@ -86,7 +87,8 @@ def test_le_bouton_devient_rechercher_et_inviter_quand_on_invite(budget_dicte):
         assert at.button(key=cle_btn).label == "Rechercher"
         at.toggle(key=f"inviter_{prefixe}").set_value(True)
         at.run()
-        assert at.button(key=cle_btn).label == "Rechercher et inviter"
+        # 10 profils demandés, 15 restantes : jusqu'à 10 invitations.
+        assert at.button(key=cle_btn).label == "Rechercher et inviter (jusqu'à 10)"
 
 
 def test_aucun_jargon_ni_emoji_dans_la_page(budget_dicte):
@@ -104,12 +106,13 @@ def test_aucun_jargon_ni_emoji_dans_la_page(budget_dicte):
     assert not sans_emoji, sans_emoji
 
 
-def test_bandeau_de_contexte_avec_session_et_budget(budget_dicte):
+def test_bandeau_de_contexte_avec_la_session_sans_doubler_la_jauge(budget_dicte):
     at = _page()
     assert at.title[0].value == "Nouvelle recherche"
     bandeau = [m.value for m in at.markdown if m.value.startswith('<div class="wf-bandeau"')]
     assert bandeau and "Session LinkedIn active" in bandeau[0]
-    assert "15 invitations restantes" in bandeau[0]
+    # Le budget est déjà sous le menu (jauge de la barre latérale).
+    assert "restante" not in bandeau[0]
 
 
 # --- Budget là où l'on invite --------------------------------------------
@@ -149,10 +152,17 @@ def test_budget_epuise_alerte_mais_l_interrupteur_reste_utilisable(budget_dicte)
 
 
 def test_message_d_avertissement_au_singulier_et_reinvitation():
+    # Le moteur s'arrête au plafond du jour (BUDGET_ATTEINT) : le message le dit.
     m = avertissement_budget(5, 1)
-    assert "1 invitation aujourd'hui" in m and "seul le premier profil nouveau sera invité" in m
+    assert m == ("Vous demandez 5 profils mais il ne reste qu'une invitation "
+                 "aujourd'hui : la recherche s'arrêtera après la première "
+                 "invitation ; seul le premier nouveau profil sera invité.")
+    m = avertissement_budget(10, 3)
+    assert "la recherche s'arrêtera après la 3e invitation" in m
+    assert "seuls les 3 premiers nouveaux profils seront invités" in m
     m = avertissement_budget(5, 3, reinviter=True)
     assert "seuls les 3 premiers profils seront invités" in m
+    assert "seul le premier profil sera invité" in avertissement_budget(5, 1, reinviter=True)
 
 
 def test_les_options_d_invitation_sont_groupees(budget_dicte):
@@ -191,16 +201,17 @@ def test_le_bilan_compte_profils_et_invitations(budget_dicte, scraper_espion):
     at.run()
     at.button(key="btn_rechercher_clients").click()
     at.run()
+    at.button(key="confirmer_clients_ok").click()
+    at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
-    assert ("2 profils trouvés, 1 invitation envoyée. Suivez les réponses dans Messages."
-            in [s.value for s in at.success])
+    assert any("2 profils trouvés · 1 invitation envoyée" in m.value for m in at.markdown)
 
 
 def test_le_bilan_omet_les_invitations_inconnues():
     df = pd.DataFrame([{"Nom": "A"}])
-    assert resume_resultats(df, inviter=True) == "1 profil trouvé."
+    assert resume_resultats(df, inviter=True) == "1 profil trouvé"
     df = pd.DataFrame([{"Nom": "A", "Invitation": "Oui"}, {"Nom": "B", "Invitation": "Oui"}])
-    assert resume_resultats(df, inviter=False) == "2 profils trouvés."
+    assert resume_resultats(df, inviter=False) == "2 profils trouvés"
 
 
 # --- Profils similaires : même jauge, même logique de libellé -------------
@@ -225,8 +236,9 @@ def test_le_bloc_recuperer_montre_la_jauge_et_refuse_d_avance(budget_dicte, monk
     at.run()
     assert at.button(key="sim_btn_recuperer").label == "Récupérer les infos"
 
-    at.checkbox(key="sim_inviter").set_value(True)
+    at.toggle(key="sim_inviter").set_value(True)
     at.run()
+    # 3 profils pour 2 restantes : aucun nombre promis, le lancement est refusé.
     assert at.button(key="sim_btn_recuperer").label == "Récupérer les infos et inviter"
     assert [m for m in at.markdown if m.value.startswith('<div class="wf-jauge')]
     assert any("3 profils retenus pour 2 invitations restantes" in e.value

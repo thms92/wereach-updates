@@ -81,6 +81,8 @@ def test_envoi_refuse_par_le_verrou_le_dit_sans_relancer_la_page(invitation):
     at.run()
     at.button(key="msg_envoyer").click()
     at.run()
+    at.button(key="confirmer_messages_ok").click()
+    at.run()
     assert not at.exception
     assert any(OCCUPE in e.value for e in at.error)
     assert not any("envoy" in s.value for s in at.success)

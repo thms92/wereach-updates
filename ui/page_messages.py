@@ -14,12 +14,39 @@ import streamlit as st
 # scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
 import scraper_v2_sync
 from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel
+from ui.invitations import confirmation, echapper_markdown  # noqa: F401 (réexporté)
 from utils.verrou_linkedin import message_occupe
 
 MAX_ENVOIS = 20
 LIBELLE_VERIFIER = "Vérifier qui a accepté"
 LIBELLE_TOUT = "Tout sélectionner"
 LIBELLE_RIEN = "Tout désélectionner"
+PAGE_RECHERCHE = "🔍 Recherche"
+
+
+def apercu_html(message: str) -> str:
+    """Le message tel qu'il partira, en HTML sûr et sur une seule ligne de
+    source : une ligne vide fermerait le bloc HTML et ferait passer la suite
+    en Markdown (listes, italiques, formules)."""
+    corps = escape(message or "").replace("$", "&#36;").replace("\n", "<br>")
+    return (
+        '<div class="wf-apercu" style="white-space:pre-wrap;padding:12px 14px;'
+        'border:1px solid var(--wf-border);border-radius:12px;'
+        'background:var(--wf-surface);color:var(--wf-text);'
+        f'font-size:.95rem;line-height:1.5">{corps}</div>'
+    )
+
+
+def recap_messages(noms) -> str:
+    """« 3 messages partiront tels quels, à : A, B, C. » en Markdown sûr."""
+    n = len(noms)
+    verbe = "partira tel quel" if n < 2 else "partiront tels quels"
+    return (f"{pluriel(n, 'message')} {verbe}, à : "
+            + ", ".join(echapper_markdown(x) for x in noms) + ".")
+
+
+def _aller_a_recherche():
+    st.session_state["page"] = PAGE_RECHERCHE
 
 
 def cle_case(url: str) -> str:
@@ -49,7 +76,7 @@ def _cocher_tout(urls, valeur: bool):
 
 
 def afficher_page_messages():
-    st.title("Suivi et messages")
+    st.title("Suivi et messages", anchor=False)
 
     db = st.session_state.db
     en_attente = db.invitations_en_attente()
@@ -69,6 +96,8 @@ def afficher_page_messages():
     if not _ckm:
         st.warning("Connectez d'abord votre **session LinkedIn** depuis la page **Recherche** : "
                    "elle est nécessaire pour vérifier les acceptations et envoyer des messages.")
+        st.button("Aller à Recherche", key="msg_vers_recherche", type="primary",
+                  icon=":material/search:", on_click=_aller_a_recherche)
         return
 
     def _new_scraper():
@@ -80,7 +109,7 @@ def afficher_page_messages():
         )
 
     # ── Étape 1 : détecter les acceptations ──
-    st.subheader("1. Vérifier qui a accepté")
+    st.header("1. Vérifier qui a accepté", anchor=False)
     if en_attente:
         cA, cB = st.columns([3, 1], vertical_alignment="center")
         cA.markdown(
@@ -130,7 +159,7 @@ def afficher_page_messages():
     st.divider()
 
     # ── Étape 2 : écrire aux personnes qui ont accepté ──
-    st.subheader("2. Écrire aux personnes qui ont accepté")
+    st.header("2. Écrire aux personnes qui ont accepté", anchor=False)
     if not acc:
         afficher_etat_vide(
             "Personne à contacter pour l'instant.",
@@ -154,7 +183,8 @@ def afficher_page_messages():
     with st.container(border=True):
         for a in acc:
             sous = " · ".join(x for x in [a.get("poste"), a.get("entreprise")] if x)
-            label = f"**{a['nom']}**" + (f" — {sous}" if sous else "")
+            label = (f"**{echapper_markdown(a['nom'])}**"
+                     + (f" — {echapper_markdown(sous)}" if sous else ""))
             choix[a["url"]] = st.checkbox(label, key=cle_case(a["url"]))
     sel = [a for a in acc if choix.get(a["url"])]
 
@@ -170,24 +200,28 @@ def afficher_page_messages():
 
     if message.strip():
         st.caption("Aperçu, tel que chaque personne le recevra")
-        st.markdown(
-            '<div style="white-space:pre-wrap;padding:12px 14px;border:1px solid var(--wf-border);'
-            'border-radius:12px;background:var(--wf-surface);color:var(--wf-text);'
-            f'font-size:.95rem;line-height:1.5">{escape(message)}</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(apercu_html(message), unsafe_allow_html=True)
 
     raison = raison_envoi_impossible(len(sel), message)
     if len(sel) > MAX_ENVOIS:
         st.warning(f"{MAX_ENVOIS} envois au plus par lot : seules les {MAX_ENVOIS} premières "
                    "personnes cochées recevront le message. Relancez ensuite pour les suivantes.")
-    envoyer = st.button(
+    clic = st.button(
         libelle_envoi(min(len(sel), MAX_ENVOIS)),
         type="secondary" if raison else "primary",
         disabled=raison is not None, icon=":material/send:", key="msg_envoyer",
     )
     if raison:
         st.caption(raison)
+
+    # Un message envoyé ne se reprend pas : le premier clic montre ce qui
+    # partira et à qui ; seul « Confirmer et lancer » envoie.
+    lot = sel[:MAX_ENVOIS]
+    envoyer = confirmation(
+        "messages", clic and raison is None, True,
+        {"urls": tuple(a["url"] for a in lot), "message": message},
+        recap_messages([a["nom"] for a in lot]),
+    )
 
     if envoyer:
         with st.spinner("Envoi des messages…"):

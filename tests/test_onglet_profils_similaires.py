@@ -253,11 +253,15 @@ def test_les_invitations_ne_partent_pas_sans_l_avoir_demande(recolte_espionne):
 def test_la_case_cochee_fait_partir_les_invitations(recolte_espionne):
     recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
     at = _trouver(_page_recherche())
-    at.checkbox(key="sim_inviter").set_value(True)
+    at.toggle(key="sim_inviter").set_value(True)
     at.run()
     recolte_espionne["appels"].clear()
 
     at.button(key="sim_btn_recuperer").click()
+    at.run()
+    # Le premier clic montre le récapitulatif : rien n'est encore parti.
+    assert recolte_espionne["appels"] == []
+    at.button(key="confirmer_sim_ok").click()
     at.run()
 
     assert recolte_espionne["appels"][0]["inviter"] is True
@@ -382,12 +386,12 @@ def test_changer_le_mot_apres_trouver_refiltre_sans_nouvelle_recolte(recolte_esp
 def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
     recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
     at = _trouver(_page_recherche())
-    at.checkbox(key="sim_inviter").set_value(True)
+    at.toggle(key="sim_inviter").set_value(True)
     at.run()
-    assert at.checkbox(key="sim_inviter").value is True
+    assert at.toggle(key="sim_inviter").value is True
 
     at = _trouver(at)
-    assert at.checkbox(key="sim_inviter").value is False
+    assert at.toggle(key="sim_inviter").value is False
 
     recolte_espionne["appels"].clear()
     at.button(key="sim_btn_recuperer").click()
@@ -402,7 +406,7 @@ def test_au_dela_du_plafond_du_jour_rien_ne_part(recolte_espionne):
         None,
     )
     at = _trouver(_page_recherche())
-    at.checkbox(key="sim_inviter").set_value(True)
+    at.toggle(key="sim_inviter").set_value(True)
     at.run()
     recolte_espionne["invitations_restantes"] = 2
     recolte_espionne["appels"].clear()
@@ -430,10 +434,12 @@ def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
     assert len(recolte_espionne["appels"]) == 1
 
     recolte_espionne["invitations_restantes"] = 2
-    at.checkbox(key="sim_inviter").set_value(True)
+    at.toggle(key="sim_inviter").set_value(True)
     at.run()
     recolte_espionne["appels"].clear()
     at.button(key="sim_btn_recuperer").click()
+    at.run()
+    at.button(key="confirmer_sim_ok").click()
     at.run()
     assert recolte_espionne["appels"][0]["inviter"] is True
 
