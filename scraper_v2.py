@@ -40,6 +40,8 @@ from utils.ecoles import composer_libelle
 # savoir quoi faire, pas quel cookie technique a expiré.
 SESSION_EXPIREE = ("Session LinkedIn expirée : mettez-la à jour dans la page "
                    "Recherche.")
+BUDGET_ATTEINT = ("Budget d'invitations du jour atteint : la recherche s'est "
+                  "arrêtée. Les invitations reprendront demain.")
 
 class LinkedInScraperV2:
     """
@@ -1380,6 +1382,7 @@ class LinkedInScraperV2:
                 urls_session = set()
                 profils_scrapes = 0
                 invitations_envoyees = 0
+                budget_epuise_en_cours = False
                 current_page = 1
 
                 # BOUCLE PRINCIPALE DE SCRAPING
@@ -1443,6 +1446,11 @@ class LinkedInScraperV2:
                                 )
                                 if status_callback:
                                     status_callback("Budget d'invitations du jour atteint : les invitations reprendront demain.")
+                                # Arrêter aussi la pagination : sans invitation
+                                # possible, chaque page de plus n'est qu'une
+                                # visite LinkedIn inutile (et risquée).
+                                budget_epuise_en_cours = True
+                                self.errors.append(BUDGET_ATTEINT)
                                 break
                         else:
                             if profils_scrapes >= nb_profils:
@@ -1557,7 +1565,8 @@ class LinkedInScraperV2:
 
                     # PAGE SUIVANTE
                     # Vérifier si on a atteint la limite selon le mode
-                    continuer = (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils)
+                    continuer = (inviter and invitations_envoyees < nb_profils
+                                 and not budget_epuise_en_cours) or (not inviter and profils_scrapes < nb_profils)
 
                     if continuer:
                         current_page += 1
