@@ -122,7 +122,7 @@ def afficher_page_messages():
     else:
         afficher_etat_vide(
             "Aucune invitation en attente.",
-            "Les personnes que vous invitez depuis Recherche ou Veille apparaîtront ici.",
+            "Les personnes que vous invitez depuis Recherche apparaîtront ici.",
         )
         # Inactif, et visiblement inactif : un bouton principal désactivé
         # garde la couleur d'accent du thème.

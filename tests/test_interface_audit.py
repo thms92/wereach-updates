@@ -6,6 +6,7 @@ de produit à la fois, titres doublés d'émojis lus à voix haute, plafond
 d'invitations dessiné comme une hausse, colonnes techniques de la base.
 """
 
+import re
 from pathlib import Path
 
 from tests.conftest import lancer_app, verifier_page_affichee
@@ -50,9 +51,9 @@ def test_le_plafond_d_invitations_n_est_pas_une_hausse():
     at = lancer_app("📊 Dashboard")
     jauges = [m.value for m in at.sidebar.markdown if 'role="meter"' in m.value]
     assert jauges, "la jauge du budget n'est pas dessinée à côté du tableau de bord"
-    assert "Budget du jour" in jauges[0] and " sur " in jauges[0]
+    assert "Invitations du jour" in jauges[0] and " sur " in jauges[0]
     page = " ".join(m.value for m in at.main.markdown)
-    assert "restantes sur 20" in page or "restante sur 20" in page
+    assert re.search(r"restantes? sur 20|\(20 conseillées\)", page)
     assert not [x for x in at.metric if x.delta]
 
 

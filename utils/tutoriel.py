@@ -15,8 +15,8 @@ from pathlib import Path
 
 FICHIER_VU = "tutoriel_vu.txt"
 
-_TDB, _RECH, _VEILLE, _MSG, _HIST, _JOURNAL = (
-    "📊 Dashboard", "🔍 Recherche", "🏢 Veille", "✉️ Messages", "💾 Historique", "📜 Logs")
+_TDB, _RECH, _MSG, _HIST, _JOURNAL = (
+    "📊 Dashboard", "🔍 Recherche", "✉️ Messages", "💾 Historique", "📜 Logs")
 
 
 def _etape(titre, texte, page=None, cible=None, contient=None, onglet=None):
@@ -30,16 +30,17 @@ ETAPES = [
            "sans risque pour votre compte, et à savoir qui a accepté. Deux minutes pour "
            "faire le tour ?"),
     _etape("Le menu",
-           "Six pages, dans l'ordre où vous vous en servirez : votre journée commence au "
+           "Cinq pages, dans l'ordre où vous vous en servirez : votre journée commence au "
            "Tableau de bord.",
            cible=".st-key-nav_menu"),
-    _etape("Votre budget du jour",
-           "20 invitations par jour, pas plus : c'est ce qui protège votre compte LinkedIn. "
-           "La jauge montre ce qu'il vous reste, partout dans l'outil.",
+    _etape("Vos invitations du jour",
+           "20 invitations par jour, c'est la limite conseillée pour protéger votre compte "
+           "LinkedIn. Elle n'est pas bloquante : vous pouvez en envoyer plus, mais le risque "
+           "de restriction augmente.",
            cible='section[data-testid="stSidebar"] .wf-jauge'),
     _etape("Ce qui vous attend",
-           "Chaque matin, ouvrez le Tableau de bord : il vous dit qui a accepté, ce qui "
-           "attend une réponse et ce que la veille a trouvé.",
+           "Chaque matin, ouvrez le Tableau de bord : il vous dit qui a accepté et ce qui "
+           "attend une réponse.",
            page=_TDB, cible='[class*="st-key-wf_carte_"], .wf-action, .wf-vide'),
     _etape("Votre parcours",
            "Trouvés, invités, acceptés, contactés : vous voyez où en sont vos prospects, "
@@ -57,19 +58,6 @@ ETAPES = [
            "Activez les invitations si vous voulez inviter les profils trouvés. Avant "
            "tout envoi, un récapitulatif vous demande de confirmer.",
            page=_RECH, onglet="Candidats", cible=".st-key-bloc_inviter_candidat"),
-    _etape("La veille de vos entreprises cibles",
-           "Suivez vos entreprises cibles : à chaque passage, We.Reach y repère les "
-           "personnes Product, Data et IA.",
-           page=_VEILLE, cible='.stTabs [data-baseweb="tab-list"]'),
-    _etape("Ajouter une entreprise",
-           "Ajoutez une entreprise depuis votre fichier ou par le lien de sa page "
-           "LinkedIn. Un clic sur une ligne ouvre sa fiche.",
-           page=_VEILLE, onglet="Mes entreprises",
-           cible='.st-key-veille_ajouter_fichier, .st-key-veille_depuis_fichier, [data-testid="stDataFrame"]'),
-    _etape("Lancer un passage",
-           "Lancez la veille : une fenêtre Chrome s'ouvre quelques minutes. Les nouveaux "
-           "contacts apparaissent dans Nouveautés.",
-           page=_VEILLE, onglet="Nouveautés", cible=".st-key-veille_lancer"),
     _etape("Relancer ceux qui ont accepté",
            "Vérifiez qui a accepté vos invitations, puis écrivez-leur en une fois : "
            "sélectionnez, rédigez, confirmez.",

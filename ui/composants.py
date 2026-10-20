@@ -92,11 +92,15 @@ def bandeau_contexte(sous_titre: str,
     return f'<div class="wf-bandeau">{texte}{bloc_puces}</div>'
 
 
-# ------------------------------------------------------- jauge du budget
+# ---------------------------------------------- jauge des invitations du jour
 
 def ton_budget(utilisees: int, plafond: int) -> str:
-    """« ok » sous 80 %, « attention » à partir de 80 %, « danger » à 100 %."""
-    if plafond <= 0 or utilisees >= plafond:
+    """« ok » sous 80 %, « attention » de 80 % à la limite, « danger » au-delà.
+
+    La limite est conseillée, pas bloquante : « danger » signale un risque
+    pour le compte LinkedIn, jamais un arrêt.
+    """
+    if plafond <= 0 or utilisees > plafond:
         return "danger"
     if utilisees * 100 >= plafond * 80:
         return "attention"
@@ -104,23 +108,30 @@ def ton_budget(utilisees: int, plafond: int) -> str:
 
 
 def texte_budget(utilisees: int, plafond: int) -> str:
-    """« 3 restantes sur 20 » : la formulation courte du budget (puces)."""
+    """Formulation courte (puces) : « 3 invitations restantes sur 20 »,
+    ou « 23 invitations (20 conseillées) » au-delà de la limite."""
     plafond = max(int(plafond), 0)
-    restantes = plafond - min(max(int(utilisees), 0), plafond)
-    return f"{pluriel(restantes, 'restante')} sur {plafond}"
+    utilisees = max(int(utilisees), 0)
+    if utilisees > plafond:
+        return f"{pluriel(utilisees, 'invitation')} ({plafond} conseillées)"
+    restantes = plafond - utilisees
+    return f"{pluriel(restantes, 'invitation restante', 'invitations restantes')} sur {plafond}"
 
 
 def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) -> str:
-    """Le budget d'invitations du jour, dessiné en `plafond` crans.
+    """Les invitations du jour, dessinées en `plafond` crans.
 
-    Crans consommés en orange, crans restants en accent ; à 80 % le chiffre
-    passe en attention, à 100 % en danger avec « Budget épuisé, reprise
-    demain ». Exposé comme `role="meter"` (valeur : invitations restantes).
+    La limite (20) est CONSEILLÉE, pas bloquante. Crans consommés en orange,
+    restants en accent ; à 80 % le chiffre passe en attention ; à la limite,
+    une note dit qu'on peut continuer ; au-delà (danger), le chiffre montre
+    le dépassement. Exposé comme `role="meter"` (valeur : restantes).
     """
     plafond = max(int(plafond), 0)
-    utilisees = min(max(int(utilisees), 0), plafond)
+    brut = max(int(utilisees), 0)
+    depasse = max(brut - plafond, 0)
+    utilisees = min(brut, plafond)
     restantes = plafond - utilisees
-    ton = ton_budget(utilisees, plafond)
+    ton = ton_budget(brut, plafond)
 
     classes = f"wf-jauge wf-jauge--{ton}"
     if sur_fond_sombre:
@@ -130,19 +141,26 @@ def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) ->
         f'<span class="wf-cran{" wf-cran--utilise" if i < utilisees else ""}" style="--i:{i}"></span>'
         for i in range(plafond)
     )
-    mot_restantes = "restante" if restantes < 2 else "restantes"
-    note = ('<div class="wf-jauge__note">Budget épuisé, reprise demain</div>'
-            if ton == "danger" else "")
-    aria = (f'role="meter" aria-label="Invitations restantes aujourd\'hui" '
+    if depasse:
+        valeur = (f'<span class="wf-jauge__nombre">+{depasse}</span> au-delà'
+                  f' <span class="wf-jauge__compte">des {plafond} conseillées</span>')
+        note = ('<div class="wf-jauge__note">Rien n\'est bloqué, mais le risque '
+                'de restriction augmente</div>')
+        texte_aria = f"{pluriel(brut, 'invitation envoyée', 'invitations envoyées')}, {plafond} conseillées"
+    else:
+        mot = "restante" if restantes < 2 else "restantes"
+        valeur = (f'<span class="wf-jauge__nombre">{restantes}</span> {mot}'
+                  f' <span class="wf-jauge__compte">sur {plafond} conseillées</span>')
+        note = ('<div class="wf-jauge__note">Limite conseillée atteinte : vous pouvez continuer</div>'
+                if restantes == 0 and plafond > 0 else "")
+        texte_aria = f"{pluriel(restantes, 'invitation restante', 'invitations restantes')} sur {plafond} conseillées"
+    aria = (f'role="meter" aria-label="Invitations du jour" '
             f'aria-valuemin="0" aria-valuemax="{plafond}" aria-valuenow="{restantes}" '
-            f'aria-valuetext="{escape(pluriel(restantes, "invitation restante", "invitations restantes"))} sur {plafond}"')
-    # Une seule formulation partout (critique phase 4) : on compte ce qui
-    # RESTE, jamais ce qui est « utilisé ». Voir aussi texte_budget().
+            f'aria-valuetext="{escape(texte_aria)}"')
     return (
         f'<div class="{classes}" {aria}>'
-        '<div class="wf-jauge__tete"><span class="wf-jauge__libelle">Budget du jour</span></div>'
-        f'<div class="wf-jauge__valeur"><span class="wf-jauge__nombre">{restantes}</span> {mot_restantes}'
-        f' <span class="wf-jauge__compte">sur {plafond} aujourd\'hui</span></div>'
+        '<div class="wf-jauge__tete"><span class="wf-jauge__libelle">Invitations du jour</span></div>'
+        f'<div class="wf-jauge__valeur">{valeur}</div>'
         f'<div class="wf-jauge__crans" style="--wf-crans:{max(plafond, 1)}" aria-hidden="true">{crans}</div>'
         f'{note}</div>'
     )

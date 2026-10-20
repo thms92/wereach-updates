@@ -11,7 +11,6 @@ from uuid import uuid4
 
 # Chaque page vit dans son module sous ui/ ; ce script ne garde que le
 # socle commun (connexion, session, barre latérale) et l'aiguillage.
-from ui.page_veille import afficher_page_veille
 from ui.page_tableau_de_bord import afficher_page_tableau_de_bord
 from ui.page_recherche import afficher_page_recherche
 from ui.page_historique import afficher_page_historique
@@ -121,7 +120,6 @@ st.sidebar.markdown(wordmark(size=1.6, center=False, sur_fond_sombre=True),
 PAGES = [
     "📊 Dashboard",
     "🔍 Recherche",
-    "🏢 Veille",
     "✉️ Messages",
     "💾 Historique",
     "📜 Logs",
@@ -132,7 +130,6 @@ PAGES = [
 ICONES_PAGES = {
     "📊 Dashboard": ":material/dashboard:",
     "🔍 Recherche": ":material/search:",
-    "🏢 Veille": ":material/domain:",
     "✉️ Messages": ":material/mail:",
     "💾 Historique": ":material/database:",
     "📜 Logs": ":material/terminal:",
@@ -143,7 +140,6 @@ ICONES_PAGES = {
 LIBELLES_PAGES = {
     "📊 Dashboard": "Tableau de bord",
     "🔍 Recherche": "Recherche",
-    "🏢 Veille": "Veille",
     "✉️ Messages": "Messages",
     "💾 Historique": "Historique",
     "📜 Logs": "Journal",
@@ -226,7 +222,7 @@ if mode_admin():
         _ms = lambda v: f"{v / 1000:g} s".replace(".", ",")
         st.markdown(
             f"- Profils au plus par recherche : {ScraperConfig.MAX_PROFILES_PER_RUN}\n"
-            f"- Invitations au plus par jour : {ScraperConfig.MAX_INVITATIONS_PER_DAY}\n"
+            f"- Invitations conseillées par jour (non bloquant) : {ScraperConfig.MAX_INVITATIONS_PER_DAY}\n"
             f"- Attente maximale d'une page : {_ms(ScraperConfig.TIMEOUT_PAGE)}\n"
             f"- Pause entre deux profils : {_ms(ScraperConfig.DELAY_BETWEEN_PROFILES_MIN)}"
             f" à {_ms(ScraperConfig.DELAY_BETWEEN_PROFILES_MAX)}\n"
@@ -421,8 +417,6 @@ elif page == "🔍 Recherche":
 elif page == "💾 Historique":
     afficher_page_historique()
 
-elif page == "🏢 Veille":
-    afficher_page_veille()
 
 elif page == "✉️ Messages":
     afficher_page_messages()

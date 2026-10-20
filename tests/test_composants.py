@@ -102,7 +102,7 @@ def test_bandeau_contexte_sous_titre_et_puces():
 # -------------------------------------------------------- jauge du budget
 
 @pytest.mark.parametrize("utilisees, ton", [
-    (0, "ok"), (15, "ok"), (16, "attention"), (19, "attention"), (20, "danger"), (25, "danger"),
+    (0, "ok"), (15, "ok"), (16, "attention"), (19, "attention"), (20, "attention"), (21, "danger"), (25, "danger"),
 ])
 def test_seuils_du_budget(utilisees, ton):
     assert ton_budget(utilisees, 20) == ton
@@ -113,12 +113,16 @@ def test_jauge_restantes_au_singulier_et_au_pluriel():
     assert "16 restantes" in _texte(jauge_budget(4, 20))
     assert "1 restante" in _texte(jauge_budget(19, 20))
     assert "0 restante" in _texte(jauge_budget(20, 20))
-    assert "Budget du jour" in _texte(jauge_budget(4, 20))
+    assert "Invitations du jour" in _texte(jauge_budget(4, 20))
+    assert "sur 20 conseillées" in _texte(jauge_budget(4, 20))
 
 
-def test_jauge_epuisee_le_dit():
-    assert "Budget épuisé, reprise demain" in jauge_budget(20, 20)
-    assert "Budget épuisé" not in jauge_budget(19, 20)
+def test_jauge_limite_atteinte_puis_depassee_sans_blocage():
+    assert "vous pouvez continuer" in jauge_budget(20, 20)
+    assert "continuer" not in jauge_budget(19, 20)
+    depasse = _texte(jauge_budget(23, 20))
+    assert "+3" in depasse and "au-delà" in depasse and "Rien n" in depasse
+    assert "épuisé" not in jauge_budget(20, 20) + jauge_budget(23, 20)
 
 
 def test_jauge_dessine_un_cran_par_invitation():
@@ -134,14 +138,14 @@ def test_jauge_accessible_comme_meter():
     assert _attr(html, "aria-valuemax") == "20"
     assert _attr(html, "aria-valuenow") == "13"
     assert _attr(html, "aria-label")
-    assert "13 invitations restantes sur 20" == _attr(html, "aria-valuetext")
+    assert "13 invitations restantes sur 20 conseillées" == _attr(html, "aria-valuetext")
 
 
 def test_jauge_bornee_et_plafond_nul():
     assert _attr(jauge_budget(30, 20), "aria-valuenow") == "0"
     assert _attr(jauge_budget(-3, 20), "aria-valuenow") == "20"
     html = jauge_budget(0, 0)
-    assert "wf-jauge--danger" in html and "Budget épuisé" in html
+    assert "wf-jauge--danger" in html
 
 
 def test_jauge_sur_fond_sombre():

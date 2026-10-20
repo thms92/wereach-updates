@@ -77,11 +77,11 @@ def test_date_locale_au_format_francais():
 
 
 def test_rien_d_urgent_quand_tout_est_a_jour():
-    assert actions_du_jour(0, 0, 0, False, True) == []
+    assert actions_du_jour(0, 0, True) == []
 
 
 def test_actions_qui_s_appliquent():
-    actions = actions_du_jour(3, 12, 0, True, False)
+    actions = actions_du_jour(3, 12, False, budget_utilisees=20, budget_plafond=20)
     titres = [a[0] for a in actions]
     # La réussite d'abord (phase 4), puis la session manquante.
     assert titres[0] == "3 personnes ont accepté votre invitation"
@@ -90,15 +90,14 @@ def test_actions_qui_s_appliquent():
     assert "3 personnes ont accepté votre invitation" in titres
     assert [a for a in actions if a[0].startswith("3 personnes")][0][4][2] == PAGE_MESSAGES
     assert "12 invitations en attente de réponse" in titres
-    assert [a for a in actions if a[2] == "danger"], "budget épuisé non signalé"
+    assert "Limite conseillée de 20 invitations atteinte" in titres
     assert not any("(s)" in t for t in titres)
 
 
 def test_singulier():
-    titres = [a[0] for a in actions_du_jour(1, 1, 1, False, True)]
+    titres = [a[0] for a in actions_du_jour(1, 1, True)]
     assert "1 personne a accepté votre invitation" in titres
     assert "1 invitation en attente de réponse" in titres
-    assert any(t.startswith("1 nouveau contact ") for t in titres)
 
 
 # --- page rendue ------------------------------------------------------------

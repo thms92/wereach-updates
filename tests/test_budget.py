@@ -38,3 +38,11 @@ def test_une_nouvelle_session_garde_le_compteur_de_la_personne(tmp_path):
     neuf = s._nouvelle_session_humaine()
     assert neuf.daily_limits.limits_file == fichier
     assert neuf.fatigue_factor == 0.0
+
+
+def test_message_depassement_seulement_au_dela_de_la_limite():
+    from utils.budget import message_depassement
+    assert message_depassement(3, 17, 20) is None
+    m = message_depassement(10, 17, 20)
+    assert "27 invitations" in m and "limite conseillée de 20" in m and "Rien n'est bloqué" in m
+    assert message_depassement(0, 25, 20) is None

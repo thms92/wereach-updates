@@ -42,6 +42,7 @@ class ScraperConfig:
     # le scraper via DailyLimitsTracker). Conservateurs pour limiter le risque
     # LinkedIn quand plusieurs comptes partagent l'IP du serveur (sans proxy).
     MAX_PROFILES_PER_RUN: int = 80
+    # Limite CONSEILLÉE, affichée mais non bloquante (utils/budget.py).
     MAX_INVITATIONS_PER_DAY: int = 20
     MAX_RETRY_ATTEMPTS: int = 3
     # Headless pilotable par variable d'env : SCRAPER_HEADLESS=false lance un

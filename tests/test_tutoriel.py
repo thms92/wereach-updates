@@ -18,11 +18,11 @@ def _pages_du_menu():
     raise AssertionError("PAGES introuvable")
 
 
-def test_quinze_etapes_dans_l_ordre_du_parcours():
-    assert len(ETAPES) == 15
+def test_douze_etapes_dans_l_ordre_du_parcours():
+    assert len(ETAPES) == 12
     assert ETAPES[0]["titre"] == "Bienvenue sur We.Reach"
-    assert ETAPES[2]["titre"] == "Votre budget du jour"
-    assert ETAPES[14]["titre"] == "C'est parti"
+    assert ETAPES[2]["titre"] == "Vos invitations du jour"
+    assert ETAPES[11]["titre"] == "C'est parti"
     pages = set(_pages_du_menu())
     assert {e["page"] for e in ETAPES if e["page"]} <= pages
     for e in ETAPES:
@@ -58,3 +58,8 @@ def test_aucune_cible_n_est_un_bouton_d_envoi():
     interdits = ("btn_trouver", "msg_envoyer", "_btn_recuperer", "veille_btn_retirer", "confirmer")
     for e in ETAPES:
         assert not any(i in (e["cible"] or "") for i in interdits), e["titre"]
+
+
+def test_la_limite_est_dite_non_bloquante():
+    assert "pas bloquante" in ETAPES[2]["texte"]
+    assert not any("eille" in e["titre"] + e["texte"] for e in ETAPES)

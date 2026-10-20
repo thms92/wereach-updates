@@ -446,6 +446,8 @@ __CODE__
 .wf-cran { display:block; border-radius:3px; background:var(--wf-j-reste); transform-origin:50% 100%; animation:wf-cran 220ms var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 10ms); }
 .wf-cran--utilise { background:var(--wf-j-utilise); }
 .wf-jauge__note { font-size:.8rem; font-weight:600; color:var(--wf-danger); }
+/* Limite conseillée atteinte, pas dépassée : une information, pas une alerte. */
+.wf-jauge--attention .wf-jauge__note { color:var(--wf-warn); }
 @keyframes wf-cran { from { transform:scaleY(.15); opacity:.25; } }
 
 /* Entonnoir du parcours */

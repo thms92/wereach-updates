@@ -3,7 +3,7 @@
 budget là où l'on invite, la confirmation avant tout envoi, et l'affichage
 des résultats d'une recherche.
 
-Le bloc est utilisé par l'onglet Profils similaires et la page Veille. Les
+Le bloc est utilisé par l'onglet Profils similaires. Les
 invitations sont rares et irréversibles : les garde-fous (interrupteur
 éteint par défaut, plafond du jour vérifié avant tout envoi, récapitulatif
 à confirmer) n'existent qu'ici, pour qu'aucun écran ne les oublie.
@@ -18,9 +18,8 @@ import streamlit as st
 # Module (et non « from … import ») : le scraper est résolu à l'appel, donc un
 # remplacement de scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
 import scraper_v2_sync
-from scraper_v2 import BUDGET_ATTEINT
 from ui.composants import afficher_carte_action, afficher_jauge_budget, pluriel
-from utils.budget import budget_du_jour
+from utils.budget import budget_du_jour, message_depassement
 
 MESSAGE_SESSION_MANQUANTE = (
     "Session LinkedIn manquante : renseignez-la en haut de la page Recherche."
@@ -54,14 +53,19 @@ def budget():
 
 # --------------------------------------------------------- confirmation
 
-def recap_invitations(n: int, restantes: int, message: str = "") -> str:
+def recap_invitations(n: int, utilisees: int, plafond: int, message: str = "") -> str:
     """Ce qui partira, en Markdown sûr : « Jusqu'à 3 invitations partiront
-    depuis votre compte LinkedIn ; il vous en restera 0 aujourd'hui. … »"""
+    depuis votre compte LinkedIn ; vous en serez à 20 aujourd'hui (limite
+    conseillée : 20). … » La limite n'est pas bloquante."""
     n = max(int(n), 0)
-    reste = max(int(restantes) - n, 0)
+    total = max(int(utilisees), 0) + n
     verbe = "partira" if n < 2 else "partiront"
     texte = (f"Jusqu'à {pluriel(n, 'invitation')} {verbe} depuis votre compte "
-             f"LinkedIn ; il vous en restera {reste} aujourd'hui.")
+             f"LinkedIn ; vous en serez à {total} aujourd'hui (limite conseillée : "
+             f"{plafond}).")
+    if plafond > 0 and total > plafond:
+        texte += (" C'est au-delà de la limite conseillée : rien n'est bloqué, "
+                  "mais le risque de restriction de votre compte augmente.")
     message = (message or "").strip()
     if message:
         texte += f" Message joint : « {echapper_markdown(message)} »"
@@ -143,8 +147,6 @@ def afficher_resultats(df: pd.DataFrame, inviter: bool, nom_export: str,
                        prefixe: str, erreurs=()) -> None:
     """Bilan et suite, tableau lisible, exports et incidents d'un passage."""
     erreurs = list(erreurs or [])
-    budget_atteint = BUDGET_ATTEINT in erreurs
-    erreurs = [e for e in erreurs if e != BUDGET_ATTEINT]
 
     if df is not None and not df.empty:
         invitations = nombre_invitations(df) if inviter else None
@@ -196,10 +198,6 @@ def afficher_resultats(df: pd.DataFrame, inviter: bool, nom_export: str,
             key=f"{prefixe}_dl_csv", width="stretch", on_click="ignore",
         )
 
-    # Le moteur s'arrête de lui-même au plafond du jour : c'est une issue
-    # normale, pas un incident.
-    if budget_atteint:
-        st.info(BUDGET_ATTEINT)
     if erreurs:
         with st.expander(f"Incidents pendant la recherche ({len(erreurs)})"):
             for err in erreurs:
@@ -210,15 +208,6 @@ def afficher_resultats(df: pd.DataFrame, inviter: bool, nom_export: str,
 
 def _nouveau_scraper():
     return scraper_v2_sync.LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
-
-
-def _refus_plafond(restantes: int, n: int) -> str:
-    return (
-        f"Il ne reste que {pluriel(restantes, 'invitation')} aujourd'hui "
-        f"pour {pluriel(n, 'profil retenu', 'profils retenus')}. "
-        "Désactivez « Envoyer des invitations », ou resserrez la liste "
-        "avec les filtres."
-    )
 
 
 def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
@@ -235,18 +224,9 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         if inviter:
             b = budget()
             afficher_jauge_budget(b.utilisees, b.plafond)
-            if b.epuise:
-                st.error(
-                    "Budget du jour épuisé : les invitations reprennent demain. "
-                    "Désactivez les invitations pour récupérer les infos sans inviter."
-                )
-            elif len(urls) > b.restantes:
-                st.error(
-                    f"{pluriel(len(urls), 'profil retenu', 'profils retenus')} pour "
-                    f"{pluriel(b.restantes, 'invitation restante', 'invitations restantes')} "
-                    "aujourd'hui : rien ne partira. Resserrez la liste avec les "
-                    "filtres, ou désactivez les invitations."
-                )
+            depassement = message_depassement(len(urls), b.utilisees, b.plafond)
+            if depassement:
+                st.warning(depassement)
             message = st.text_area(
                 "Message d'invitation",
                 placeholder="Bonjour, je serais ravi d'échanger avec vous…",
@@ -257,7 +237,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
 
     if inviter:
         libelle = "Récupérer les infos et inviter"
-        if b is not None and 0 < len(urls) <= b.restantes:
+        if urls:
             libelle += f" (jusqu'à {len(urls)})"
     else:
         libelle = libelle_bouton or "Récupérer les infos"
@@ -265,28 +245,16 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
     clic = st.button(libelle, type="primary",
                      width="stretch", key=f"{prefixe}_btn_recuperer")
 
-    # Le plafond du jour est contrôlé avant tout lancement, par le compteur
-    # du moteur lui-même : la chaîne partagée ne vérifie qu'« au moins une
-    # restante » à l'entrée et s'arrêterait au milieu de la liste, après
-    # avoir ouvert Chrome. Contrôlé au premier clic (rien à confirmer si
-    # rien ne peut partir) puis de nouveau au lancement.
-    restantes = None
-    if clic:
-        if not st.session_state.global_cookie:
-            st.error(MESSAGE_SESSION_MANQUANTE)
-            return
-        if inviter:
-            restantes = _nouveau_scraper().scraper.human.daily_limits.remaining_invitations()
-            if len(urls) > restantes:
-                st.error(_refus_plafond(restantes, len(urls)))
-                st.session_state.pop(f"confirmer_{prefixe}", None)
-                return
-            st.session_state[f"confirmer_{prefixe}_restantes"] = restantes
+    # La limite du jour est conseillée, pas bloquante : seul le récapitulatif
+    # dit où l'envoi vous mène par rapport à elle.
+    if clic and not st.session_state.global_cookie:
+        st.error(MESSAGE_SESSION_MANQUANTE)
+        return
 
     recap = recap_invitations(
         len(urls),
-        st.session_state.get(f"confirmer_{prefixe}_restantes",
-                             b.restantes if b is not None else 0),
+        b.utilisees if b is not None else 0,
+        b.plafond if b is not None else 0,
         message,
     )
     parametres = {"urls": tuple(urls), "inviter": inviter, "message": message}
@@ -294,11 +262,6 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         return
 
     scraper = _nouveau_scraper()
-    if inviter:
-        restantes = scraper.scraper.human.daily_limits.remaining_invitations()
-        if len(urls) > restantes:
-            st.error(_refus_plafond(restantes, len(urls)))
-            return
 
     progress_bar = st.progress(0)
     status_text = st.empty()

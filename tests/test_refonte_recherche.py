@@ -16,8 +16,7 @@ import scraper_v2_sync
 import ui.invitations
 from tests.conftest import lancer_app, verifier_page_affichee
 from ui.invitations import resume_resultats
-from ui.page_recherche import (MESSAGE_BUDGET_EPUISE, ONGLETS,
-                               avertissement_budget, libelle_bouton_recherche)
+from ui.page_recherche import ONGLETS, libelle_bouton_recherche
 from utils.budget import Budget
 
 PAGE = "🔍 Recherche"
@@ -134,35 +133,19 @@ def test_avertit_quand_on_demande_plus_que_le_budget(budget_dicte):
     at.number_input(key="nb_client").set_value(10)
     at.run()
     messages = [w.value for w in at.warning]
-    assert any("Vous demandez 10 profils mais il ne reste que 3 invitations" in m
+    assert any("vous en serez à 27 invitations" in m and "Rien n'est bloqué" in m
                for m in messages), messages
 
 
-def test_budget_epuise_alerte_mais_l_interrupteur_reste_utilisable(budget_dicte):
+def test_limite_atteinte_previent_sans_bloquer(budget_dicte):
+    # Limite conseillée, pas bloquante : aucune erreur, aucun bouton grisé.
     budget_dicte["budget"] = Budget(utilisees=20, plafond=20)
     at = _page()
     at.toggle(key="inviter_candidat").set_value(True)
     at.run()
-    assert MESSAGE_BUDGET_EPUISE in [e.value for e in at.error]
-    assert "reprennent demain" in MESSAGE_BUDGET_EPUISE
-    assert not at.toggle(key="inviter_candidat").disabled
-    at.toggle(key="inviter_candidat").set_value(False)
-    at.run()
-    assert MESSAGE_BUDGET_EPUISE not in [e.value for e in at.error]
-
-
-def test_message_d_avertissement_au_singulier_et_reinvitation():
-    # Le moteur s'arrête au plafond du jour (BUDGET_ATTEINT) : le message le dit.
-    m = avertissement_budget(5, 1)
-    assert m == ("Vous demandez 5 profils mais il ne reste qu'une invitation "
-                 "aujourd'hui : la recherche s'arrêtera après la première "
-                 "invitation ; seul le premier nouveau profil sera invité.")
-    m = avertissement_budget(10, 3)
-    assert "la recherche s'arrêtera après la 3e invitation" in m
-    assert "seuls les 3 premiers nouveaux profils seront invités" in m
-    m = avertissement_budget(5, 3, reinviter=True)
-    assert "seuls les 3 premiers profils seront invités" in m
-    assert "seul le premier profil sera invité" in avertissement_budget(5, 1, reinviter=True)
+    assert not at.error, [e.value for e in at.error]
+    assert not at.button(key="btn_rechercher_candidats").disabled
+    assert any("Rien n'est bloqué" in w.value for w in at.warning)
 
 
 def test_les_options_d_invitation_sont_groupees(budget_dicte):
@@ -238,8 +221,8 @@ def test_le_bloc_recuperer_montre_la_jauge_et_refuse_d_avance(budget_dicte, monk
 
     at.toggle(key="sim_inviter").set_value(True)
     at.run()
-    # 3 profils pour 2 restantes : aucun nombre promis, le lancement est refusé.
-    assert at.button(key="sim_btn_recuperer").label == "Récupérer les infos et inviter"
+    # 3 profils pour 2 restantes : un avertissement, pas de refus.
+    assert at.button(key="sim_btn_recuperer").label == "Récupérer les infos et inviter (jusqu'à 3)"
     assert [m for m in at.markdown if m.value.startswith('<div class="wf-jauge')]
-    assert any("3 profils retenus pour 2 invitations restantes" in e.value
-               for e in at.error), [e.value for e in at.error]
+    assert not at.error
+    assert any("vous en serez à 21 invitations" in w.value for w in at.warning), [w.value for w in at.warning]

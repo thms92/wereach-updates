@@ -16,6 +16,7 @@ from ui.invitations import (AIDE_MESSAGE, MESSAGE_SESSION_MANQUANTE,
                             afficher_resultats, bloc_recuperer_inviter, budget,
                             confirmation, echapper_markdown, recap_invitations)
 from utils.browsemap import filtrer_suggestions, vanity_depuis_url
+from utils.budget import message_depassement
 from utils.search_filters import (criteres_suffisants,
                                   ecoles_sans_identifiant,
                                   parse_entreprises)
@@ -38,35 +39,6 @@ def libelle_bouton_recherche(inviter: bool, jusqu_a: int = 0) -> str:
     return "Rechercher et inviter"
 
 
-def avertissement_budget(nb_profils: int, restantes: int, reinviter: bool = False) -> str:
-    """Ce qui se passera réellement si l'on demande plus que le budget.
-
-    Avec les invitations, le moteur vise `nb_profils` invitations, saute les
-    profils déjà dans le fichier (sauf réinvitation) et s'arrête dès que le
-    plafond du jour est atteint (scraper_v2.BUDGET_ATTEINT).
-    """
-    nouveau = "" if reinviter else " nouveau"
-    if restantes == 1:
-        reste = "il ne reste qu'une invitation"
-        cible = f"seul le premier{nouveau} profil sera invité"
-        arret = "après la première invitation"
-    else:
-        reste = f"il ne reste que {pluriel(restantes, 'invitation')}"
-        cible = f"seuls les {restantes} premiers{nouveau and ' nouveaux'} profils seront invités"
-        arret = f"après la {restantes}e invitation"
-    return (
-        f"Vous demandez {pluriel(nb_profils, 'profil')} mais {reste} "
-        f"aujourd'hui : la recherche s'arrêtera {arret} ; {cible}."
-    )
-
-
-MESSAGE_BUDGET_EPUISE = (
-    "Budget du jour épuisé : les invitations reprennent demain. Avec cette "
-    "option, la recherche s'arrêterait sans rien lancer ; désactivez-la pour "
-    "rechercher sans inviter."
-)
-
-
 def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
                       cle_message: str):
     """L'interrupteur d'invitations, son budget et ses options, groupés.
@@ -79,7 +51,7 @@ def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
         inviter = st.toggle(
             "Envoyer des invitations", value=False, key=cle_inviter,
             help="Une invitation part vers chaque profil trouvé. L'envoi est "
-                 "irréversible et limité chaque jour.",
+                 "irréversible ; 20 par jour sont conseillés, sans blocage.",
         )
         if not inviter:
             return False, False, "", None
@@ -102,17 +74,16 @@ def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
             placeholder="Bonjour, je serais ravi d'échanger avec vous…",
             max_chars=200, help=AIDE_MESSAGE, key=cle_message,
         )
-        if b.epuise:
-            alerte.error(MESSAGE_BUDGET_EPUISE)
-        elif nb_profils > b.restantes:
-            alerte.warning(avertissement_budget(nb_profils, b.restantes, reinviter))
+        depassement = message_depassement(nb_profils, b.utilisees, b.plafond)
+        if depassement:
+            alerte.warning(depassement)
     return inviter, reinviter, message, b
 
 
 def _bouton_lancer(cle: str, inviter: bool, nb_profils: int, b) -> bool:
     """Le bouton principal d'un onglet : inactif sans session, et quand on
     invite, il annonce le nombre d'invitations qui peuvent partir."""
-    jusqu_a = min(nb_profils, b.restantes) if (inviter and b is not None) else 0
+    jusqu_a = nb_profils if inviter else 0
     sans_session = not st.session_state.global_cookie
     clic = st.button(libelle_bouton_recherche(inviter, jusqu_a), type="primary",
                      width="stretch", key=cle, disabled=sans_session)
@@ -124,15 +95,13 @@ def _bouton_lancer(cle: str, inviter: bool, nb_profils: int, b) -> bool:
 def _recap_recherche(inviter: bool, nb_profils: int, b, message: str) -> str:
     if not inviter or b is None:
         return ""
-    return recap_invitations(min(nb_profils, b.restantes), b.restantes, message)
+    return recap_invitations(nb_profils, b.utilisees, b.plafond, message)
 
 
 def _refus_lancement(inviter: bool, b):
     """Pourquoi le clic ne peut rien lancer, ou None."""
     if not st.session_state.global_cookie:
         return MESSAGE_SESSION_MANQUANTE
-    if inviter and b is not None and b.epuise:
-        return MESSAGE_BUDGET_EPUISE
     return None
 
 
@@ -285,12 +254,12 @@ def afficher_page_recherche():
     st.title("Nouvelle recherche", anchor=False)
 
     ck = st.session_state.global_cookie
-    # Le budget du jour est sous le menu, sur toutes les pages, et dans le
+    # Les invitations du jour sont sous le menu, sur toutes les pages, et dans le
     # bloc Invitations dès qu'on invite : pas de troisième rappel ici.
     puce_session = (("Session LinkedIn active", "ok", True) if ck
                     else ("Session LinkedIn à renseigner", "attention"))
     afficher_bandeau_contexte(
-        "Trouvez des profils et invitez-les, dans la limite du budget du jour.",
+        "Trouvez des profils et invitez-les, en suivant la limite conseillée d'invitations du jour.",
         puces=[puce_session],
     )
 

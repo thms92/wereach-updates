@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Budget d'invitations du jour, tel que le moteur le compte.
+"""Invitations du jour, telles que le moteur les compte.
 
-Le moteur plafonne les invitations avec `DailyLimitsTracker`, dont le
-compteur vit dans `<config_dir>/daily_limits.json` (un par personne). La
-base de données compte aussi les invitations du jour, mais c'est le fichier
-du moteur qui bloque réellement : l'interface lit donc celui-là, pour que
-la jauge affichée et l'arrêt effectif ne divergent jamais.
+La limite de 20 par jour est CONSEILLÉE, pas bloquante (décision du
+2026-10-20) : l'outil prévient quand un envoi la dépasse, il ne refuse
+jamais d'inviter.
+
+Le moteur compte les invitations avec `DailyLimitsTracker`, dans
+`<config_dir>/daily_limits.json` (un par personne). La base de données les
+compte aussi, mais c'est le compteur du moteur que l'interface lit, pour
+que la jauge affichée et le compte réel ne divergent jamais.
 """
 
 import os
@@ -37,3 +40,15 @@ def budget_du_jour(config_dir: str) -> Budget:
     )
     return Budget(utilisees=suivi.invitations_today,
                   plafond=ScraperConfig.MAX_INVITATIONS_PER_DAY)
+
+
+def message_depassement(n_prevues: int, utilisees: int, plafond: int):
+    """Avertissement si `n_prevues` invitations font dépasser la limite
+    conseillée, sinon None. Le texte dit que rien n'est bloqué."""
+    total = max(int(utilisees), 0) + max(int(n_prevues), 0)
+    if plafond <= 0 or n_prevues <= 0 or total <= plafond:
+        return None
+    return (f"Avec cet envoi, vous en serez à {total} invitations aujourd'hui, "
+            f"au-delà de la limite conseillée de {plafond}. Rien n'est bloqué, "
+            "mais le risque de restriction de votre compte LinkedIn augmente.")
+

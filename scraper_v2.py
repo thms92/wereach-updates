@@ -46,8 +46,6 @@ def lecture_ratee(ou: str) -> str:
             f"structure a peut-être changé ({ou}). Signalez-le avec « Signaler un problème ».")
 
 
-BUDGET_ATTEINT = ("Budget d'invitations du jour atteint : la recherche s'est "
-                  "arrêtée. Les invitations reprendront demain.")
 
 class LinkedInScraperV2:
     """
@@ -1028,12 +1026,8 @@ class LinkedInScraperV2:
             self.errors.append(msg)
             return pd.DataFrame()
 
-        if inviter and not self.human.daily_limits.can_invite():
-            msg = (f"Budget d'invitations du jour épuisé ({self.human.daily_limits.invitations_today} envoyées). "
-                   f"Réessayez demain.")
-            logger.error(msg)
-            self.errors.append(msg)
-            return pd.DataFrame()
+        # Pas de refus sur les invitations du jour : la limite de 20 est
+        # conseillée, pas bloquante (utils/budget.py).
 
         self.human.daily_limits.increment_sessions()
 
@@ -1208,7 +1202,6 @@ class LinkedInScraperV2:
                 urls_session = set()
                 profils_scrapes = 0
                 invitations_envoyees = 0
-                budget_epuise_en_cours = False
                 current_page = 1
 
                 # BOUCLE PRINCIPALE DE SCRAPING
@@ -1267,21 +1260,6 @@ class LinkedInScraperV2:
                         if inviter:
                             if invitations_envoyees >= nb_profils:
                                 logger.info(f"✋ Limite de {nb_profils} invitations atteinte")
-                                break
-                            # Sécurité max : plafond quotidien PAR UTILISATEUR
-                            if not self.human.daily_limits.can_invite():
-                                logger.warning(
-                                    f"🛑 Plafond quotidien d'invitations atteint "
-                                    f"({self.human.daily_limits.invitations_today}/"
-                                    f"{self.human.daily_limits.max_invitations}) — arrêt sécurité."
-                                )
-                                if status_callback:
-                                    status_callback("Budget d'invitations du jour atteint : les invitations reprendront demain.")
-                                # Arrêter aussi la pagination : sans invitation
-                                # possible, chaque page de plus n'est qu'une
-                                # visite LinkedIn inutile (et risquée).
-                                budget_epuise_en_cours = True
-                                self.errors.append(BUDGET_ATTEINT)
                                 break
                         else:
                             if profils_scrapes >= nb_profils:
@@ -1396,8 +1374,7 @@ class LinkedInScraperV2:
 
                     # PAGE SUIVANTE
                     # Vérifier si on a atteint la limite selon le mode
-                    continuer = (inviter and invitations_envoyees < nb_profils
-                                 and not budget_epuise_en_cours) or (not inviter and profils_scrapes < nb_profils)
+                    continuer = (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils)
 
                     if continuer:
                         current_page += 1

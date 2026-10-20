@@ -8,8 +8,8 @@
 
 ## Idée
 
-**Le budget du jour.** Les 20 invitations quotidiennes sont la ressource
-rare de l'outil. Elles sont dessinées comme une jauge de 20 crans
+**Les invitations du jour.** Les 20 invitations quotidiennes conseillées
+sont la ressource rare de l'outil (limite non bloquante). Elles sont dessinées comme une jauge de 20 crans
 (`jauge_budget()`), présente en permanence dans la barre latérale et dans
 chaque bloc « Invitations » où une action en consomme. Ailleurs, une puce
 dit la même chose en mots : « N restantes sur 20 » (`texte_budget()`).

@@ -9,14 +9,11 @@ acceptés → message envoyé).
 """
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-
-from ui.page_veille import FICHIER_VISITE_VEILLE
 
 from ui.composants import (afficher_bandeau_contexte, afficher_carte_action,
                            afficher_entonnoir, afficher_etat_vide, pluriel,
@@ -27,10 +24,7 @@ from wefiit_theme import PALETTE_GRAPHIQUES
 # Identifiants internes des pages (voir PAGES dans app_advanced.py).
 PAGE_MESSAGES = "✉️ Messages"
 PAGE_RECHERCHE = "🔍 Recherche"
-PAGE_VEILLE = "🏢 Veille"
 
-# Fichier où la page Veille note la date de la visite précédente. Lu ici
-# seulement : c'est la page Veille qui l'écrit quand on la consulte.
 
 
 def _aller_a(page: str) -> None:
@@ -72,8 +66,8 @@ ICONE_REUSSITE = "accepte"
 CLE_CONNEXION = "tdb_aller_recherche"
 
 
-def actions_du_jour(nb_a_messager: int, nb_en_attente: int, nb_nouveaux_veille: int,
-                    budget_epuise: bool, session_active: bool,
+def actions_du_jour(nb_a_messager: int, nb_en_attente: int,
+                    session_active: bool,
                     budget_utilisees: int = 0, budget_plafond: int = 0,
                     ) -> List[Tuple[str, str, str, str, Optional[Tuple[str, str, str]]]]:
     """Les cartes « À faire » qui s'appliquent, la réussite d'abord.
@@ -102,62 +96,29 @@ def actions_du_jour(nb_a_messager: int, nb_en_attente: int, nb_nouveaux_veille: 
             "attention", "alerte",
             ("Connecter la session LinkedIn", CLE_CONNEXION, PAGE_RECHERCHE),
         ))
-    if nb_nouveaux_veille:
-        actions.append((
-            f"{pluriel(nb_nouveaux_veille, 'nouveau contact', 'nouveaux contacts')} "
-            "dans vos entreprises suivies",
-            "Trouvés depuis votre dernière visite de la Veille.",
-            "neutre", "veille",
-            ("Ouvrir Veille", "tdb_ouvrir_veille", PAGE_VEILLE),
-        ))
     if nb_en_attente:
         actions.append((
             f"{pluriel(nb_en_attente, 'invitation')} en attente de réponse",
             "Vérifiez qui a accepté depuis la page Messages.",
             "neutre", "invitation", None,
         ))
-    if budget_epuise:
+    if budget_plafond > 0 and budget_utilisees >= budget_plafond:
+        # Limite conseillée, pas bloquante : on informe, on n'interdit pas.
         actions.append((
-            "Budget d'invitations du jour épuisé",
-            "Les invitations reprennent demain : en attendant, préparez vos "
-            "recherches ou vos messages.",
-            "danger", "alerte", None,
+            f"Limite conseillée de {budget_plafond} invitations atteinte",
+            "Vous pouvez continuer à inviter : rien n'est bloqué, mais au-delà "
+            "le risque de restriction de votre compte LinkedIn augmente.",
+            "attention", "alerte", None,
         ))
     elif budget_plafond > 0 and ton_budget(budget_utilisees, budget_plafond) == "attention":
         restantes = budget_plafond - budget_utilisees
         actions.append((
-            f"Il vous reste {pluriel(restantes, 'invitation')} aujourd'hui",
+            f"Plus que {pluriel(restantes, 'invitation')} avant la limite conseillée",
             "Gardez-les pour les profils les plus prometteurs ; le compteur "
             "repart à zéro demain.",
             "attention", "invitation", None,
         ))
     return actions
-
-
-def _nouveaux_contacts_veille(chemins) -> int:
-    """Contacts visés trouvés par la Veille depuis la dernière visite de la page.
-
-    Lecture seule : la date de visite vient de la session si la page Veille
-    a déjà été ouverte (elle y garde la visite précédente), sinon du fichier
-    qu'elle tient à jour. « Autre » (hors familles visées) n'est pas compté,
-    comme dans le récap de la page Veille. Toute erreur vaut 0 : cette carte
-    est un rappel, pas une raison de faire tomber le tableau de bord.
-    """
-    try:
-        from veille_store import VeilleStore
-        if "veille_visite_precedente" in st.session_state:
-            visite = st.session_state["veille_visite_precedente"]
-        else:
-            chemin = Path(chemins.config_dir) / FICHIER_VISITE_VEILLE
-            visite = ((chemin.read_text(encoding="utf-8").strip() or None)
-                      if chemin.exists() else None)
-        if visite is None:
-            # Jamais ouverte : pas de « depuis votre dernière visite » à annoncer.
-            return 0
-        contacts = VeilleStore(str(chemins.db_file)).nouveautes_depuis(visite)["contacts"]
-        return sum(1 for c in contacts if c.get("famille") != "Autre")
-    except Exception:
-        return 0
 
 
 def _bloc_a_faire(actions) -> None:
@@ -279,8 +240,6 @@ def afficher_page_tableau_de_bord():
     actions = actions_du_jour(
         nb_a_messager=len(db.acceptees_non_messagees()),
         nb_en_attente=len(db.invitations_en_attente()),
-        nb_nouveaux_veille=_nouveaux_contacts_veille(chemins),
-        budget_epuise=budget.epuise,
         session_active=session_active,
         budget_utilisees=budget.utilisees,
         budget_plafond=budget.plafond,

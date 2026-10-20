@@ -20,7 +20,6 @@ import pytest
 import scraper_v2_sync
 import ui.invitations
 from database import DatabaseManager
-from scraper_v2 import BUDGET_ATTEINT
 from tests.conftest import chemins_de_test, lancer_app, verifier_page_affichee
 from ui import page_messages as pm
 from ui.invitations import echapper_markdown, recap_invitations
@@ -99,12 +98,17 @@ def _recap(at):
 # --- 1. Confirmation avant les invitations --------------------------------
 
 def test_recap_invitations_singulier_pluriel_et_message():
-    assert recap_invitations(3, 3) == (
-        "Jusqu'à 3 invitations partiront depuis votre compte LinkedIn ; il vous "
-        "en restera 0 aujourd'hui. Sans message.")
-    assert recap_invitations(1, 5, "Bonjour *toi*").startswith(
-        "Jusqu'à 1 invitation partira depuis votre compte LinkedIn ; il vous en restera 4")
-    assert recap_invitations(1, 5, "Bonjour *toi*").endswith("Message joint : « Bonjour \\*toi\\* »")
+    assert recap_invitations(3, 17, 20) == (
+        "Jusqu'à 3 invitations partiront depuis votre compte LinkedIn ; vous en "
+        "serez à 20 aujourd'hui (limite conseillée : 20). Sans message.")
+    assert recap_invitations(1, 5, 20, "Bonjour *toi*").startswith(
+        "Jusqu'à 1 invitation partira depuis votre compte LinkedIn ; vous en serez à 6")
+    assert recap_invitations(1, 5, 20, "Bonjour *toi*").endswith("Message joint : « Bonjour \\*toi\\* »")
+
+
+def test_recap_au_dela_de_la_limite_previent_sans_bloquer():
+    texte = recap_invitations(10, 17, 20)
+    assert "vous en serez à 27" in texte and "rien n'est bloqué" in texte
 
 
 def test_rechercher_et_inviter_demande_confirmation(budget_dicte, espion):
@@ -115,8 +119,8 @@ def test_rechercher_et_inviter_demande_confirmation(budget_dicte, espion):
     at.run()
     assert espion["recherches"] == [], "le premier clic ne doit rien lancer"
     assert _recap(at) == ["Jusqu'à 3 invitations partiront depuis votre compte "
-                          "LinkedIn ; il vous en restera 0 aujourd'hui. "
-                          "Message joint : « Bonjour »"]
+                          "LinkedIn ; vous en serez à 20 aujourd'hui (limite "
+                          "conseillée : 20). Message joint : « Bonjour »"]
     assert at.button(key="confirmer_candidats_ok").label == "Confirmer et lancer"
     assert at.button(key="confirmer_candidats_ok").proto.type == "primary"
     assert at.button(key="confirmer_candidats_annuler").label == "Annuler"
@@ -164,14 +168,20 @@ def test_rechercher_sans_inviter_part_tout_de_suite(budget_dicte, espion):
     assert not _recap(at)
 
 
-def test_budget_epuise_refuse_avant_toute_confirmation(budget_dicte, espion):
+def test_limite_atteinte_ne_bloque_pas(budget_dicte, espion):
+    # La limite de 20 est conseillée : à 20, on peut encore inviter, après
+    # le récapitulatif habituel.
     budget_dicte["budget"] = Budget(utilisees=20, plafond=20)
     at = _recherche()
+    at.text_input(key="keyword_client").set_value("Head of Data")
     at.toggle(key="inviter_client").set_value(True)
     at.run()
     at.button(key="btn_rechercher_clients").click()
     at.run()
-    assert espion["recherches"] == [] and not _recap(at)
+    assert _recap(at) and "rien n'est bloqué" in _recap(at)[0]
+    at.button(key="confirmer_clients_ok").click()
+    at.run()
+    assert len(espion["recherches"]) == 1 and espion["recherches"][0]["inviter"] is True
 
 
 def test_le_bloc_recuperer_demande_confirmation(budget_dicte, espion):
@@ -363,7 +373,7 @@ def test_bilan_suite_et_budget_atteint(budget_dicte, espion):
         {"Nom": "A", "URL du profil": "https://www.linkedin.com/in/a/", "Invitation envoyée": "Oui"},
         {"Nom": "B", "URL du profil": "https://www.linkedin.com/in/b/", "Invitation envoyée": "Oui"},
     ])
-    espion["erreurs"] = [BUDGET_ATTEINT, "Autre incident"]
+    espion["erreurs"] = ["Autre incident"]
     at = _recherche()
     at.text_input(key="keyword_client").set_value("Head of Data")
     at.toggle(key="inviter_client").set_value(True)
@@ -374,7 +384,6 @@ def test_bilan_suite_et_budget_atteint(budget_dicte, espion):
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
     assert any("2 profils trouvés · 2 invitations envoyées" in m.value for m in at.markdown)
-    assert BUDGET_ATTEINT in [i.value for i in at.info]
     incidents = [e for e in at.expander if e.label.startswith("Incidents")]
     assert incidents and incidents[0].label == "Incidents pendant la recherche (1)"
 

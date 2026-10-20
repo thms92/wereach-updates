@@ -399,7 +399,7 @@ def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
     assert recolte_espionne["appels"][0]["inviter"] is False
 
 
-def test_au_dela_du_plafond_du_jour_rien_ne_part(recolte_espionne):
+def test_au_dela_de_la_limite_conseillee_l_envoi_reste_possible(recolte_espionne):
     recolte_espionne["reponse"] = (
         [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand"),
          voisin("Anne Petit", "anne-petit")],
@@ -413,10 +413,11 @@ def test_au_dela_du_plafond_du_jour_rien_ne_part(recolte_espionne):
 
     at.button(key="sim_btn_recuperer").click()
     at.run()
-
-    assert recolte_espionne["appels"] == []
-    messages = [e.value for e in at.error]
-    assert any("2 invitations" in m and "3 profils retenus" in m for m in messages), messages
+    # Limite conseillée : pas de refus, le récapitulatif habituel puis l'envoi.
+    assert not at.error, [e.value for e in at.error]
+    at.button(key="confirmer_sim_ok").click()
+    at.run()
+    assert recolte_espionne["appels"]
 
 
 def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
