@@ -5,6 +5,22 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.8.0
+
+**Une seule recherche, en trois temps.**
+Les onglets « Candidats » et « Clients et entreprises » ne font plus qu'un :
+« Par critères ». Mots-clés, entreprises, écoles et secteurs sont au même
+niveau. La recherche n'envoie rien : vous choisissez ensuite les profils à
+inviter, puis vous confirmez.
+
+**Profils similaires, plus clair.**
+Même parcours : un profil de départ, le choix des profils, puis l'invitation.
+
+**La limite de 20 invitations par jour est conseillée, pas bloquante.**
+La jauge « Invitations du jour » vous prévient au-delà, sans rien empêcher.
+
+**La Veille a été retirée.**
+
 ## 1.7.0
 
 **Un tutoriel vous guide pas à pas dans l'outil.**
