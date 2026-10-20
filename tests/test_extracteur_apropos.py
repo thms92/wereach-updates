@@ -107,3 +107,18 @@ def test_rubriques_lues_mais_identifiant_ambigu_renvoie_le_html(navigateur):
     r = lire(navigateur, html)
     assert r["champs"] and r["company_id"] == ""
     assert "Siège social" in r["html"]
+
+
+PAGE_AVEC_ENCART_RECRUTEURS = """<html><body><main><h1>Orbique</h1>
+  <a href="/search/results/people/?currentCompany=%5B%227654321%22%5D">Voir les employés</a>
+  <section><h2>Vue d’ensemble</h2>
+    <div><p>Partagez votre profil en toute confidentialité avec nos recruteurs. Vous serez répertorié(e) comme intéressé(e) pendant un an maximum.</p></div>
+    <p>Orbique conseille les entreprises sur le produit.</p>
+  </section></main></body></html>"""
+
+
+def test_l_encart_recruteurs_n_est_pas_pris_pour_la_description(navigateur):
+    # Constaté sur la fiche Amazon du 15/10 : la description enregistrée était
+    # le texte générique de LinkedIn pour les recruteurs.
+    assert lire(navigateur, PAGE_AVEC_ENCART_RECRUTEURS)["description"] == \
+        "Orbique conseille les entreprises sur le produit."

@@ -885,8 +885,17 @@ class DOMSelectors:
             for (const h of racine.querySelectorAll('h2')) {
                 const t = net(h.innerText).replace('’', "'");
                 if (t === "Vue d'ensemble") {
-                    const p = h.parentElement && h.parentElement.querySelector('p');
-                    if (p) description = net(p.innerText);
+                    // L'encart « Partagez votre profil … avec nos recruteurs »
+                    // peut précéder la vraie description (fiche Amazon du
+                    // 15/10) : on prend le premier paragraphe qui n'en est pas.
+                    const paragraphes = h.parentElement ? h.parentElement.querySelectorAll('p') : [];
+                    for (const p of paragraphes) {
+                        const texte = net(p.innerText);
+                        if (texte && !/^(partagez votre profil|share your profile)/i.test(texte)) {
+                            description = texte;
+                            break;
+                        }
+                    }
                     break;
                 }
             }
