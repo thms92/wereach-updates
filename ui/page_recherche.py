@@ -73,7 +73,8 @@ def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
 
     Rend (inviter, reinviter, message, budget ou None).
     """
-    with st.container(border=True):
+    # Clé : le tutoriel pointe ce bloc (utils/tutoriel.py).
+    with st.container(border=True, key=f"bloc_{cle_inviter}"):
         st.markdown("**Invitations**")
         inviter = st.toggle(
             "Envoyer des invitations", value=False, key=cle_inviter,
