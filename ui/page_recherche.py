@@ -24,86 +24,20 @@ from utils.search_filters import (criteres_suffisants,
 
 MAX_ENTREPRISES = _S.MAX_VALEURS_PAR_FACETTE
 
-ONGLETS = ["Candidats", "Clients et entreprises", "Profils similaires"]
+ONGLETS = ["Par critères", "Profils similaires"]
 
 
 SESSION_REQUISE = "Connectez d'abord votre session LinkedIn (ci-dessus)."
 
 
-def libelle_bouton_recherche(inviter: bool, jusqu_a: int = 0) -> str:
-    """« Rechercher », ou « Rechercher et inviter (jusqu'à 3) » : le vrai
-    nombre d'invitations qui peuvent partir."""
-    if not inviter:
-        return "Rechercher"
-    if jusqu_a > 0:
-        return f"Rechercher et inviter (jusqu'à {jusqu_a})"
-    return "Rechercher et inviter"
 
 
-def _bloc_invitations(nb_profils: int, cle_inviter: str, cle_reinviter: str,
-                      cle_message: str):
-    """L'interrupteur d'invitations, son budget et ses options, groupés.
-
-    Rend (inviter, reinviter, message, budget ou None).
-    """
-    # Clé : le tutoriel pointe ce bloc (utils/tutoriel.py).
-    with st.container(border=True, key=f"bloc_{cle_inviter}"):
-        st.markdown("**Invitations**")
-        inviter = st.toggle(
-            "Envoyer des invitations", value=False, key=cle_inviter,
-            help="Une invitation part vers chaque profil trouvé. L'envoi est "
-                 "irréversible ; 20 par jour sont conseillés, sans blocage.",
-        )
-        if not inviter:
-            return False, False, "", None
-
-        b = budget()
-        afficher_jauge_budget(b.utilisees, b.plafond)
-        alerte = st.empty()
-        st.caption(
-            "Avec les invitations, le nombre de profils devient le nombre "
-            "d'invitations visées : seuls les profils invités sont gardés."
-        )
-        reinviter = st.checkbox(
-            "Réinviter les profils déjà dans votre fichier",
-            value=False, key=cle_reinviter,
-            help="Sinon, les profils déjà présents dans votre historique sont "
-                 "passés sans invitation.",
-        )
-        message = st.text_area(
-            "Message d'invitation (optionnel)",
-            placeholder="Bonjour, je serais ravi d'échanger avec vous…",
-            max_chars=200, help=AIDE_MESSAGE, key=cle_message,
-        )
-        depassement = message_depassement(nb_profils, b.utilisees, b.plafond)
-        if depassement:
-            alerte.warning(depassement)
-    return inviter, reinviter, message, b
 
 
-def _bouton_lancer(cle: str, inviter: bool, nb_profils: int, b) -> bool:
-    """Le bouton principal d'un onglet : inactif sans session, et quand on
-    invite, il annonce le nombre d'invitations qui peuvent partir."""
-    jusqu_a = nb_profils if inviter else 0
-    sans_session = not st.session_state.global_cookie
-    clic = st.button(libelle_bouton_recherche(inviter, jusqu_a), type="primary",
-                     width="stretch", key=cle, disabled=sans_session)
-    if sans_session:
-        st.caption(SESSION_REQUISE)
-    return clic
 
 
-def _recap_recherche(inviter: bool, nb_profils: int, b, message: str) -> str:
-    if not inviter or b is None:
-        return ""
-    return recap_invitations(nb_profils, b.utilisees, b.plafond, message)
 
 
-def _refus_lancement(inviter: bool, b):
-    """Pourquoi le clic ne peut rien lancer, ou None."""
-    if not st.session_state.global_cookie:
-        return MESSAGE_SESSION_MANQUANTE
-    return None
 
 
 def _nouveau_scraper():
@@ -273,49 +207,52 @@ def afficher_page_recherche():
                 + "\n\n" + AVERTISSEMENT_SESSION)
 
     st.write("")
-    tab1, tab2, tab3 = st.tabs(ONGLETS)
+    tab1, tab3 = st.tabs(ONGLETS)
 
-    # TAB 1: CANDIDATS
+    # TAB 1: PAR CRITÈRES (fusion de Candidats et Clients, 2026-10-21)
+    # Trois temps, comme Profils similaires : chercher sans inviter, choisir
+    # parmi les profils trouvés, puis inviter les seuls profils choisis.
     with tab1:
-        st.caption("Ciblez par mots-clés, entreprises, écoles ou secteurs : au moins un critère suffit.")
-
-        col1, col2 = st.columns([1, 2], gap="large")
-
+        st.subheader("1. Critères", anchor=False)
+        st.caption("Au moins un critère : des mots-clés, une entreprise, une école ou un secteur.")
+        col1, col2 = st.columns(2, gap="large")
         with col1:
-            st.markdown("**Qui**")
-            keyword = st.text_input("Mots-clés", "", placeholder="Ex : Product Manager, PM Senior")
-
-            st.markdown("**Où**")
+            keyword = st.text_input(
+                "Mots-clés (qui)", "", key="crit_mots",
+                placeholder="Ex : Product Manager, Head of Data",
+                help='Plusieurs intitulés : séparez-les par OR, et mettez une '
+                     'expression entre guillemets, par exemple "Head of Data" OR CDO.',
+            )
+            nb_profils = st.number_input("Nombre de profils (combien)", min_value=1,
+                                         max_value=80, value=10, key="crit_nb")
+        with col2:
             entreprise_libre = st.text_input(
-                "Entreprises (optionnel)", "",
-                placeholder="Ex : Capgemini, Accenture",
+                "Entreprises (où)", "", key="crit_entreprises",
+                placeholder="Ex : Capgemini, Thiga",
                 help="Plusieurs entreprises : séparez-les par des virgules.",
             )
             concurrents = st.multiselect(
-                "Cabinets concurrents (optionnel)", CONCURRENTS,
+                "Cabinets concurrents", CONCURRENTS, key="crit_cabinets",
                 placeholder="Choisir des cabinets…",
                 help="Chasse : cible les profils actuellement dans ces cabinets.",
             )
-            # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.
-            entreprises = parse_entreprises(entreprise_libre, concurrents)
-            if len(entreprises) > MAX_ENTREPRISES:
-                st.warning(
-                    f"{len(entreprises)} entreprises sélectionnées : seules "
-                    f"les {MAX_ENTREPRISES} premières seront utilisées. "
-                    "Chacune demande une interrogation de LinkedIn pour être "
-                    "identifiée ; au-delà, le risque de blocage augmente."
-                )
-            ile_de_france = st.toggle("Île-de-France uniquement", value=False,
+            ile_de_france = st.toggle("Île-de-France uniquement", value=False, key="crit_idf",
                                       help="Ne garde que les profils situés en Île-de-France.")
+        # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.
+        entreprises = parse_entreprises(entreprise_libre, concurrents)
+        if len(entreprises) > MAX_ENTREPRISES:
+            st.warning(
+                f"{len(entreprises)} entreprises sélectionnées : seules "
+                f"les {MAX_ENTREPRISES} premières seront utilisées. "
+                "Chacune demande une interrogation de LinkedIn pour être "
+                "identifiée ; au-delà, le risque de blocage augmente."
+            )
 
-            st.markdown("**Combien**")
-            nb_profils = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10)
-
-        with col2:
-            st.markdown("**Formation et secteur**")
+        avances = bool(st.session_state.get("ecoles_pills_candidat")
+                       or st.session_state.get("secteurs_candidat"))
+        with st.expander("Filtres avancés : écoles et secteurs", expanded=avances):
             ecole_noms = st.multiselect(
-                "Écoles ciblées (optionnel)",
-                list(ECOLES.keys()),
+                "Écoles ciblées", list(ECOLES.keys()),
                 placeholder="Choisir des écoles…",
                 help="Plusieurs écoles possibles : elles se cumulent en OU.",
                 key="ecoles_pills_candidat",
@@ -329,110 +266,63 @@ def afficher_page_recherche():
                         f"entrer dans le filtre : **{', '.join(_ecartees)}**. "
                         "La recherche se lance quand même avec les autres."
                     )
-
             secteurs_noms = st.multiselect(
-                "Secteurs d'activité (optionnel)",
-                list(SECTEURS.keys()),
+                "Secteurs d'activité", list(SECTEURS.keys()),
                 placeholder="Choisir des secteurs…",
                 help="Les secteurs se cumulent en OU, et se combinent en ET avec les écoles et entreprises.",
                 key="secteurs_candidat",
             )
             secteurs_selectionnes = [SECTEURS[s] for s in secteurs_noms]
 
-        inviter, reinviter_profils_scrapes, message_personnalise, b_cand = _bloc_invitations(
-            nb_profils, "inviter_candidat", "reinviter_candidat", "message_candidat")
-
-        clic = _bouton_lancer("btn_rechercher_candidats", inviter, nb_profils, b_cand)
+        sans_session = not st.session_state.global_cookie
+        clic = st.button("Rechercher", type="primary", width="stretch",
+                         key="btn_rechercher", disabled=sans_session)
+        if sans_session:
+            st.caption(SESSION_REQUISE)
         if clic:
-            refus = _refus_lancement(inviter, b_cand)
-            if refus is None and not criteres_suffisants(
-                keyword, ecoles_selectionnees, entreprises, secteurs_selectionnes
-            ):
-                refus = ("Saisissez des mots-clés, ou choisissez au moins un filtre. "
+            if not criteres_suffisants(keyword, ecoles_selectionnees, entreprises,
+                                       secteurs_selectionnes):
+                st.error("Saisissez des mots-clés, ou choisissez au moins un filtre. "
                          "Sans aucun critère, LinkedIn renverrait des profils au hasard.")
-            if refus:
-                st.error(refus)
-                st.session_state.pop("confirmer_candidats", None)
-                clic = False
-        parametres = dict(
-            keyword=keyword,
-            entreprises=entreprises,
-            nb_profils=nb_profils,
-            ecoles_ids=ecoles_selectionnees,
-            secteurs_ids=secteurs_selectionnes,
-            inviter=inviter,
-            message_invitation=message_personnalise,
-            reinviter_profils_scrapes=reinviter_profils_scrapes,
-            ile_de_france=ile_de_france,
-        )
-        if confirmation("candidats", clic, inviter, parametres,
-                        _recap_recherche(inviter, nb_profils, b_cand, message_personnalise)):
-            df, scraper = _lancer(**parametres)
-            if df.empty:
-                st.warning("Aucun profil trouvé.")
-            afficher_resultats(df, inviter, "candidats", "candidats", scraper.errors)
-
-    # TAB 2: CLIENTS
-    with tab2:
-        st.caption("Décideurs et contacts en entreprise, sans filtre école.")
-
-        col1, col2 = st.columns(2, gap="large")
-        with col1:
-            st.markdown("**Qui**")
-            keyword_client = st.text_input(
-                "Mots-clés",
-                "",
-                placeholder='Ex : "Head of Data" OR CDO OR "Directeur Data"',
-                key="keyword_client",
-            )
-            st.markdown("**Combien**")
-            nb_client = st.number_input("Nombre de profils", min_value=1, max_value=80, value=10, key="nb_client")
-        with col2:
-            st.markdown("**Où**")
-            entreprise_client = st.text_input(
-                "Entreprises", "",
-                placeholder="Ex : Thiga, Kering",
-                help="Plusieurs entreprises : séparez-les par des virgules.",
-                key="entreprise_client",
-            )
-            # Même lecture que l'onglet Candidats : la virgule sépare deux sociétés.
-            entreprises_client = parse_entreprises(entreprise_client, [])
-            ile_de_france_client = st.toggle(
-                "Île-de-France uniquement", value=False, key="idf_client",
-                help="Ne garde que les profils situés en Île-de-France.")
-
-        inviter_client, reinviter_profils_scrapes_client, message_client, b_cli = _bloc_invitations(
-            nb_client, "inviter_client", "reinviter_client", "message_client")
-
-        clic = _bouton_lancer("btn_rechercher_clients", inviter_client, nb_client, b_cli)
-        if clic:
-            refus = _refus_lancement(inviter_client, b_cli)
-            if refus:
-                st.error(refus)
-                st.session_state.pop("confirmer_clients", None)
-                clic = False
-        parametres = dict(
-            keyword=keyword_client,
-            entreprises=entreprises_client,
-            nb_profils=nb_client,
-            ecoles_ids=[],
-            inviter=inviter_client,
-            message_invitation=message_client,
-            reinviter_profils_scrapes=reinviter_profils_scrapes_client,
-            ile_de_france=ile_de_france_client,
-        )
-        if confirmation("clients", clic, inviter_client, parametres,
-                        _recap_recherche(inviter_client, nb_client, b_cli, message_client)):
-            df, scraper = _lancer(**parametres)
-            if df.empty:
-                st.warning(
-                    "Aucun profil trouvé : LinkedIn n'a renvoyé aucun résultat. "
-                    "Cause fréquente : le filtre entreprise n'a pas pu être "
-                    "identifié, et combiné aux mots-clés il devient trop "
-                    "restrictif. Essayez sans entreprise, ou consultez le "
-                    "Journal pour le détail."
+            else:
+                df, scraper = _lancer(
+                    keyword=keyword, entreprises=entreprises, nb_profils=nb_profils,
+                    ecoles_ids=ecoles_selectionnees, secteurs_ids=secteurs_selectionnes,
+                    inviter=False, message_invitation="", reinviter_profils_scrapes=False,
+                    ile_de_france=ile_de_france,
                 )
-            afficher_resultats(df, inviter_client, "clients", "clients", scraper.errors)
+                st.session_state["crit_profils"] = [{
+                    "url": r.get("URL du profil") or "",
+                    "nom": r.get("Nom") or "",
+                    "intitule": " · ".join(x for x in (r.get("Poste"), r.get("Entreprise")) if x),
+                    "invitable": True,
+                } for r in (df.to_dict("records") if df is not None and not df.empty else [])
+                    if r.get("URL du profil")]
+                st.session_state["crit_erreurs"] = list(scraper.errors)
+                reinitialiser_choix("crit")
+                st.session_state.pop("crit_message", None)
+
+        profils = st.session_state.get("crit_profils")
+        for erreur in st.session_state.get("crit_erreurs") or []:
+            st.warning(erreur)
+        if profils is not None:
+            st.subheader("2. Choisir les profils", anchor=False)
+            if not profils:
+                st.info(
+                    "Aucun nouveau profil trouvé. Les profils déjà dans votre fichier "
+                    "sont écartés ; essayez d'élargir les critères, ou sans entreprise "
+                    "si elle n'a pas pu être identifiée (détail dans le Journal)."
+                )
+            else:
+                st.caption("Les profils trouvés sont enregistrés dans l'Historique. "
+                           "Décochez ceux que vous ne voulez pas inviter.")
+                choisis = choisir_profils(profils, "crit")
+                st.subheader("3. Inviter", anchor=False)
+                if not choisis:
+                    st.caption("Cochez au moins un profil dans le tableau ci-dessus.")
+                else:
+                    bloc_recuperer_inviter([p["url"] for p in choisis], "crit",
+                                           nom_export="recherche", inviter_seulement=True)
 
     # TAB 3: PROFILS SIMILAIRES
     # Trois temps, nommés : partir d'un profil, choisir parmi ses voisins,

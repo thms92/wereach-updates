@@ -111,79 +111,6 @@ def test_recap_au_dela_de_la_limite_previent_sans_bloquer():
     assert "vous en serez à 27" in texte and "rien n'est bloqué" in texte
 
 
-def test_rechercher_et_inviter_demande_confirmation(budget_dicte, espion):
-    at = _candidats_avec_invitations(_recherche(), nb=3, message="Bonjour")
-    bouton = at.button(key="btn_rechercher_candidats")
-    assert bouton.label == "Rechercher et inviter (jusqu'à 3)"
-    bouton.click()
-    at.run()
-    assert espion["recherches"] == [], "le premier clic ne doit rien lancer"
-    assert _recap(at) == ["Jusqu'à 3 invitations partiront depuis votre compte "
-                          "LinkedIn ; vous en serez à 20 aujourd'hui (limite "
-                          "conseillée : 20). Message joint : « Bonjour »"]
-    assert at.button(key="confirmer_candidats_ok").label == "Confirmer et lancer"
-    assert at.button(key="confirmer_candidats_ok").proto.type == "primary"
-    assert at.button(key="confirmer_candidats_annuler").label == "Annuler"
-
-    at.button(key="confirmer_candidats_ok").click()
-    at.run()
-    assert not at.exception, [str(e.value) for e in at.exception]
-    assert len(espion["recherches"]) == 1
-    assert espion["recherches"][0]["inviter"] is True
-    assert espion["recherches"][0]["nb_profils"] == 3
-    assert not _recap(at), "le récapitulatif disparaît une fois lancé"
-
-
-def test_annuler_ne_lance_rien(budget_dicte, espion):
-    at = _candidats_avec_invitations(_recherche())
-    at.button(key="btn_rechercher_candidats").click()
-    at.run()
-    at.button(key="confirmer_candidats_annuler").click()
-    at.run()
-    assert espion["recherches"] == []
-    assert not _recap(at)
-    assert "confirmer_candidats" not in at.session_state
-
-
-def test_changer_le_nombre_annule_la_confirmation(budget_dicte, espion):
-    at = _candidats_avec_invitations(_recherche(), nb=3)
-    at.button(key="btn_rechercher_candidats").click()
-    at.run()
-    assert _recap(at)
-    at.number_input[0].set_value(2)
-    at.run()
-    assert not _recap(at), "un paramètre changé doit annuler la confirmation"
-    assert not [b for b in at.button if b.key == "confirmer_candidats_ok"]
-    assert espion["recherches"] == []
-
-
-def test_rechercher_sans_inviter_part_tout_de_suite(budget_dicte, espion):
-    at = _recherche()
-    at.text_input(key="keyword_client").set_value("Head of Data")
-    at.run()
-    at.button(key="btn_rechercher_clients").click()
-    at.run()
-    assert len(espion["recherches"]) == 1
-    assert espion["recherches"][0]["inviter"] is False
-    assert not _recap(at)
-
-
-def test_limite_atteinte_ne_bloque_pas(budget_dicte, espion):
-    # La limite de 20 est conseillée : à 20, on peut encore inviter, après
-    # le récapitulatif habituel.
-    budget_dicte["budget"] = Budget(utilisees=20, plafond=20)
-    at = _recherche()
-    at.text_input(key="keyword_client").set_value("Head of Data")
-    at.toggle(key="inviter_client").set_value(True)
-    at.run()
-    at.button(key="btn_rechercher_clients").click()
-    at.run()
-    assert _recap(at) and "rien n'est bloqué" in _recap(at)[0]
-    at.button(key="confirmer_clients_ok").click()
-    at.run()
-    assert len(espion["recherches"]) == 1 and espion["recherches"][0]["inviter"] is True
-
-
 def test_le_bloc_recuperer_demande_confirmation(budget_dicte, espion):
     budget_dicte["budget"] = Budget(utilisees=5, plafond=20)
     at = _recherche()
@@ -243,17 +170,17 @@ def test_premiere_connexion_depliee_et_boutons_inactifs(budget_dicte, espion):
     assert any(m.value.startswith("1. Dans Chrome") for m in at.markdown)
     assert at.text_input(key="cookie_shared").placeholder == (
         "Collez ici la valeur copiée depuis Chrome")
-    for cle in ("btn_rechercher_candidats", "btn_rechercher_clients", "sim_btn_trouver"):
+    for cle in ("btn_rechercher", "sim_btn_trouver"):
         assert at.button(key=cle).disabled, cle
     legendes = [c.value for c in at.caption]
-    assert legendes.count("Connectez d'abord votre session LinkedIn (ci-dessus).") == 3
+    assert legendes.count("Connectez d'abord votre session LinkedIn (ci-dessus).") == 2
 
 
 def test_avec_session_le_mode_d_emploi_reste_replie(budget_dicte):
     at = _recherche()
     assert "Première connexion à LinkedIn" not in [h.value for h in at.header]
     assert [e for e in at.expander if "Comment récupérer" in e.label]
-    assert not at.button(key="btn_rechercher_candidats").disabled
+    assert not at.button(key="btn_rechercher").disabled
 
 
 def test_modifier_puis_annuler(budget_dicte):
@@ -366,31 +293,6 @@ def test_sans_session_un_bouton_mene_a_recherche(espion):
 
 
 # --- 7. et 8. Résultats : bilan, suite, budget atteint --------------------
-
-def test_bilan_suite_et_budget_atteint(budget_dicte, espion):
-    budget_dicte["budget"] = Budget(utilisees=5, plafond=20)
-    espion["df"] = pd.DataFrame([
-        {"Nom": "A", "URL du profil": "https://www.linkedin.com/in/a/", "Invitation envoyée": "Oui"},
-        {"Nom": "B", "URL du profil": "https://www.linkedin.com/in/b/", "Invitation envoyée": "Oui"},
-    ])
-    espion["erreurs"] = ["Autre incident"]
-    at = _recherche()
-    at.text_input(key="keyword_client").set_value("Head of Data")
-    at.toggle(key="inviter_client").set_value(True)
-    at.run()
-    at.button(key="btn_rechercher_clients").click()
-    at.run()
-    at.button(key="confirmer_clients_ok").click()
-    at.run()
-    assert not at.exception, [str(e.value) for e in at.exception]
-    assert any("2 profils trouvés · 2 invitations envoyées" in m.value for m in at.markdown)
-    incidents = [e for e in at.expander if e.label.startswith("Incidents")]
-    assert incidents and incidents[0].label == "Incidents pendant la recherche (1)"
-
-    at.button(key="clients_vers_messages").click()
-    at.run()
-    assert at.session_state["page"] == "✉️ Messages"
-
 
 def test_les_telechargements_ne_relancent_pas_la_page():
     source = (RACINE / "ui/invitations.py").read_text(encoding="utf-8")

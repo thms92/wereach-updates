@@ -50,14 +50,14 @@ ETAPES = [
            "À faire une seule fois : connectez votre session LinkedIn ici. Sans elle, "
            "aucune recherche ne peut partir.",
            page=_RECH, cible=".st-key-session_ligne, .st-key-premiere_connexion, .st-key-session_edition"),
-    _etape("Trois façons de chercher",
-           "Candidats par école, entreprise ou secteur ; contacts chez des clients ; ou "
-           "profils proches d'un profil qui vous a plu.",
+    _etape("Deux façons de chercher",
+           "Par critères (mots-clés, entreprises, écoles, secteurs), ou à partir d'un "
+           "profil qui vous a plu : LinkedIn propose ses profils similaires.",
            page=_RECH, cible='.stTabs [data-baseweb="tab-list"]'),
-    _etape("Inviter en toute sécurité",
-           "Activez les invitations si vous voulez inviter les profils trouvés. Avant "
-           "tout envoi, un récapitulatif vous demande de confirmer.",
-           page=_RECH, onglet="Candidats", cible=".st-key-bloc_inviter_candidat"),
+    _etape("Chercher, choisir, puis inviter",
+           "La recherche n'envoie rien : vous choisissez ensuite les profils à inviter, "
+           "et un récapitulatif vous demande de confirmer avant tout envoi.",
+           page=_RECH, onglet="Par critères", cible=".st-key-btn_rechercher"),
     _etape("Relancer ceux qui ont accepté",
            "Vérifiez qui a accepté vos invitations, puis écrivez-leur en une fois : "
            "sélectionnez, rédigez, confirmez.",

@@ -211,16 +211,25 @@ def _nouveau_scraper():
 
 
 def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
-                          nom_export: str = "profils_similaires") -> None:
+                          nom_export: str = "profils_similaires",
+                          inviter_seulement: bool = False) -> None:
+    """Étape d'envoi sur une liste d'URLs choisies.
+
+    `inviter_seulement` : pas d'interrupteur, le bloc invite toujours (onglet
+    « Par critères », dont la recherche a déjà enregistré les profils).
+    """
     st.session_state.setdefault(f"{prefixe}_inviter", False)
     message = ""
     b = None
-    with st.container(border=True):
+    with st.container(border=True, key=f"bloc_{prefixe}_inviter"):
         st.markdown("**Invitations**")
-        inviter = st.toggle(
-            "Envoyer des invitations", key=f"{prefixe}_inviter",
-            help="Une invitation par profil retenu. L'envoi est irréversible.",
-        )
+        if inviter_seulement:
+            inviter = True
+        else:
+            inviter = st.toggle(
+                "Envoyer des invitations", key=f"{prefixe}_inviter",
+                help="Une invitation par profil retenu. L'envoi est irréversible.",
+            )
         if inviter:
             b = budget()
             afficher_jauge_budget(b.utilisees, b.plafond)

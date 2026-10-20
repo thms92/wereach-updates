@@ -14,7 +14,7 @@ def test_la_page_recherche_n_a_plus_d_onglet_par_urls():
 
     libelles = [t.label for t in at.tabs]
     assert libelles == [
-        "Candidats", "Clients et entreprises", "Profils similaires"
+        "Par critères", "Profils similaires"
     ], libelles
 
 

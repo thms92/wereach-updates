@@ -16,7 +16,7 @@ import scraper_v2_sync
 import ui.invitations
 from tests.conftest import lancer_app, verifier_page_affichee
 from ui.invitations import resume_resultats
-from ui.page_recherche import ONGLETS, libelle_bouton_recherche
+from ui.page_recherche import ONGLETS
 from utils.budget import Budget
 
 PAGE = "🔍 Recherche"
@@ -73,28 +73,11 @@ def _textes_visibles(at):
 # --- Libellés -------------------------------------------------------------
 
 def test_onglets_sans_emoji_et_bouton_qui_dit_l_action():
-    assert ONGLETS == ["Candidats", "Clients et entreprises", "Profils similaires"]
-    assert libelle_bouton_recherche(False) == "Rechercher"
-    assert libelle_bouton_recherche(True) == "Rechercher et inviter"
-    assert libelle_bouton_recherche(True, 3) == "Rechercher et inviter (jusqu'à 3)"
-
-
-def test_le_bouton_devient_rechercher_et_inviter_quand_on_invite(budget_dicte):
-    at = _page()
-    for prefixe in ("candidat", "client"):
-        cle_btn = "btn_rechercher_candidats" if prefixe == "candidat" else "btn_rechercher_clients"
-        assert at.button(key=cle_btn).label == "Rechercher"
-        at.toggle(key=f"inviter_{prefixe}").set_value(True)
-        at.run()
-        # 10 profils demandés, 15 restantes : jusqu'à 10 invitations.
-        assert at.button(key=cle_btn).label == "Rechercher et inviter (jusqu'à 10)"
+    assert ONGLETS == ["Par critères", "Profils similaires"]
 
 
 def test_aucun_jargon_ni_emoji_dans_la_page(budget_dicte):
     at = _page()
-    at.toggle(key="inviter_candidat").set_value(True)
-    at.toggle(key="inviter_client").set_value(True)
-    at.run()
     textes = _textes_visibles(at)
     tout = "\n".join(textes)
     for interdit in ("scraping", "scrapé", "Logs", "(s)", "Colle ", "sépare-les"):
@@ -116,48 +99,6 @@ def test_bandeau_de_contexte_avec_la_session_sans_doubler_la_jauge(budget_dicte)
 
 # --- Budget là où l'on invite --------------------------------------------
 
-def test_la_jauge_n_apparait_qu_avec_les_invitations(budget_dicte):
-    at = _page()
-    # La barre latérale porte sa propre jauge, sur toutes les pages.
-    jauges = lambda: [m for m in at.main.markdown if m.value.startswith('<div class="wf-jauge')]
-    assert not jauges()
-    at.toggle(key="inviter_candidat").set_value(True)
-    at.run()
-    assert len(jauges()) == 1
-
-
-def test_avertit_quand_on_demande_plus_que_le_budget(budget_dicte):
-    budget_dicte["budget"] = Budget(utilisees=17, plafond=20)
-    at = _page()
-    at.toggle(key="inviter_client").set_value(True)
-    at.number_input(key="nb_client").set_value(10)
-    at.run()
-    messages = [w.value for w in at.warning]
-    assert any("vous en serez à 27 invitations" in m and "Rien n'est bloqué" in m
-               for m in messages), messages
-
-
-def test_limite_atteinte_previent_sans_bloquer(budget_dicte):
-    # Limite conseillée, pas bloquante : aucune erreur, aucun bouton grisé.
-    budget_dicte["budget"] = Budget(utilisees=20, plafond=20)
-    at = _page()
-    at.toggle(key="inviter_candidat").set_value(True)
-    at.run()
-    assert not at.error, [e.value for e in at.error]
-    assert not at.button(key="btn_rechercher_candidats").disabled
-    assert any("Rien n'est bloqué" in w.value for w in at.warning)
-
-
-def test_les_options_d_invitation_sont_groupees(budget_dicte):
-    at = _page()
-    at.toggle(key="inviter_candidat").set_value(True)
-    at.run()
-    assert at.checkbox(key="reinviter_candidat").label == (
-        "Réinviter les profils déjà dans votre fichier")
-    assert at.text_area(key="message_candidat").max_chars == 200
-    assert any(m.value == "**Invitations**" for m in at.markdown)
-
-
 # --- Écoles et bilan ------------------------------------------------------
 
 def test_les_ecoles_sont_un_menu_et_partent_dans_la_recherche(budget_dicte, scraper_espion):
@@ -166,28 +107,11 @@ def test_les_ecoles_sont_un_menu_et_partent_dans_la_recherche(budget_dicte, scra
     assert menu.placeholder.startswith("Choisir")
     menu.set_value(["Dauphine"])
     at.run()
-    at.button(key="btn_rechercher_candidats").click()
+    at.button(key="btn_rechercher").click()
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
     from config import ECOLES
     assert scraper_espion["appels"][0]["ecoles_ids"] == [ECOLES["Dauphine"]]
-
-
-def test_le_bilan_compte_profils_et_invitations(budget_dicte, scraper_espion):
-    scraper_espion["df"] = pd.DataFrame([
-        {"Nom": "A", "URL du profil": "https://www.linkedin.com/in/a/", "Invitation envoyée": "Oui"},
-        {"Nom": "B", "URL du profil": "https://www.linkedin.com/in/b/", "Invitation envoyée": "Non"},
-    ])
-    at = _page()
-    at.text_input(key="keyword_client").set_value("Head of Data")
-    at.toggle(key="inviter_client").set_value(True)
-    at.run()
-    at.button(key="btn_rechercher_clients").click()
-    at.run()
-    at.button(key="confirmer_clients_ok").click()
-    at.run()
-    assert not at.exception, [str(e.value) for e in at.exception]
-    assert any("2 profils trouvés · 1 invitation envoyée" in m.value for m in at.markdown)
 
 
 def test_le_bilan_omet_les_invitations_inconnues():
