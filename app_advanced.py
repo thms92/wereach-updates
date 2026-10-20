@@ -7,6 +7,7 @@ Avec dashboard, statistiques, templates, et export Excel
 import streamlit as st
 import pandas as pd
 import os
+from uuid import uuid4
 
 # Chaque page vit dans son module sous ui/ ; ce script ne garde que le
 # socle commun (connexion, session, barre latérale) et l'aiguillage.
@@ -30,7 +31,10 @@ from wefiit_theme import (FAVICON_SVG, declarer_langue_francaise, inject_theme,
 from ui.composants import afficher_jauge_budget
 from utils.budget import budget_du_jour
 from version import get_version
-from utils.nouveautes import charger_notes, doit_annoncer
+from utils.nouveautes import (charger_notes, doit_annoncer, usage_anterieur,
+                              version_vue)
+from utils.tutoriel import etapes_pour, marquer_vu, tutoriel_a_afficher
+from ui.tutoriel import CLE_FIN, script_visite
 from utils.diagnostic import lien_mailto, ouvrir_mail, rapport
 from utils.mise_a_jour import (mise_a_jour_disponible, relancer,
                                version_publiee)
@@ -313,6 +317,22 @@ if st.session_state.pop("_maj_verifiee", False):
     if not mise_a_jour_disponible(get_version(), _verifier_version()):
         st.sidebar.success("Vous avez la dernière version.")
 
+def _relancer_tutoriel():
+    st.session_state["tutoriel_id"] = uuid4().hex
+
+
+def _tutoriel_termine():
+    # Appelé par le clic JavaScript sur le bouton caché, en fin de visite
+    # (Terminer ou Passer) : le tutoriel ne revient plus de lui-même.
+    marquer_vu(st.session_state.user_paths.config_dir)
+    st.session_state.pop("tutoriel_id", None)
+
+
+st.sidebar.button("Revoir le tutoriel", key="btn_tutoriel", type="tertiary",
+                  icon=":material/school:", on_click=_relancer_tutoriel)
+# Invisible (thème) : seul le script de visite le clique.
+st.sidebar.button("Tutoriel terminé", key=CLE_FIN, on_click=_tutoriel_termine)
+
 if st.session_state.get("auth_email"):
     if st.sidebar.button("Déconnexion", type="tertiary", icon=":material/logout:"):
         del st.session_state["auth_email"]
@@ -329,10 +349,24 @@ def _annoncer_nouveautes(notes: str):
         st.rerun()
 
 
-_notes_a_annoncer = doit_annoncer(
-    st.session_state.user_paths.config_dir, get_version(), charger_notes()
-)
-if _notes_a_annoncer:
+_config_dir = st.session_state.user_paths.config_dir
+# Lu AVANT doit_annoncer, qui mémorise la version : sinon un nouveau venu
+# passerait pour quelqu'un de mis à jour dès son premier rendu.
+if "tutoriel_maj" not in st.session_state:
+    st.session_state["tutoriel_maj"] = (usage_anterieur(_config_dir)
+                                        or version_vue(_config_dir) is not None)
+_notes_a_annoncer = doit_annoncer(_config_dir, get_version(), charger_notes())
+
+# Tutoriel : au premier lancement et après la mise à jour qui l'apporte, tant
+# qu'il n'a été ni terminé ni passé ; ou sur demande (« Revoir le
+# tutoriel »). Il remplace alors la fenêtre des nouveautés : jamais les deux.
+if tutoriel_a_afficher(_config_dir) or "tutoriel_id" in st.session_state:
+    if "tutoriel_id" not in st.session_state:
+        st.session_state["tutoriel_id"] = uuid4().hex
+    st.html(script_visite(etapes_pour(st.session_state["tutoriel_maj"]),
+                          st.session_state["tutoriel_id"]),
+            unsafe_allow_javascript=True)
+elif _notes_a_annoncer:
     _annoncer_nouveautes(_notes_a_annoncer)
 
 # --- Bandeau de mise a jour ------------------------------------------------

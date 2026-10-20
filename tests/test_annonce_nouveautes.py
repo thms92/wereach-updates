@@ -10,6 +10,7 @@ import pytest
 
 from tests.conftest import chemins_de_test, lancer_app
 from utils.nouveautes import marquer_vue, version_vue
+from utils.tutoriel import FICHIER_VU, marquer_vu
 from version import get_version
 
 
@@ -18,6 +19,12 @@ def memoire_de_version():
     """Isole le fichier « dernière version vue » de l'utilisateur de test."""
     chemin = chemins_de_test().config_dir / "derniere_version_vue.txt"
     origine = chemin.read_text(encoding="utf-8") if chemin.exists() else None
+    # Ces tests portent sur les mises à jour qui suivent le tutoriel : tant
+    # qu'il n'a pas été vu, c'est lui qui remplace la fenêtre des nouveautés
+    # (tests/test_tutoriel_app.py).
+    vu = chemins_de_test().config_dir / FICHIER_VU
+    vu_avant = vu.exists()
+    marquer_vu(vu.parent)
     try:
         yield chemin
     finally:
@@ -25,6 +32,8 @@ def memoire_de_version():
             chemin.unlink(missing_ok=True)
         else:
             chemin.write_text(origine, encoding="utf-8")
+        if not vu_avant:
+            vu.unlink(missing_ok=True)
 
 
 def _texte_rendu(at) -> str:
