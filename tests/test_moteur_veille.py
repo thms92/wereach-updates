@@ -82,6 +82,7 @@ class FauxReseau:
 RECHERCHE_JS = DOMSelectors.extract_recherche_entreprises_js()
 DEGRES_JS = DOMSelectors.extract_degres_js()
 COORDONNEES_JS = DOMSelectors.extract_coordonnees_js()
+ETAT_RESULTATS_JS = DOMSelectors.etat_resultats_personnes_js()
 FENETRE_OUVERTE_JS = DOMSelectors.fenetre_coordonnees_ouverte_js()
 RIEN_PARTAGE = {"dialogue": True, "email": "", "telephone": "", "html": ""}
 
@@ -137,6 +138,9 @@ class FaussePage:
         self.sans_fenetre = set()  # vanity dont la fenêtre ne s'ouvre jamais
         self.clics = []  # profils sur lesquels « Coordonnées » a été cliqué
         self.fenetre_explose = set()  # vanity dont la lecture de la fenêtre lève une erreur Playwright
+        # Ce que montre une page de résultats vide : par défaut, le « Aucun
+        # résultat » de LinkedIn — une vraie absence.
+        self.etat_resultats = {"aucunResultat": True, "html": "<main>Aucun résultat</main>"}
 
     def locator(self, selecteur):
         assert selecteur == 'a[href*="overlay/contact-info"]'
@@ -152,6 +156,10 @@ class FaussePage:
         return self.fermee
 
     async def evaluate(self, js):
+        if js == ETAT_RESULTATS_JS:
+            if self.etat_resultats is None:
+                raise RuntimeError("Execution context was destroyed")
+            return dict(self.etat_resultats)
         if js == DEGRES_JS:
             if self.degres is None:
                 raise RuntimeError("Execution context was destroyed")
@@ -599,6 +607,34 @@ def test_une_premiere_page_vide_est_dite_et_datee(base):
     assert any("Orbique" in x and "aucun profil" in x and "Product" in x for x in r.erreurs)
     ligne = store.fiche(i)["linkedin.recherche"]
     assert ligne["valeur"] == "aucun profil trouvé" and ligne["releve_le"] == "2026-10-15T08:00:00"
+
+
+def test_une_page_vide_sans_aucun_resultat_affiche_est_une_lecture_ratee(base):
+    # Le 15/10, Amazon a donné « 0 profils extraits » sans qu'on sache si
+    # LinkedIn n'avait rien trouvé ou si la page n'avait pas été lue. Sans le
+    # « Aucun résultat » de LinkedIn, ce n'est pas une absence : la page est
+    # gardée pour comprendre, et l'entreprise n'est pas déclarée vide.
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage()
+    page.etat_resultats = {"aucunResultat": False, "html": "<main>des cartes</main>"}
+    s = FauxScraper(page, FauxLimites())
+    r = passer(store, db, s)
+    assert "recherche_personnes_dump.html" in s.noms_dumps
+    assert "<main>des cartes</main>" in s.dumps
+    assert any("Orbique" in x and "aucun profil n'a pu être lu" in x for x in r.erreurs), r.erreurs
+    assert not any("aucun profil Product" in x for x in r.erreurs)
+    assert "linkedin.recherche" not in store.fiche(i)
+
+
+def test_une_page_vide_illisible_n_est_pas_une_absence(base):
+    store, db = base
+    i = store.ajouter_entreprise("Orbique", "2026-10-14")
+    page = FaussePage()
+    page.etat_resultats = None  # la lecture de l'état elle-même échoue
+    r = passer(store, db, FauxScraper(page, FauxLimites()))
+    assert any("Orbique" in x and "aucun profil n'a pu être lu" in x for x in r.erreurs), r.erreurs
+    assert "linkedin.recherche" not in store.fiche(i)
 
 
 def test_des_profils_trouves_ensuite_effacent_le_constat_d_absence(base):

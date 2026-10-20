@@ -955,6 +955,24 @@ class DOMSelectors:
         }"""
 
     @staticmethod
+    def etat_resultats_personnes_js() -> str:
+        """État d'une page de résultats de personnes : `{aucunResultat, html}`.
+
+        Sert quand l'extracteur n'a rien lu : distinguer le « Aucun résultat »
+        affiché par LinkedIn (vraie absence) d'une page pleine que l'on n'a
+        pas su lire. Le HTML de la zone principale est rendu pour être
+        enregistré dans logs/.
+        """
+        return r"""() => {
+            const zone = document.querySelector('main') || document.body;
+            const texte = (zone && zone.innerText) || '';
+            return {
+                aucunResultat: /Aucun r.sultat|No results found/i.test(texte),
+                html: zone ? zone.outerHTML : '',
+            };
+        }"""
+
+    @staticmethod
     def extract_degres_js() -> str:
         """Degré de relation par carte de résultats de personnes : `{vanity: "1er"|"2e"|"3e"}`.
 

@@ -437,6 +437,24 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                       for v, d in (degres.items() if isinstance(degres, dict) else ())}
             if not trouves:
                 if numero == 1:
+                    # Une absence ne se déclare que si LinkedIn l'affiche. Sinon
+                    # la page était peut-être pleine et mal lue (cas Amazon du
+                    # 15/10, resté indiagnostiquable) : on la garde pour
+                    # comprendre, sans conclure que l'entreprise est vide.
+                    try:
+                        etat = await page.evaluate(DOMSelectors.etat_resultats_personnes_js()) or {}
+                    except Exception as e:
+                        logger.warning(f"⚠️ Veille, état des résultats illisible sur {page.url} : "
+                                       f"{type(e).__name__} : {e}")
+                        etat = {}
+                    if not etat.get("aucunResultat"):
+                        enregistree = scraper._dumper_panneau(
+                            etat.get("html") or "", nom_fichier="recherche_personnes_dump.html")
+                        ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
+                        rapport.erreurs.append(
+                            f"{nom} : la page de résultats LinkedIn s'est affichée mais aucun profil n'a pu "
+                            f"être lu — sa structure a peut-être changé ({ou}) ; nouvel essai au prochain passage.")
+                        break
                     rapport.erreurs.append(f"{nom} : aucun profil {cibles} trouvé.")
                     store.enregistrer_fiche(eid, {"recherche": "aucun profil trouvé"}, "linkedin", maintenant)
                 curseur = 0  # fin de liste : le prochain cycle repart du début
