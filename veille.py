@@ -33,6 +33,7 @@ from utils.annuaire import (
 from utils.browsemap import normaliser_url
 from utils.coordonnees_site import SiteInjoignable, _normaliser_fr, lire_site, motif_inutilisable
 from utils.dom_selectors import DOMSelectors
+from utils.page_vide import diagnostiquer_page_vide
 from utils.identification import choisir_entreprise, url_recherche_entreprises
 from utils.veille_regles import (
     PAGES_MAX_PAR_ENTREPRISE, RELECTURE_FICHE_JOURS, charger_reglages, expression_mots_cles,
@@ -441,16 +442,9 @@ async def passage_async(scraper, store, db, reglages, cookie, maintenant, status
                     # la page était peut-être pleine et mal lue (cas Amazon du
                     # 15/10, resté indiagnostiquable) : on la garde pour
                     # comprendre, sans conclure que l'entreprise est vide.
-                    try:
-                        etat = await page.evaluate(DOMSelectors.etat_resultats_personnes_js()) or {}
-                    except Exception as e:
-                        logger.warning(f"⚠️ Veille, état des résultats illisible sur {page.url} : "
-                                       f"{type(e).__name__} : {e}")
-                        etat = {}
-                    if not etat.get("aucunResultat"):
-                        enregistree = scraper._dumper_panneau(
-                            etat.get("html") or "", nom_fichier="recherche_personnes_dump.html")
-                        ou = "page enregistrée dans logs/" if enregistree else "page non enregistrée"
+                    ou = await diagnostiquer_page_vide(page, scraper._dumper_panneau,
+                                                       "recherche_personnes_dump.html")
+                    if ou:
                         rapport.erreurs.append(
                             f"{nom} : la page de résultats LinkedIn s'est affichée mais aucun profil n'a pu "
                             f"être lu — sa structure a peut-être changé ({ou}) ; nouvel essai au prochain passage.")

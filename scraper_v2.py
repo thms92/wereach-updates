@@ -32,6 +32,7 @@ from utils.network_manager import NetworkManager, RetryConfig, PermanentNetworkE
 from utils.human_behavior import HumanBehavior
 from utils.stealth_profile import StealthProfileManager
 import utils.requete_linkedin as requete
+from utils.page_vide import diagnostiquer_page_vide
 
 
 
@@ -39,6 +40,12 @@ import utils.requete_linkedin as requete
 # savoir quoi faire, pas quel cookie technique a expiré.
 SESSION_EXPIREE = ("Session LinkedIn expirée : mettez-la à jour dans la page "
                    "Recherche.")
+def lecture_ratee(ou: str) -> str:
+    """Message d'une première page de résultats affichée mais illisible."""
+    return ("LinkedIn a affiché des résultats mais aucun profil n'a pu être lu — sa "
+            f"structure a peut-être changé ({ou}). Signalez-le avec « Signaler un problème ».")
+
+
 BUDGET_ATTEINT = ("Budget d'invitations du jour atteint : la recherche s'est "
                   "arrêtée. Les invitations reprendront demain.")
 
@@ -1244,6 +1251,11 @@ class LinkedInScraperV2:
 
                     if not profiles_page:
                         logger.warning("⚠️ Aucun profil trouvé sur cette page")
+                        if current_page == 1:
+                            ou = await diagnostiquer_page_vide(page, self._dumper_panneau,
+                                                               "recherche_resultats_dump.html")
+                            if ou:
+                                self.errors.append(lecture_ratee(ou))
                         break
 
                     logger.info(f"📋 {len(profiles_page)} profils à traiter sur cette page")
