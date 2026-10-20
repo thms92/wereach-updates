@@ -17,6 +17,7 @@ from ui.invitations import (AIDE_MESSAGE, MESSAGE_SESSION_MANQUANTE,
                             confirmation, echapper_markdown, recap_invitations)
 from utils.browsemap import filtrer_suggestions, vanity_depuis_url
 from utils.budget import message_depassement
+from ui.selection import choisir_profils, reinitialiser_choix
 from utils.search_filters import (criteres_suffisants,
                                   ecoles_sans_identifiant,
                                   parse_entreprises)
@@ -502,8 +503,7 @@ def afficher_page_recherche():
                 st.session_state["sim_erreurs"] = list(scraper.errors)
                 # Nouvelle liste : tout est choisi (on décoche ceux qu'on ne
                 # veut pas), invitations désactivées.
-                st.session_state["sim_choix"] = None
-                st.session_state["sim_version_choix"] = st.session_state.get("sim_version_choix", 0) + 1
+                reinitialiser_choix("sim")
                 st.session_state.pop("sim_inviter", None)
                 st.session_state.pop("sim_message", None)
 
@@ -550,48 +550,10 @@ def afficher_page_recherche():
             st.session_state["sim_retenues"] = retenues
             st.session_state["sim_ecartees"] = ecartees
 
-            if st.session_state.get("sim_choix") is None:
-                st.session_state["sim_choix"] = {p["url"]: True for p in retenues}
-            choix = st.session_state["sim_choix"]
             if retenues:
-                def _tout(valeur):
-                    st.session_state["sim_choix"] = {p["url"]: valeur for p in retenues}
-                    st.session_state["sim_version_choix"] = st.session_state.get("sim_version_choix", 0) + 1
-
-                b1, b2, b3 = st.columns([1, 1, 3], vertical_alignment="center")
-                b1.button("Tout sélectionner", key="sim_tout", width="stretch",
-                          on_click=_tout, args=(True,))
-                b2.button("Tout désélectionner", key="sim_rien", width="stretch",
-                          on_click=_tout, args=(False,))
-                tableau = pd.DataFrame([{
-                    "Choisir": bool(choix.get(p["url"], True)),
-                    "Nom": p.get("nom") or "",
-                    "Intitulé": p.get("intitule") or "",
-                    "Relation": p.get("degre") or "",
-                    "Invitable": "Oui" if p.get("invitable") else "Non",
-                    "Profil": p.get("url") or "",
-                } for p in retenues])
-                edite = st.data_editor(
-                    tableau,
-                    key=f"sim_tableau_{st.session_state.get('sim_version_choix', 0)}",
-                    hide_index=True, width="stretch",
-                    height=min(36 * (len(tableau) + 1) + 12, 760),
-                    disabled=["Nom", "Intitulé", "Relation", "Invitable", "Profil"],
-                    column_config={
-                        "Choisir": st.column_config.CheckboxColumn("Choisir", width="small"),
-                        "Profil": st.column_config.LinkColumn("Profil", display_text="Ouvrir", width="small"),
-                        "Relation": st.column_config.TextColumn(
-                            "Relation", width="small",
-                            help="2e : un contact en commun ; 3e : plus éloigné."),
-                        "Invitable": st.column_config.TextColumn("Invitable", width="small"),
-                    },
-                )
-                st.session_state["sim_choix"] = dict(zip(edite["Profil"], edite["Choisir"]))
-                choisis = [p for p in retenues if st.session_state["sim_choix"].get(p["url"], True)]
-                b3.caption(
-                    f"{pluriel(len(choisis), 'profil choisi', 'profils choisis')} sur "
-                    f"{len(retenues)} ({pluriel(len(ecartees), 'écarté', 'écartés')} par les filtres)"
-                )
+                choisis = choisir_profils(
+                    retenues, "sim",
+                    note=f"{pluriel(len(ecartees), 'écarté', 'écartés')} par les filtres")
             elif not st.session_state.get("sim_erreurs"):
                 if ecartees:
                     st.info("Aucun profil retenu : tout a été écarté par les filtres. "
