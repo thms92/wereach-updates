@@ -128,9 +128,23 @@ def test_focus_clavier_visible():
 def test_mouvement_reduit_respecte():
     assert "@media (prefers-reduced-motion: reduce)" in CSS
     bloc = CSS.split("@media (prefers-reduced-motion: reduce)")[1]
-    for sel in (".wf-cran", ".wf-direct::after", "[data-testid=\"stMetric\"]"):
+    for sel in (".wf-cran", ".wf-entonnoir__barre > span", ".wf-direct::after",
+                "[data-testid=\"stMainBlockContainer\"]"):
         assert sel in bloc
+    # Moins, pas rien : plus de déplacement ni de pulsation, un fondu reste.
     assert "transform:none" in bloc and "animation:none" in bloc
+    assert "wf-fondu" in bloc and "wf-entree" not in bloc and "wf-cran " not in bloc
+    assert "@keyframes wf-fondu { from { opacity:0; } }" in CSS
+
+
+def test_appui_et_survol_suivent_les_regles_du_mouvement():
+    # Appui : enfoncement léger ; survol avec déplacement réservé à la souris.
+    assert re.search(r"button:active[^{]*\{ transform:scale\(\.97\)", CSS)
+    survol = CSS.split("@media (hover: hover) and (pointer: fine)")[1].split("}\n}")[0]
+    assert "translateY(-1px)" in survol
+    hors_media = CSS.split("@media (hover: hover) and (pointer: fine)")[0]
+    assert not re.search(r":hover \{[^}]*translateY", hors_media)
+    assert "[data-testid=\"stMetric\"]:hover" not in CSS and ".wf-action:hover" not in CSS
 
 
 def test_entree_ne_cache_rien_apres_coup():

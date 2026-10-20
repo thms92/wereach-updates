@@ -242,6 +242,7 @@ section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button {
   box-shadow:none !important; transform:none !important;
   font-weight:500 !important; border-radius:10px !important; padding:9px 12px !important;
   color:rgba(255,255,255,.86) !important;
+  transition:background-color 120ms ease, color 120ms ease !important;
 }
 section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button * { color:inherit !important; }
 section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button > div { justify-content:flex-start !important; width:100% !important; }
@@ -255,22 +256,36 @@ section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button[kind="prima
 /* ---------- Boutons ---------- */
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
   font-family:'Inter' !important; font-weight:600; font-size:.875rem; border-radius:10px; padding:.55rem 1.1rem;
-  transition:transform .15s var(--wf-ease), box-shadow .15s var(--wf-ease), background-color .15s, border-color .15s, color .15s;
+  transition:transform 120ms var(--wf-ease), box-shadow 150ms var(--wf-ease), background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 .stButton > button[kind="secondary"], .stDownloadButton > button[kind="secondary"], .stFormSubmitButton > button[kind="secondary"] {
   border:1px solid var(--wf-border); background:var(--wf-surface); color:var(--wf-text);
 }
 .stButton > button[kind="secondary"]:hover, .stDownloadButton > button[kind="secondary"]:hover, .stFormSubmitButton > button[kind="secondary"]:hover {
-  border-color:var(--wf-accent); color:var(--wf-accent-strong); transform:translateY(-2px); box-shadow:var(--wf-shadow-hover);
+  border-color:var(--wf-accent); color:var(--wf-accent-strong);
 }
 .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {
   background:var(--wf-accent) !important; color:var(--wf-on-accent) !important; border:none !important; font-weight:700;
   box-shadow:0 1px 2px rgba(23,41,130,.30);
 }
 .stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {
-  background:var(--wf-accent-strong) !important; transform:translateY(-2px); box-shadow:0 8px 20px rgba(23,41,130,.28);
+  background:var(--wf-accent-strong) !important;
 }
-.stButton > button:active, .stDownloadButton > button:active, .stFormSubmitButton > button:active { transform:translateY(0); }
+/* Le soulèvement au survol est réservé à la souris (au toucher, le survol se
+   déclenche par erreur) et aux boutons de taille normale : ni le menu, ni
+   les petits boutons de la barre latérale, survolés des dizaines de fois. */
+@media (hover: hover) and (pointer: fine) {
+  [data-testid="stMain"] .stButton > button[kind="secondary"]:hover,
+  [data-testid="stMain"] .stDownloadButton > button[kind="secondary"]:hover { transform:translateY(-1px); box-shadow:var(--wf-shadow-hover); }
+  [data-testid="stMain"] .stButton > button[kind="primary"]:hover,
+  [data-testid="stMain"] .stFormSubmitButton > button[kind="primary"]:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(23,41,130,.24); }
+}
+/* Appui : un léger enfoncement confirme que le clic a été entendu. */
+/* `[kind]` et `[data-testid]` : aussi précis que la règle de survol, et
+   placé après elle — sinon le bouton restait soulevé pendant l'appui. */
+.stButton > button:active, .stDownloadButton > button:active, .stFormSubmitButton > button:active,
+[data-testid="stMain"] .stButton > button[kind]:active, [data-testid="stMain"] .stDownloadButton > button[kind]:active,
+[data-testid="stMain"] .stFormSubmitButton > button[kind]:active { transform:scale(.97); transition-duration:80ms; }
 .stButton > button:disabled, .stDownloadButton > button:disabled, .stFormSubmitButton > button:disabled { transform:none !important; box-shadow:none !important; }
 /* Le texte interne hérite de la couleur du bouton — sinon la règle globale
    'span/p {color:var(--wf-text)}' rend le libellé illisible sur le bleu. */
@@ -308,9 +323,7 @@ section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button:focus-visib
 /* ---------- Métriques : une seule élévation ---------- */
 [data-testid="stMetric"] {
   background:var(--wf-surface); border:none; border-radius:var(--wf-radius); padding:16px 18px; box-shadow:var(--wf-shadow);
-  transition:transform .15s var(--wf-ease), box-shadow .15s var(--wf-ease);
 }
-[data-testid="stMetric"]:hover { transform:translateY(-2px); box-shadow:var(--wf-shadow-hover); }
 [data-testid="stMetricLabel"] { color:var(--wf-muted) !important; font-weight:600; font-size:.8rem; }
 [data-testid="stMetricValue"] { color:var(--wf-text) !important; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
 [data-testid="stMetricDelta"] { font-weight:600; font-variant-numeric:tabular-nums; }
@@ -430,7 +443,7 @@ __CODE__
 .wf-jauge--attention .wf-jauge__valeur { color:var(--wf-warn); }
 .wf-jauge--danger .wf-jauge__valeur { color:var(--wf-danger); }
 .wf-jauge__crans { display:grid; grid-template-columns:repeat(var(--wf-crans,20),minmax(0,1fr)); gap:3px; height:14px; }
-.wf-cran { display:block; border-radius:3px; background:var(--wf-j-reste); transform-origin:50% 100%; animation:wf-cran .42s var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 18ms); }
+.wf-cran { display:block; border-radius:3px; background:var(--wf-j-reste); transform-origin:50% 100%; animation:wf-cran 220ms var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 10ms); }
 .wf-cran--utilise { background:var(--wf-j-utilise); }
 .wf-jauge__note { font-size:.8rem; font-weight:600; color:var(--wf-danger); }
 @keyframes wf-cran { from { transform:scaleY(.15); opacity:.25; } }
@@ -445,18 +458,17 @@ ol.wf-entonnoir { list-style:none !important; margin:0 0 1rem !important; paddin
 .wf-entonnoir__taux--vide { color:var(--wf-muted); }
 .wf-entonnoir__nombre { font-size:1.6rem; font-weight:800; letter-spacing:-.02em; color:var(--wf-text); font-variant-numeric:tabular-nums; line-height:1.1; }
 .wf-entonnoir__barre { height:6px; border-radius:3px; background:var(--wf-grid); overflow:hidden; }
-.wf-entonnoir__barre > span { display:block; height:100%; border-radius:3px; background:var(--wf-accent-vif); transform-origin:0 50%; animation:wf-barre .5s var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 60ms); }
+.wf-entonnoir__barre > span { display:block; height:100%; border-radius:3px; background:var(--wf-accent-vif); transform-origin:0 50%; animation:wf-barre 280ms var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 40ms); }
 /* Dernière étape (message envoyé) en marine : l'orange est réservé au budget. */
 .wf-entonnoir__etape:last-child .wf-entonnoir__barre > span { background:var(--wf-accent); }
-@keyframes wf-barre { from { transform:scaleX(0); } }
+@keyframes wf-barre { from { transform:scaleX(.04); opacity:0; } }
 @media (max-width: 720px) {
   ol.wf-entonnoir { grid-template-columns:1fr !important; gap:14px; }
   .wf-entonnoir__etape + .wf-entonnoir__etape { border-left:none; }
 }
 
 /* Carte « À faire » */
-.wf-action { display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:var(--wf-radius); background:var(--wf-surface); box-shadow:var(--wf-shadow); margin-bottom:8px; transition:transform .15s var(--wf-ease), box-shadow .15s var(--wf-ease); }
-.wf-action:hover { transform:translateY(-2px); box-shadow:var(--wf-shadow-hover); }
+.wf-action { display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:var(--wf-radius); background:var(--wf-surface); box-shadow:var(--wf-shadow); margin-bottom:8px; }
 .wf-action__icone { width:34px; height:34px; flex:none; display:grid; place-items:center; border-radius:10px; color:var(--wf-muted); background:var(--wf-surface2); }
 .wf-action__icone svg { width:18px; height:18px; }
 .wf-action--ok .wf-action__icone { color:var(--wf-success); background:var(--wf-success-tint); }
@@ -497,31 +509,23 @@ ol.wf-vide__etapes li::marker { color:var(--wf-accent); font-weight:700; }
    styles normaux, et le voile « périmé » de Streamlit pendant un rerun
    (opacité réduite) continue de s'appliquer. Sans animation, rien n'est
    caché : l'état par défaut est visible. */
-@keyframes wf-entree { from { opacity:0; transform:translateY(8px); } }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > * { animation:wf-entree .22s var(--wf-ease) backwards; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(2) { animation-delay:40ms; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(3) { animation-delay:80ms; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(4) { animation-delay:120ms; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(5) { animation-delay:160ms; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(6) { animation-delay:200ms; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(7) { animation-delay:240ms; }
-[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(n+8) { animation-delay:280ms; }
-/* Cartes de métriques côte à côte : décalage de 40ms de colonne en colonne */
-[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stMetric"] { animation:wf-entree .22s var(--wf-ease) backwards; }
-[data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] { animation-delay:40ms; }
-[data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] { animation-delay:80ms; }
-[data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] { animation-delay:120ms; }
-[data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-child(n+5) [data-testid="stMetric"] { animation-delay:160ms; }
+@keyframes wf-entree { from { opacity:0; transform:translateY(4px); } }
+@keyframes wf-fondu { from { opacity:0; } }
+/* On change de page des dizaines de fois par jour : fondu court, cascade
+   limitée aux trois premiers blocs (titre, contexte, premier contenu). */
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > * { animation:wf-entree 150ms var(--wf-ease) backwards; animation-delay:60ms; }
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(1) { animation-delay:0ms; }
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > :nth-child(2) { animation-delay:30ms; }
 
-/* Mouvement réduit : ni translation, ni pulsation, ni remplissage animé. */
+/* Mouvement réduit : moins, pas rien. Plus de déplacement, de pulsation ni
+   de remplissage ; un fondu court reste, il aide à voir ce qui change. */
 @media (prefers-reduced-motion: reduce) {
-  [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > *,
-  [data-testid="stMetric"], .wf-cran, .wf-entonnoir__barre > span, .wf-direct::after { animation:none !important; }
-  .wf-direct::after { display:none; }
-  .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button,
-  [data-testid="stMetric"], .wf-action { transition:background-color .15s, border-color .15s, color .15s !important; }
+  [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > * { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
+  .wf-cran, .wf-entonnoir__barre > span { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
+  .wf-direct::after { animation:none !important; display:none; }
+  .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button { transition:background-color 150ms ease, border-color 150ms ease, color 150ms ease !important; }
   .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover,
-  [data-testid="stMetric"]:hover, .wf-action:hover { transform:none !important; }
+  .stButton > button:active, .stDownloadButton > button:active, .stFormSubmitButton > button:active { transform:none !important; }
 }
 """
 
