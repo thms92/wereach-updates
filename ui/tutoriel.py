@@ -111,7 +111,9 @@ _PILOTAGE = r"""
       showProgress: true, progressText: "Étape " + (i + 1) + " sur " + N,
       showButtons: boutons,
       nextBtnText: derniere ? "Terminer" : "Suivant",
-      prevBtnText: "Précédent", doneBtnText: "Terminer",
+      // Une visite d'une seule bulle par étape : driver.js la croit toujours
+      // dernière et affiche doneBtnText. Le libellé suit donc l'étape.
+      prevBtnText: "Précédent", doneBtnText: derniere ? "Terminer" : "Suivant",
       onPopoverRender: function (p) {
         var passer = d.createElement("button");
         passer.type = "button"; passer.className = "wr-passer";

@@ -504,17 +504,23 @@ ol.wf-vide__etapes li { margin:0 !important; font-size:.9rem; color:var(--wf-tex
 ol.wf-vide__etapes li::marker { color:var(--wf-accent); font-weight:700; }
 
 /* ---------- Tutoriel (driver.js, ui/tutoriel.py) ---------- */
-/* Bouton de fin : cliqué par le script de visite, jamais par la personne. */
+/* Bouton de fin : cliqué par le script de visite, jamais par la personne.
+   Le pied de bulle est une balise footer, que la règle qui masque le pied
+   de page de Streamlit cache aussi : on le rétablit ci-dessous. */
 .st-key-tutoriel_fini { display:none !important; }
 .driver-popover.wr-bulle { font-family:'Inter',system-ui,sans-serif; border-radius:var(--wf-radius); padding:18px 18px 14px; max-width:340px; box-shadow:0 16px 40px rgba(16,24,40,.22); color:var(--wf-text); background:#FFFFFF; }
 .driver-popover.wr-bulle .driver-popover-title { font-size:1.02rem; font-weight:800; letter-spacing:-.01em; color:var(--wf-text); }
 .driver-popover.wr-bulle .driver-popover-description { font-size:.9rem; line-height:1.5; color:var(--wf-muted); margin-top:6px; }
 .driver-popover.wr-bulle .driver-popover-progress-text { font-size:.75rem; font-weight:600; color:var(--wf-muted); font-variant-numeric:tabular-nums; }
-.driver-popover.wr-bulle .driver-popover-footer { margin-top:14px; gap:8px; align-items:center; }
+.driver-popover.wr-bulle .driver-popover-footer { visibility:visible !important; margin-top:14px; gap:8px; align-items:center; flex-wrap:wrap; }
+/* Le compteur sur sa propre ligne, au-dessus des boutons : sinon « Étape 12
+   sur 15 » et « Passer le tutoriel » se coupaient sur deux lignes. */
+.driver-popover.wr-bulle .driver-popover-progress-text { order:-1; flex-basis:100%; margin-bottom:2px; }
+.driver-popover.wr-bulle .driver-popover-close-btn { border-radius:8px; color:var(--wf-muted); }
 .driver-popover.wr-bulle .driver-popover-navigation-btns button { font-family:'Inter'; font-size:.82rem; font-weight:600; text-shadow:none; border-radius:9px; padding:6px 12px; border:1px solid var(--wf-border); background:#FFFFFF; color:var(--wf-text); }
 .driver-popover.wr-bulle .driver-popover-next-btn { background:var(--wf-accent) !important; border-color:var(--wf-accent) !important; color:#FFFFFF !important; }
 .driver-popover.wr-bulle button:active { transform:scale(.97); }
-.driver-popover.wr-bulle .wr-passer { border:none; background:none; padding:4px 0; font-family:'Inter'; font-size:.8rem; font-weight:600; color:var(--wf-muted); text-decoration:underline; text-underline-offset:3px; cursor:pointer; margin-right:auto; }
+.driver-popover.wr-bulle .wr-passer { border:none; background:none; padding:4px 0; font-family:'Inter'; font-size:.8rem; font-weight:600; color:var(--wf-muted); text-decoration:underline; text-underline-offset:3px; cursor:pointer; margin-right:auto; white-space:nowrap; }
 .driver-popover.wr-bulle button:focus-visible { outline:2px solid var(--wf-focus); outline-offset:2px; }
 
 /* ---------- Mouvement ---------- */

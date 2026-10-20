@@ -5,6 +5,13 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.7.0
+
+**Un tutoriel vous guide pas à pas dans l'outil.**
+Il présente chaque page et son usage, une bulle à la fois ; vous pouvez le
+passer à tout moment, et le revoir depuis la barre latérale (« Revoir le
+tutoriel »).
+
 ## 1.6.0
 
 **We.Reach fait peau neuve.**
