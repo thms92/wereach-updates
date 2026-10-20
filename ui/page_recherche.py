@@ -215,29 +215,53 @@ def afficher_page_recherche():
     with tab1:
         st.subheader("1. Critères", anchor=False)
         st.caption("Au moins un critère : des mots-clés, une entreprise, une école ou un secteur.")
-        col1, col2 = st.columns(2, gap="large")
-        with col1:
-            keyword = st.text_input(
-                "Mots-clés (qui)", "", key="crit_mots",
-                placeholder="Ex : Product Manager, Head of Data",
-                help='Plusieurs intitulés : séparez-les par OR, et mettez une '
-                     'expression entre guillemets, par exemple "Head of Data" OR CDO.',
-            )
-            nb_profils = st.number_input("Nombre de profils (combien)", min_value=1,
-                                         max_value=80, value=10, key="crit_nb")
-        with col2:
-            entreprise_libre = st.text_input(
-                "Entreprises (où)", "", key="crit_entreprises",
-                placeholder="Ex : Capgemini, Thiga",
-                help="Plusieurs entreprises : séparez-les par des virgules.",
-            )
-            concurrents = st.multiselect(
-                "Cabinets concurrents", CONCURRENTS, key="crit_cabinets",
-                placeholder="Choisir des cabinets…",
-                help="Chasse : cible les profils actuellement dans ces cabinets.",
-            )
-            ile_de_france = st.toggle("Île-de-France uniquement", value=False, key="crit_idf",
-                                      help="Ne garde que les profils situés en Île-de-France.")
+        # Rangées alignées : écoles et entreprises au même niveau (demande de
+        # Thomas, 2026-10-21 — rien de replié).
+        g, d = st.columns(2, gap="large")
+        keyword = g.text_input(
+            "Mots-clés", "", key="crit_mots",
+            placeholder="Ex : Product Manager, Head of Data",
+            help='Plusieurs intitulés : séparez-les par OR, et mettez une '
+                 'expression entre guillemets, par exemple "Head of Data" OR CDO.',
+        )
+        entreprise_libre = d.text_input(
+            "Entreprises", "", key="crit_entreprises",
+            placeholder="Ex : Capgemini, Thiga",
+            help="Plusieurs entreprises : séparez-les par des virgules.",
+        )
+        g, d = st.columns(2, gap="large")
+        ecole_noms = g.multiselect(
+            "Écoles ciblées", list(ECOLES.keys()),
+            placeholder="Choisir des écoles…",
+            help="Plusieurs écoles possibles : elles se cumulent en OU.",
+            key="ecoles_pills_candidat",
+        )
+        concurrents = d.multiselect(
+            "Cabinets concurrents", CONCURRENTS, key="crit_cabinets",
+            placeholder="Choisir des cabinets…",
+            help="Chasse : cible les profils actuellement dans ces cabinets.",
+        )
+        ecoles_selectionnees = [ECOLES[n] for n in (ecole_noms or [])]
+        if ecoles_selectionnees:
+            _ecartees = ecoles_sans_identifiant(ecoles_selectionnees)
+            if _ecartees:
+                g.warning(
+                    "Sans identifiant LinkedIn, ces écoles ne peuvent pas "
+                    f"entrer dans le filtre : **{', '.join(_ecartees)}**. "
+                    "La recherche se lance quand même avec les autres."
+                )
+        g, d = st.columns(2, gap="large")
+        secteurs_noms = g.multiselect(
+            "Secteurs d'activité", list(SECTEURS.keys()),
+            placeholder="Choisir des secteurs…",
+            help="Les secteurs se cumulent en OU, et se combinent en ET avec les écoles et entreprises.",
+            key="secteurs_candidat",
+        )
+        secteurs_selectionnes = [SECTEURS[s] for s in secteurs_noms]
+        nb_profils = d.number_input("Nombre de profils", min_value=1,
+                                    max_value=80, value=10, key="crit_nb")
+        ile_de_france = d.toggle("Île-de-France uniquement", value=False, key="crit_idf",
+                                 help="Ne garde que les profils situés en Île-de-France.")
         # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.
         entreprises = parse_entreprises(entreprise_libre, concurrents)
         if len(entreprises) > MAX_ENTREPRISES:
@@ -247,32 +271,6 @@ def afficher_page_recherche():
                 "Chacune demande une interrogation de LinkedIn pour être "
                 "identifiée ; au-delà, le risque de blocage augmente."
             )
-
-        avances = bool(st.session_state.get("ecoles_pills_candidat")
-                       or st.session_state.get("secteurs_candidat"))
-        with st.expander("Filtres avancés : écoles et secteurs", expanded=avances):
-            ecole_noms = st.multiselect(
-                "Écoles ciblées", list(ECOLES.keys()),
-                placeholder="Choisir des écoles…",
-                help="Plusieurs écoles possibles : elles se cumulent en OU.",
-                key="ecoles_pills_candidat",
-            )
-            ecoles_selectionnees = [ECOLES[n] for n in (ecole_noms or [])]
-            if ecoles_selectionnees:
-                _ecartees = ecoles_sans_identifiant(ecoles_selectionnees)
-                if _ecartees:
-                    st.warning(
-                        "Sans identifiant LinkedIn, ces écoles ne peuvent pas "
-                        f"entrer dans le filtre : **{', '.join(_ecartees)}**. "
-                        "La recherche se lance quand même avec les autres."
-                    )
-            secteurs_noms = st.multiselect(
-                "Secteurs d'activité", list(SECTEURS.keys()),
-                placeholder="Choisir des secteurs…",
-                help="Les secteurs se cumulent en OU, et se combinent en ET avec les écoles et entreprises.",
-                key="secteurs_candidat",
-            )
-            secteurs_selectionnes = [SECTEURS[s] for s in secteurs_noms]
 
         sans_session = not st.session_state.global_cookie
         clic = st.button("Rechercher", type="primary", width="stretch",
