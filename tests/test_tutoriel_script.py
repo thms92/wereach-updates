@@ -42,3 +42,26 @@ def test_le_script_ne_clique_que_le_menu_les_onglets_et_la_fin():
     cliques = re.findall(r"(\w+)\.click\(\)", script)
     assert set(cliques) <= {"bouton", "onglet", "fin"}
     assert f".st-key-{CLE_FIN} button" in script
+
+
+def _pilotage():
+    return _scripts_en_ligne(script_visite(etapes_pour(False), "abc123"))[0].split("var ETAPES")[1]
+
+
+def test_precedent_jamais_grise_par_driver():
+    # Une visite d'une bulle par étape : driver.js grise « Précédent » faute
+    # d'étape précédente, sauf si la bulle impose disableButtons: [].
+    assert "disableButtons: []" in _pilotage()
+
+
+def test_toute_fermeture_par_la_personne_marque_vu():
+    # Échap et clic sur le voile passent par onDestroyStarted, pas onCloseClick.
+    assert "onDestroyStarted: finir" in _pilotage()
+
+
+def test_l_element_montre_n_est_pas_cliquable():
+    assert "disableActiveInteraction: true" in _pilotage()
+
+
+def test_precedent_a_la_premiere_etape_ne_fait_rien():
+    assert "if (i === 0) { return; }" in _pilotage()

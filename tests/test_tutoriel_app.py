@@ -74,3 +74,19 @@ def test_un_rerun_garde_le_meme_identifiant(config):
     premier = _identifiant(at)
     at.run()
     assert _identifiant(at) == premier
+
+
+def test_la_version_n_est_pas_consommee_pendant_la_visite(config):
+    # Revue finale : doit_annoncer mémorisait la version pendant que le
+    # tutoriel la remplaçait, et ses nouveautés étaient perdues.
+    from utils.nouveautes import version_vue
+    marquer_vue(config, "0.0.1")
+    lancer_app(PAGE)
+    assert version_vue(config) == "0.0.1"
+
+
+def test_pas_de_fenetre_nouveautes_juste_apres_la_fin_du_tutoriel(config):
+    marquer_vue(config, "0.0.1")
+    at = lancer_app(PAGE)
+    at.button(key="tutoriel_fini").click().run()
+    assert not any(b.label == "J'ai compris" for b in at.button)

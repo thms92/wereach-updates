@@ -108,6 +108,12 @@ _PILOTAGE = r"""
       animate: !w.matchMedia("(prefers-reduced-motion: reduce)").matches,
       overlayOpacity: 0.55, stagePadding: 6, stageRadius: 12,
       allowClose: true, popoverClass: "wr-bulle",
+      // On montre, on ne fait pas : l'élément éclairé (« Lancer la veille »…)
+      // ne reçoit pas les clics pendant la visite.
+      disableActiveInteraction: true,
+      // Échap, clic sur le voile ou croix : passent tous par ce crochet (pas
+      // par onCloseClick). Nos propres destroy() ne le déclenchent pas.
+      onDestroyStarted: finir,
       showProgress: true, progressText: "Étape " + (i + 1) + " sur " + N,
       showButtons: boutons,
       nextBtnText: derniere ? "Terminer" : "Suivant",
@@ -125,9 +131,15 @@ _PILOTAGE = r"""
         drv.destroy(); etat.drv = null;
         if (derniere) { finir(); } else { aller(i + 1); }
       },
-      onPrevClick: function () { drv.destroy(); etat.drv = null; aller(i - 1); },
-      onCloseClick: finir,
-      steps: [{ element: el || undefined, popover: { title: e.titre, description: e.texte } }]
+      onPrevClick: function () {
+        // La flèche gauche du clavier l'appelle même sans bouton visible.
+        if (i === 0) { return; }
+        drv.destroy(); etat.drv = null; aller(i - 1);
+      },
+      // disableButtons: [] — seule dans sa visite, la bulle n'a jamais
+      // d'étape précédente aux yeux de driver.js, qui griserait « Précédent ».
+      steps: [{ element: el || undefined,
+                popover: { title: e.titre, description: e.texte, disableButtons: [] } }]
     });
     etat.drv = drv;
     drv.drive();

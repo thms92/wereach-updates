@@ -324,8 +324,9 @@ def _relancer_tutoriel():
 def _tutoriel_termine():
     # Appelé par le clic JavaScript sur le bouton caché, en fin de visite
     # (Terminer ou Passer) : le tutoriel ne revient plus de lui-même.
-    marquer_vu(st.session_state.user_paths.config_dir)
     st.session_state.pop("tutoriel_id", None)
+    st.session_state["_tutoriel_fini"] = True
+    marquer_vu(st.session_state.user_paths.config_dir)
 
 
 st.sidebar.button("Revoir le tutoriel", key="btn_tutoriel", type="tertiary",
@@ -355,7 +356,6 @@ _config_dir = st.session_state.user_paths.config_dir
 if "tutoriel_maj" not in st.session_state:
     st.session_state["tutoriel_maj"] = (usage_anterieur(_config_dir)
                                         or version_vue(_config_dir) is not None)
-_notes_a_annoncer = doit_annoncer(_config_dir, get_version(), charger_notes())
 
 # Tutoriel : au premier lancement et après la mise à jour qui l'apporte, tant
 # qu'il n'a été ni terminé ni passé ; ou sur demande (« Revoir le
@@ -366,8 +366,14 @@ if tutoriel_a_afficher(_config_dir) or "tutoriel_id" in st.session_state:
     st.html(script_visite(etapes_pour(st.session_state["tutoriel_maj"]),
                           st.session_state["tutoriel_id"]),
             unsafe_allow_javascript=True)
-elif _notes_a_annoncer:
-    _annoncer_nouveautes(_notes_a_annoncer)
+elif not st.session_state.get("_tutoriel_fini"):
+    # Seulement hors visite : doit_annoncer mémorise la version, et des
+    # nouveautés marquées vues pendant le tutoriel seraient perdues. Juste
+    # après la fin du tutoriel, rien ne s'ouvre : elles attendront le
+    # lancement suivant (« jamais deux choses au même démarrage »).
+    _notes_a_annoncer = doit_annoncer(_config_dir, get_version(), charger_notes())
+    if _notes_a_annoncer:
+        _annoncer_nouveautes(_notes_a_annoncer)
 
 # --- Bandeau de mise a jour ------------------------------------------------
 # La mise a jour ne se faisait qu'au demarrage du lanceur : qui ne ferme
