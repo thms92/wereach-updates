@@ -434,46 +434,26 @@ def afficher_page_recherche():
             afficher_resultats(df, inviter_client, "clients", "clients", scraper.errors)
 
     # TAB 3: PROFILS SIMILAIRES
+    # Trois temps, nommés : partir d'un profil, choisir parmi ses voisins,
+    # puis inviter ou enregistrer les seuls profils choisis (refonte du
+    # 2026-10-21 : filtres regroupés, une case par profil).
     with tab3:
         st.caption(
-            "Retrouvez un profil comme celui-là, ailleurs. Partez d'un profil qui vous a donné satisfaction : LinkedIn "
-            "propose lui-même les profils que les mêmes personnes consultent. "
-            "Les gens déjà dans votre réseau ou déjà dans votre fichier sont "
-            "écartés."
+            "Partez d'un profil qui vous a donné satisfaction : LinkedIn propose "
+            "lui-même les profils que les mêmes personnes consultent. Vous "
+            "choisissez ensuite qui inviter."
         )
 
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            sim_url = st.text_input(
-                "Lien du profil de référence",
-                placeholder="https://www.linkedin.com/in/jean-dupont-12345/",
-                key="sim_url",
-                help="Le profil de quelqu'un que vous avez déjà placé, par exemple.",
-            )
-
-        with col2:
-            # Valeur initiale posée en session plutôt que par value= : la
-            # réaffectation qui retient les filtres d'une page à l'autre
-            # (en tête de script) écrit aussi cette clé, et Streamlit avertit
-            # quand un widget reçoit les deux.
-            st.session_state.setdefault("sim_invitables", False)
-            sim_invitables = st.checkbox(
-                "Seulement les profils invitables",
-                key="sim_invitables",
-                help="Écarte ceux qui ne proposent que « Suivre » : ils ne "
-                     "peuvent pas recevoir d'invitation.",
-            )
-            sim_mot = st.text_input(
-                "Mot attendu dans l'intitulé (optionnel)",
-                placeholder="Product",
-                key="sim_mot",
-                help="Pour resserrer si la liste part dans une direction qui "
-                     "ne vous intéresse pas.",
-            )
+        st.subheader("1. Profil de départ", anchor=False)
+        sim_url = st.text_input(
+            "Lien du profil de référence",
+            placeholder="https://www.linkedin.com/in/jean-dupont-12345/",
+            key="sim_url",
+            help="Le profil de quelqu'un que vous avez déjà placé, par exemple.",
+        )
 
         _sans_session = not st.session_state.global_cookie
-        _sim_clic = st.button("Rechercher des profils similaires", type="primary",
+        _sim_clic = st.button("Trouver les profils similaires", type="primary",
                               width="stretch", key="sim_btn_trouver",
                               disabled=_sans_session)
         if _sans_session:
@@ -485,7 +465,7 @@ def afficher_page_recherche():
                     or vanity_depuis_url(sim_url) is None):
                 for cle in ("sim_retenues", "sim_ecartees", "sim_suggestions",
                             "sim_urls_connues", "sim_entreprise",
-                            "sim_entreprise_exclue", "sim_erreurs"):
+                            "sim_entreprise_exclue", "sim_erreurs", "sim_choix"):
                     st.session_state.pop(cle, None)
 
             if not st.session_state.global_cookie:
@@ -497,10 +477,6 @@ def afficher_page_recherche():
                 )
             else:
                 scraper = _nouveau_scraper()
-
-                # Un bloc d'état plutôt qu'un spinner et un texte séparés : la
-                # récolte dure, et l'étape en cours doit rester lisible juste
-                # sous le bouton, puis le bilan une fois fini.
                 with st.status("Lecture des profils voisins…",
                                expanded=False) as sim_statut:
                     suggestions, entreprise = scraper.recolter_browsemap(
@@ -512,63 +488,57 @@ def afficher_page_recherche():
                     label=pluriel(len(suggestions), "profil voisin lu", "profils voisins lus"),
                     state="complete" if suggestions else "error",
                 )
-
-                # Les URLs du fichier servent de filtre, comparées sous forme
-                # canonique des deux côtés — la base contient les liens tels
-                # qu'ils ont été copiés. Lues une fois ici : le filtre est
-                # rejoué à chaque rerun, on n'interroge pas la base à chaque
-                # frappe dans un champ.
+                # Lues une fois ici : les filtres sont rejoués à chaque
+                # rerun sans réinterroger la base ni LinkedIn.
                 st.session_state["sim_urls_connues"] = list(
                     scraper.db.urls_connues() if scraper.use_database else ()
                 )
-
-                # Les suggestions brutes restent en session : les filtres de
-                # l'écran (entreprise, invitables, mot) les rejouent sans
-                # relancer une récolte de plusieurs minutes.
                 st.session_state["sim_suggestions"] = suggestions
                 st.session_state["sim_entreprise"] = entreprise
-                # Vide : par défaut rien n'est écarté hors fichier et 1er
-                # degré. L'entreprise lue n'est que proposée sous le champ.
-                st.session_state["sim_entreprise_exclue"] = ""
+                # Par défaut, on écarte ceux qui travaillent encore chez
+                # l'entreprise du profil de départ : on cherche le même profil
+                # ailleurs. Le champ reste modifiable (vide = ne rien écarter).
+                st.session_state["sim_entreprise_exclue"] = entreprise or ""
                 st.session_state["sim_erreurs"] = list(scraper.errors)
-                # Une nouvelle liste ne démarre jamais avec les invitations
-                # cochées : l'envoi est irréversible et le quota rare.
+                # Nouvelle liste : tout est choisi (on décoche ceux qu'on ne
+                # veut pas), invitations désactivées.
+                st.session_state["sim_choix"] = None
+                st.session_state["sim_version_choix"] = st.session_state.get("sim_version_choix", 0) + 1
                 st.session_state.pop("sim_inviter", None)
                 st.session_state.pop("sim_message", None)
 
-        # Juste sous le bouton, avant tout le reste : au premier essai réel,
-        # rendus sous le champ entreprise et le tableau, ils sont passés
-        # inaperçus — dont celui qui disait que la liste était partielle.
         for erreur in st.session_state.get("sim_erreurs") or []:
             st.warning(erreur)
 
         sim_suggestions = st.session_state.get("sim_suggestions")
-
-        if sim_suggestions is not None:
-            st.text_input(
-                "Entreprise à écarter",
+        if sim_suggestions is None:
+            st.session_state.pop("sim_retenues", None)
+            st.session_state.pop("sim_ecartees", None)
+        else:
+            st.subheader("2. Choisir les profils", anchor=False)
+            # Valeurs initiales posées en session plutôt que par value= : la
+            # réaffectation qui retient les filtres d'une page à l'autre (en
+            # tête de app_advanced) écrit aussi ces clés.
+            st.session_state.setdefault("sim_invitables", False)
+            f1, f2, f3 = st.columns([1.2, 1, 1], vertical_alignment="bottom")
+            f1.text_input(
+                "Écarter ceux qui travaillent encore chez",
                 key="sim_entreprise_exclue",
-                help="Les profils dont l'intitulé mentionne encore cette "
-                     "entreprise sont écartés : on cherche le même profil "
-                     "ailleurs.",
+                placeholder="Nom de l'entreprise",
+                help="Rempli avec l'entreprise du profil de départ. Videz-le "
+                     "pour garder tout le monde.",
             )
-            entreprise_lue = st.session_state.get("sim_entreprise")
-            if entreprise_lue:
-                st.caption(f"Entreprise du profil de départ : **{echapper_markdown(entreprise_lue)}**")
-                # Le rappel s'exécute avant le rerun, donc avant que le champ
-                # soit redessiné : seul endroit sûr pour écrire sa clé.
-                st.button(
-                    f"Écarter {echapper_markdown(entreprise_lue)}",
-                    key="sim_btn_ecarter_ref",
-                    on_click=lambda: st.session_state.__setitem__(
-                        "sim_entreprise_exclue", entreprise_lue),
-                )
-            else:
-                st.caption(
-                    "L'entreprise du profil de départ n'a pas pu être lue : "
-                    "saisissez-la ci-dessus pour écarter ceux qui y travaillent "
-                    "encore."
-                )
+            sim_mot = f2.text_input(
+                "Mot attendu dans l'intitulé",
+                placeholder="Product",
+                key="sim_mot",
+                help="Pour resserrer la liste sur un métier.",
+            )
+            sim_invitables = f3.checkbox(
+                "Seulement les profils invitables",
+                key="sim_invitables",
+                help="Écarte ceux qui ne proposent que « Suivre ».",
+            )
 
             retenues, ecartees = filtrer_suggestions(
                 sim_suggestions,
@@ -579,62 +549,75 @@ def afficher_page_recherche():
             )
             st.session_state["sim_retenues"] = retenues
             st.session_state["sim_ecartees"] = ecartees
-        else:
-            st.session_state.pop("sim_retenues", None)
-            st.session_state.pop("sim_ecartees", None)
 
-        sim_retenues = st.session_state.get("sim_retenues")
-        sim_ecartees = st.session_state.get("sim_ecartees") or []
+            if st.session_state.get("sim_choix") is None:
+                st.session_state["sim_choix"] = {p["url"]: True for p in retenues}
+            choix = st.session_state["sim_choix"]
+            if retenues:
+                def _tout(valeur):
+                    st.session_state["sim_choix"] = {p["url"]: valeur for p in retenues}
+                    st.session_state["sim_version_choix"] = st.session_state.get("sim_version_choix", 0) + 1
 
-        if sim_retenues is not None:
-            if sim_retenues:
-                st.success(pluriel(len(sim_retenues), "profil retenu", "profils retenus"))
-                st.dataframe(
-                    pd.DataFrame(sim_retenues).reindex(
-                        # reindex et non un simple [[...]] : une clé absente
-                        # ferait planter la page entière au lieu d'afficher
-                        # une colonne vide.
-                        columns=["nom", "degre", "intitule", "invitable", "url"]
-                    ).rename(columns={
-                        "nom": "Nom", "degre": "Relation", "intitule": "Intitulé",
-                        "invitable": "Invitable", "url": "Lien",
-                    }),
-                    width="stretch",
-                    hide_index=True,
+                b1, b2, b3 = st.columns([1, 1, 3], vertical_alignment="center")
+                b1.button("Tout sélectionner", key="sim_tout", width="stretch",
+                          on_click=_tout, args=(True,))
+                b2.button("Tout désélectionner", key="sim_rien", width="stretch",
+                          on_click=_tout, args=(False,))
+                tableau = pd.DataFrame([{
+                    "Choisir": bool(choix.get(p["url"], True)),
+                    "Nom": p.get("nom") or "",
+                    "Intitulé": p.get("intitule") or "",
+                    "Relation": p.get("degre") or "",
+                    "Invitable": "Oui" if p.get("invitable") else "Non",
+                    "Profil": p.get("url") or "",
+                } for p in retenues])
+                edite = st.data_editor(
+                    tableau,
+                    key=f"sim_tableau_{st.session_state.get('sim_version_choix', 0)}",
+                    hide_index=True, width="stretch",
+                    height=min(36 * (len(tableau) + 1) + 4, 760),
+                    disabled=["Nom", "Intitulé", "Relation", "Invitable", "Profil"],
                     column_config={
-                        "Lien": st.column_config.LinkColumn("Profil", display_text="Ouvrir"),
+                        "Choisir": st.column_config.CheckboxColumn("Choisir", width="small"),
+                        "Profil": st.column_config.LinkColumn("Profil", display_text="Ouvrir", width="small"),
                         "Relation": st.column_config.TextColumn(
-                            "Relation", help="2e : un contact en commun ; 3e : plus éloigné."),
+                            "Relation", width="small",
+                            help="2e : un contact en commun ; 3e : plus éloigné."),
+                        "Invitable": st.column_config.TextColumn("Invitable", width="small"),
                     },
                 )
+                st.session_state["sim_choix"] = dict(zip(edite["Profil"], edite["Choisir"]))
+                choisis = [p for p in retenues if st.session_state["sim_choix"].get(p["url"], True)]
+                b3.caption(
+                    f"{pluriel(len(choisis), 'profil choisi', 'profils choisis')} sur "
+                    f"{len(retenues)} ({pluriel(len(ecartees), 'écarté', 'écartés')} par les filtres)"
+                )
             elif not st.session_state.get("sim_erreurs"):
-                # Deux vides différents : un tri qui a tout écarté (le détail
-                # existe) et un panneau que LinkedIn n'a rien proposé (aucun
-                # détail à montrer).
-                if sim_ecartees:
-                    st.info(
-                        "Aucun profil retenu : tout a été écarté par les "
-                        "filtres. Le détail est juste en dessous."
-                    )
+                if ecartees:
+                    st.info("Aucun profil retenu : tout a été écarté par les filtres. "
+                            "Le détail est juste en dessous.")
                 else:
-                    st.info(
-                        "LinkedIn n'a proposé aucun profil voisin pour celui-ci : "
-                        "c'est le cas d'un profil peu consulté."
-                    )
+                    st.info("LinkedIn n'a proposé aucun profil voisin pour celui-ci : "
+                            "c'est le cas d'un profil peu consulté.")
+                choisis = []
+            else:
+                choisis = []
 
-            if sim_ecartees:
-                with st.expander(f"{pluriel(len(sim_ecartees), 'profil écarté', 'profils écartés')} : pourquoi"):
-                    for e in sim_ecartees:
+            if ecartees:
+                with st.expander(f"{pluriel(len(ecartees), 'profil écarté', 'profils écartés')} : pourquoi"):
+                    for e in ecartees:
                         st.markdown(f"- **{echapper_markdown(e.get('nom') or 'Sans nom')}** : "
                                     f"{e['motif']}")
 
-            if sim_retenues:
-                st.divider()
-                st.markdown("**Étape 2 : récupérer les infos de ces profils**")
-                st.caption(
-                    "Chaque profil est ouvert pour en lire le poste et la "
-                    "société. Activez les invitations pour en envoyer une en "
-                    "même temps."
-                )
-                bloc_recuperer_inviter([p["url"] for p in sim_retenues], "sim",
-                                       nom_export="profils_similaires")
+            if retenues:
+                st.subheader("3. Inviter ou enregistrer", anchor=False)
+                if not choisis:
+                    st.caption("Cochez au moins un profil dans le tableau ci-dessus.")
+                else:
+                    st.caption(
+                        "Chaque profil choisi est ouvert sur LinkedIn pour enregistrer "
+                        "son poste et sa société dans l'Historique. Activez les "
+                        "invitations pour leur en envoyer une en même temps."
+                    )
+                    bloc_recuperer_inviter([p["url"] for p in choisis], "sim",
+                                           nom_export="profils_similaires")
