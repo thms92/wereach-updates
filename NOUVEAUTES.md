@@ -5,6 +5,35 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.6.0
+
+**We.Reach fait peau neuve.**
+Une barre latérale bleu marine, un tableau de bord qui dit quoi faire
+aujourd'hui (personnes qui ont accepté, invitations en attente, nouveautés
+de la veille) et le parcours de vos prospects : trouvés, invités, acceptés,
+contactés.
+
+**Votre budget d'invitations, toujours sous les yeux.**
+La jauge « Budget du jour » sous le menu montre combien d'invitations il
+vous reste sur les 20 de la journée. Elle apparaît aussi là où vous invitez,
+et l'outil vous prévient si vous demandez plus que ce qui reste.
+
+**Rien ne part sans votre confirmation.**
+Avant d'envoyer des invitations ou des messages, un récapitulatif vous
+montre ce qui va partir depuis votre compte LinkedIn : « Confirmer et
+lancer » ou « Annuler ».
+
+**Nouvelle page Veille.**
+Suivez vos entreprises cibles : chaque passage repère les personnes
+Product, Data et IA qui y travaillent, avec une fiche par entreprise et
+l'export des contacts. Si une page LinkedIn ne peut pas être lue, la veille
+le dit au lieu d'annoncer qu'il n'y a personne.
+
+**Plus simple au quotidien.**
+Première connexion à LinkedIn guidée pas à pas, recherche dans
+l'Historique, « Tout sélectionner » dans Messages, et un Journal lisible
+sans détails techniques.
+
 ## 1.5.1
 
 **L'onglet « Par URLs » disparaît de Recherche.**
