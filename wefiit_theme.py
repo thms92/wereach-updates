@@ -435,6 +435,7 @@ __CODE__
 .wf-jauge { --wf-j-reste:var(--wf-accent-vif); --wf-j-utilise:var(--wf-orange); display:grid; gap:8px; padding:14px 16px 16px; border-radius:var(--wf-radius); background:var(--wf-surface); box-shadow:var(--wf-shadow); margin-bottom:.5rem; }
 .wf-jauge * { color:inherit; }
 .wf-jauge--sombre { --wf-j-reste:#FFFFFF; background:rgba(255,255,255,.07); box-shadow:none; }
+[class*="st-key-bloc_"] .wf-jauge:not(.wf-jauge--sombre) { max-width:360px; }
 .wf-jauge__tete { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:2px 8px; font-size:.78rem; font-weight:600; color:var(--wf-muted); font-variant-numeric:tabular-nums; }
 .wf-jauge__libelle { color:var(--wf-text); font-weight:700; white-space:nowrap; }
 .wf-jauge__compte { white-space:nowrap; color:var(--wf-muted); font-size:.78rem; font-weight:600; font-variant-numeric:tabular-nums; }

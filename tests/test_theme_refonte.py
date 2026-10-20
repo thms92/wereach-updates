@@ -188,3 +188,10 @@ def test_wordmark_variante_sombre_et_signature_historique():
     assert "wf-wordmark--sombre" not in theme.wordmark()
     assert "font-size:2.4rem" in theme.wordmark(size=2.4)
     assert "text-align:left" in theme.wordmark(1.6, False)
+
+
+def test_jauge_compacte_dans_le_bloc_invitations():
+    """La jauge du bloc Invitations ne s'étire pas sur toute la largeur :
+    la barre latérale porte déjà la grande."""
+    assert re.search(r'\[class\*="st-key-bloc_"\]\s*\.wf-jauge:not\(\.wf-jauge--sombre\)'
+                     r'\s*\{[^}]*max-width:\s*360px', CSS)
