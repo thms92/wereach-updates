@@ -194,7 +194,7 @@ def test_le_bloc_recuperer_demande_confirmation(budget_dicte, espion):
     at.toggle(key="sim_inviter").set_value(True)
     at.run()
     assert at.button(key="sim_btn_recuperer").label == (
-        "Récupérer les infos et inviter (jusqu'à 2)")
+        "Inviter 2 profils choisis")
     at.button(key="sim_btn_recuperer").click()
     at.run()
     assert espion["recuperations"] == []

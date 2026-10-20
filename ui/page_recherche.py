@@ -575,7 +575,7 @@ def afficher_page_recherche():
                     tableau,
                     key=f"sim_tableau_{st.session_state.get('sim_version_choix', 0)}",
                     hide_index=True, width="stretch",
-                    height=min(36 * (len(tableau) + 1) + 4, 760),
+                    height=min(36 * (len(tableau) + 1) + 12, 760),
                     disabled=["Nom", "Intitulé", "Relation", "Invitable", "Profil"],
                     column_config={
                         "Choisir": st.column_config.CheckboxColumn("Choisir", width="small"),

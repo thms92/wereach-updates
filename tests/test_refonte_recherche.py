@@ -217,12 +217,12 @@ def test_le_bloc_recuperer_montre_la_jauge_et_refuse_d_avance(budget_dicte, monk
     at.text_input(key="sim_url").set_value("https://www.linkedin.com/in/reference/")
     at.button(key="sim_btn_trouver").click()
     at.run()
-    assert at.button(key="sim_btn_recuperer").label == "Récupérer les infos"
+    assert at.button(key="sim_btn_recuperer").label == "Enregistrer 3 profils choisis"
 
     at.toggle(key="sim_inviter").set_value(True)
     at.run()
     # 3 profils pour 2 restantes : un avertissement, pas de refus.
-    assert at.button(key="sim_btn_recuperer").label == "Récupérer les infos et inviter (jusqu'à 3)"
+    assert at.button(key="sim_btn_recuperer").label == "Inviter 3 profils choisis"
     assert [m for m in at.markdown if m.value.startswith('<div class="wf-jauge')]
     assert not at.error
     assert any("vous en serez à 21 invitations" in w.value for w in at.warning), [w.value for w in at.warning]

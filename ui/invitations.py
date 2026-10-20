@@ -236,11 +236,9 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
             )
 
     if inviter:
-        libelle = "Récupérer les infos et inviter"
-        if urls:
-            libelle += f" (jusqu'à {len(urls)})"
+        libelle = f"Inviter {pluriel(len(urls), 'profil choisi', 'profils choisis')}"
     else:
-        libelle = libelle_bouton or "Récupérer les infos"
+        libelle = libelle_bouton or f"Enregistrer {pluriel(len(urls), 'profil choisi', 'profils choisis')}"
 
     clic = st.button(libelle, type="primary",
                      width="stretch", key=f"{prefixe}_btn_recuperer")
