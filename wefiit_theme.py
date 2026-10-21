@@ -385,14 +385,15 @@ __CODE__
 
 /* Chips du multiselect : sans ça le libellé héritait de la règle globale
    `span {color:var(--wf-text)}` et devenait illisible sur le fond accent.
-   Le libellé n'est plus tronqué : la pilule s'adapte au texte. */
+   Le libellé n'est plus tronqué : la pilule s'adapte au texte.
+   Fond accent plein, texte blanc : jamais de texte foncé sur le marine. */
 [data-testid="stMultiSelect"] [data-baseweb="select"] > div { flex-wrap:wrap !important; height:auto !important; }
 [data-baseweb="tag"] {
-  background:var(--wf-accent-tint) !important; border:1px solid var(--wf-accent) !important;
+  background:var(--wf-accent) !important; border:1px solid var(--wf-accent) !important;
   border-radius:20px !important; max-width:none !important; height:auto !important;
   padding:3px 6px 3px 10px !important; margin:3px 4px 3px 0 !important;
 }
-[data-baseweb="tag"], [data-baseweb="tag"] * { color:var(--wf-accent-strong) !important; }
+[data-baseweb="tag"], [data-baseweb="tag"] * { color:var(--wf-on-accent) !important; }
 [data-baseweb="tag"] svg { fill:currentColor !important; }
 [data-baseweb="tag"] span {
   max-width:none !important; overflow:visible !important; text-overflow:clip !important;

@@ -195,3 +195,9 @@ def test_jauge_compacte_dans_le_bloc_invitations():
     la barre latérale porte déjà la grande."""
     assert re.search(r'\[class\*="st-key-bloc_"\]\s*\.wf-jauge:not\(\.wf-jauge--sombre\)'
                      r'\s*\{[^}]*max-width:\s*360px', CSS)
+
+
+def test_pastilles_du_multiselect_texte_blanc_sur_marine():
+    assert re.search(r'\[data-baseweb="tag"\]\s*\{[^}]*background:var\(--wf-accent\)', CSS)
+    assert '[data-baseweb="tag"] * { color:var(--wf-on-accent) !important; }' in CSS
+    assert contraste("#FFFFFF", "#172982") >= 4.5
