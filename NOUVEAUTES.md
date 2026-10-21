@@ -5,6 +5,15 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.8.1
+
+**Des menus plus lisibles.**
+Les écoles, secteurs et cabinets choisis s'affichent en blanc sur bleu marine.
+
+**Récupérer sa session LinkedIn sur Mac.**
+Les étapes donnent maintenant le bon raccourci (Cmd + Option + I) et disent
+précisément où trouver la valeur à copier.
+
 ## 1.8.0
 
 **Une seule recherche, en trois temps.**

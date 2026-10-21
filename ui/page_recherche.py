@@ -89,13 +89,14 @@ def _tester_session():
 
 
 ETAPES_SESSION = (
-    "1. Dans Chrome, connectez-vous sur **linkedin.com**.\n"
-    "2. Appuyez sur **F12** (ou clic droit, puis **Inspecter**) pour ouvrir les outils de développement.\n"
-    "3. Ouvrez l'onglet **Application** (s'il n'apparaît pas, cliquez sur `»`).\n"
-    "4. À gauche : **Cookies**, puis **https://www.linkedin.com**.\n"
-    "5. Repérez le cookie de session, nommé **`li_at`** dans Chrome.\n"
-    "6. **Double-cliquez sur sa valeur** (longue suite de caractères) et copiez-la (**Ctrl/Cmd + C**).\n"
-    "7. **Collez** la valeur dans le champ ci-dessous, puis **Enregistrer**."
+    "1. Dans Chrome, ouvrez **linkedin.com** et connectez-vous.\n"
+    "2. Appuyez sur **Cmd + Option + I** (ou clic droit sur la page, puis **Inspecter**). Un panneau s'ouvre.\n"
+    "3. En haut du panneau, cliquez sur l'onglet **Application** (s'il n'apparaît pas, cliquez d'abord sur **»**).\n"
+    "4. Dans la colonne de gauche, dépliez **Cookies** et cliquez sur **https://www.linkedin.com**.\n"
+    "5. Dans la liste, trouvez la ligne **`li_at`** (tapez ce nom dans le champ **Filter** pour aller plus vite).\n"
+    "6. **Double-cliquez** sur la case de la colonne **Value** de cette ligne (une longue suite de caractères), "
+    "puis copiez-la (**Cmd + C**).\n"
+    "7. **Collez-la** dans le champ ci-dessous, cliquez sur **Enregistrer**, puis sur **Tester**."
 )
 AVERTISSEMENT_SESSION = (
     "**Ne partagez jamais cette valeur** : elle donne accès à votre compte "
