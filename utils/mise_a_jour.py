@@ -10,6 +10,7 @@ lanceur. Celui-ci ferme l'instance en cours (garde-fou de la 1.4.1), installe
 la mise à jour et redémarre : un clic, rien d'autre à faire.
 """
 
+import os
 import subprocess
 import sys
 import urllib.request
@@ -21,7 +22,8 @@ RACINE = Path(__file__).resolve().parent.parent
 URL_VERSION = (
     "https://raw.githubusercontent.com/thms92/wereach-updates/main/VERSION"
 )
-NOM_LANCEUR = "1 - Lancer We.Reach.command"
+NOM_LANCEUR = ("1 - Lancer We.Reach.bat" if sys.platform == "win32"
+               else "1 - Lancer We.Reach.command")
 
 
 def version_publiee(delai: float = 4.0) -> str:
@@ -67,10 +69,13 @@ def relancer() -> bool:
     en cours, que lui-même va provoquer.
     """
     lanceur = chemin_lanceur()
-    if lanceur is None or sys.platform != "darwin":
+    if lanceur is None or sys.platform not in ("darwin", "win32"):
         return False
     try:
-        subprocess.Popen(["open", str(lanceur)])
+        if sys.platform == "win32":
+            os.startfile(str(lanceur))
+        else:
+            subprocess.Popen(["open", str(lanceur)])
         return True
     except Exception:
         return False

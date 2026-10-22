@@ -56,6 +56,8 @@ def racine_donnees() -> Path:
     if sys.platform == "darwin":
         return (Path.home() / "Library" / "Application Support" / "We.Reach"
                 / "data" / "users")
+    if sys.platform == "win32":
+        return _dossier_windows() / "data" / "users"
     # Serveur (déploiement Linux) : on garde le comportement historique.
     return ANCIENNE_RACINE
 
@@ -113,7 +115,16 @@ def racine_application() -> Path:
         return Path(forcee)
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "We.Reach"
+    if sys.platform == "win32":
+        return _dossier_windows()
     return Path(".")
+
+
+def _dossier_windows() -> Path:
+    """Équivalent Windows d'Application Support : %LOCALAPPDATA%, jamais
+    synchronisé par OneDrive, et hors du dossier remplacé par les mises à jour."""
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "We.Reach"
 
 
 def mode_admin() -> bool:

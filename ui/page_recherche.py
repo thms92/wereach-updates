@@ -2,6 +2,8 @@
 """Page Recherche : session LinkedIn, Candidats, Clients et entreprises,
 Profils similaires."""
 
+import sys
+
 import pandas as pd
 import streamlit as st
 
@@ -98,6 +100,9 @@ ETAPES_SESSION = (
     "puis copiez-la (**Cmd + C**).\n"
     "7. **Collez-la** dans le champ ci-dessous, cliquez sur **Enregistrer**, puis sur **Tester**."
 )
+if sys.platform == "win32":
+    ETAPES_SESSION = (ETAPES_SESSION.replace("Cmd + Option + I", "Ctrl + Maj + I")
+                      .replace("Cmd + C", "Ctrl + C"))
 AVERTISSEMENT_SESSION = (
     "**Ne partagez jamais cette valeur** : elle donne accès à votre compte "
     "LinkedIn. Si elle expire (déconnexion), refaites l'opération."

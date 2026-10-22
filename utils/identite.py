@@ -12,7 +12,6 @@ avalée : sans réseau ou si n8n ne répond pas, l'outil s'ouvre normalement.
 
 import json
 import os
-import pwd
 import threading
 import urllib.request
 from datetime import datetime
@@ -36,15 +35,21 @@ def enregistrer_nom(config_dir, nom: str) -> None:
 
 
 def nom_par_defaut() -> str:
-    """Le nom complet de la session Mac, pour pré-remplir le champ."""
+    """Le nom complet de la session Mac, pour pré-remplir le champ.
+    Sous Windows, rien : l'identifiant de session n'est pas un nom lisible."""
     try:
+        import pwd
         return pwd.getpwuid(os.getuid()).pw_gecos.split(",")[0].strip()
-    except (KeyError, OSError):
+    except (ImportError, KeyError, OSError, AttributeError):
         return ""
 
 
 def message_connexion(nom: str, version: str, maintenant: datetime = None) -> dict:
-    maintenant = maintenant or datetime.now(ZoneInfo("Europe/Paris"))
+    if maintenant is None:
+        try:
+            maintenant = datetime.now(ZoneInfo("Europe/Paris"))
+        except Exception:  # Windows sans tzdata : heure locale du poste
+            maintenant = datetime.now()
     return {"nom": nom, "version": version, "date": maintenant.strftime("%d/%m/%Y %H:%M")}
 
 

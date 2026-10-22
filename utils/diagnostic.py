@@ -11,6 +11,7 @@ secrets, car le cookie LinkedIn vaut un accès au compte de la personne.
 """
 
 import json
+import os
 import platform
 import re
 import subprocess
@@ -165,6 +166,12 @@ def ouvrir_mail(lien: str) -> bool:
     Retourne False sans rien faire hors macOS : sur un déploiement serveur,
     `open` s'exécuterait sur le serveur et non chez la personne.
     """
+    if sys.platform == "win32":
+        try:
+            os.startfile(lien)  # messagerie par défaut de Windows
+            return True
+        except Exception:
+            return False
     if sys.platform != "darwin":
         return False
 

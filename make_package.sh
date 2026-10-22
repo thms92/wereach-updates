@@ -38,7 +38,7 @@ rm -rf tests docs
 rm -f  "Diagnostic Cookie LinkedIn.command" Enrichir_*.command \
        start.command stop.command start.bat stop.bat *.bat \
        start_advanced.sh start_app.sh launch_app.sh install.sh install_mac.sh \
-       setup_vps.sh create_package.sh make_package.sh publish_update.sh \
+       setup_vps.sh create_package.sh make_package.sh make_package_windows.sh publish_update.sh \
        Dockerfile docker-compose.yml deploy_oracle.sh \
        README.md requirements-dev.txt "LIRE-MOI (installation).txt" \
        Base_enrichie_Prospects_2026.csv.progress.json 2>/dev/null || true
