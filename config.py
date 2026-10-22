@@ -182,7 +182,7 @@ SECTEURS = {
 # page Recherche. Le filtrage précis (currentCompany) dépend de l'URN LinkedIn
 # dans config/company_urns.json ; sinon repli par nom (mot-clé).
 CONCURRENTS = [
-    "5 degrés", "ACCENTURE", "AFDTECH", "Ailancy", "AKKODIS (ex- AKKA & Modis)",
+    "5 degrés", "ACCENTURE", "Adone", "AFDTECH", "Ailancy", "AKKODIS (ex- AKKA & Modis)",
     "Aldemia", "Aliancy", "Aliznet", "ALPHONSE", "ALTEN", "ALTRAN", "Amaris",
     "AMETIX", "ANEO", "Apsia", "APSIDE", "Ares & co", "Arneo", "ASM Consulting",
     "ASTEK", "ATECNA", "Athoria", "ATOS", "AUBAY", "AUSY", "Avanade (Microsoft)",
@@ -206,13 +206,15 @@ CONCURRENTS = [
     "Swood Partners", "TAK", "Talan", "TEAMINSIDE", "Themis Conseil", "THEODO",
     "Thiga", "Thinkmarket", "Tnp Consultant", "UMANIS", "UNIWARE", "UX Republic",
     "Valtech", "Velvet Consulting", "Vertone", "VISEO", "Wavestone",
-    "Wed'R (Stanwell)", "Wemanity", "WERIN", "WOLD", "XEBIA", "Yeita", "Zenika",
+    "Wed'R (Stanwell)", "Wemanity", "WERIN", "Wivoo", "WOLD", "XEBIA", "Yeita", "Zenika",
 ]
 
 # URN LinkedIn d'entreprises (filtre currentCompany précis). Versionné → déployé
 # avec l'app. Clés en minuscules. Complété au fil de l'eau (ex. concurrents).
 COMPANY_URNS = {
     "thiga": "4998677",
+    "adone": "930867",      # Adone Conseil
+    "wivoo": "12596040",    # Wivoo, filiale de Wavestone
     "leroy merlin": "164715",
     "kering": "165528",
     "winamax": "862188",
