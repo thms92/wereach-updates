@@ -56,6 +56,8 @@ def lancer_app(page: str, authentifier: bool = True, timeout: int = 120) -> AppT
     at = AppTest.from_file(str(APP), default_timeout=timeout)
     if authentifier:
         at.session_state["auth_email"] = EMAIL_DE_TEST
+    # Le nom est demandé au premier lancement : les tests le donnent d'office.
+    at.session_state["nom_utilisateur"] = "Personne Test"
     at.session_state["page"] = page
     at.run()
     return at

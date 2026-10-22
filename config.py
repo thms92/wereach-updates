@@ -209,6 +209,10 @@ CONCURRENTS = [
     "Wed'R (Stanwell)", "Wemanity", "WERIN", "Wivoo", "WOLD", "XEBIA", "Yeita", "Zenika",
 ]
 
+# Webhook n8n qui reçoit, à chaque ouverture, le nom, la version et la date
+# (utils/identite.py). Vide : rien n'est envoyé.
+WEBHOOK_CONNEXIONS = os.getenv("WEREACH_WEBHOOK_CONNEXIONS", "")
+
 # URN LinkedIn d'entreprises (filtre currentCompany précis). Versionné → déployé
 # avec l'app. Clés en minuscules. Complété au fil de l'eau (ex. concurrents).
 COMPANY_URNS = {

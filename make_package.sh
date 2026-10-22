@@ -201,6 +201,9 @@ version existe (quelques secondes).
 - Tu ne recevras JAMAIS de nouveau zip a reinstaller.
 - Tu n'auras JAMAIS a refaire l'ETAPE 2.
 - Ta version est affichee en bas de la barre de gauche : "We.Reach vX.Y.Z".
+- Au premier lancement, We.Reach te demande ton prenom et ton nom. A chaque
+  ouverture, il signale a Thomas ton nom, ta version et l'heure : rien
+  d'autre (ni contacts, ni recherches, ni session LinkedIn).
 
 ----------------------------------------------------------
 UTILISER

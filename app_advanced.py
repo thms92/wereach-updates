@@ -33,6 +33,8 @@ from version import get_version
 from utils.nouveautes import (charger_notes, doit_annoncer, usage_anterieur,
                               version_vue)
 from utils.tutoriel import etapes_pour, marquer_vu, tutoriel_a_afficher
+from utils.identite import enregistrer_nom, lire_nom, nom_par_defaut, signaler_connexion
+from config import WEBHOOK_CONNEXIONS
 from ui.tutoriel import CLE_FIN, script_visite
 from utils.diagnostic import lien_mailto, ouvrir_mail, rapport
 from utils.mise_a_jour import (mise_a_jour_disponible, relancer,
@@ -109,6 +111,32 @@ if st.session_state.get('user_email') != _email:
     st.session_state.user_proxy = load_proxy(
         str(paths.proxy_file), str(paths.key_file)
     )
+
+# Le nom de la personne, demandé une seule fois (gardé sur son Mac), puis
+# un signal par ouverture : nom, version, date — rien d'autre.
+if "nom_utilisateur" not in st.session_state:
+    st.session_state.nom_utilisateur = lire_nom(st.session_state.user_paths.config_dir)
+if not st.session_state.nom_utilisateur:
+    st.markdown(wordmark(size=2.4), unsafe_allow_html=True)
+    _c1, _c2, _c3 = st.columns([1, 2, 1])
+    with _c2:
+        st.subheader("Bienvenue", anchor=False)
+        with st.form("form_nom"):
+            _nom = st.text_input("Votre prénom et nom", value=nom_par_defaut(),
+                                 key="saisie_nom")
+            if st.form_submit_button("Enregistrer", type="primary", width="stretch"):
+                if _nom.strip():
+                    enregistrer_nom(st.session_state.user_paths.config_dir, _nom)
+                    st.session_state.nom_utilisateur = _nom.strip()
+                    st.rerun()
+                else:
+                    st.error("Indiquez votre prénom et votre nom.")
+        st.caption("Demandé une seule fois. À chaque ouverture, We.Reach signale à "
+                   "Thomas votre nom, votre version et l'heure de connexion, et rien d'autre.")
+    st.stop()
+if not st.session_state.get("connexion_signalee"):
+    st.session_state.connexion_signalee = True
+    signaler_connexion(WEBHOOK_CONNEXIONS, st.session_state.nom_utilisateur, get_version())
 
 # Le wordmark vit en tête de la barre latérale : la zone principale
 # commence directement par le titre de la page.
@@ -288,6 +316,16 @@ with st.sidebar.expander("Signaler un problème", icon=":material/bug_report:"):
         else:
             st.warning("Impossible d'ouvrir la messagerie : copiez le texte ci-dessous.")
     st.code(_diagnostic)
+
+with st.sidebar.expander("Votre nom", icon=":material/person:"):
+    _nouveau_nom = st.text_input("Prénom et nom", value=st.session_state.nom_utilisateur,
+                                 key="modif_nom", label_visibility="collapsed")
+    if st.button("Enregistrer", key="btn_modif_nom", width="stretch",
+                 disabled=not _nouveau_nom.strip()
+                 or _nouveau_nom.strip() == st.session_state.nom_utilisateur):
+        enregistrer_nom(st.session_state.user_paths.config_dir, _nouveau_nom)
+        st.session_state.nom_utilisateur = _nouveau_nom.strip()
+        st.rerun()
 
 # Pied de barre latérale, discret : compte connecté, version, vérification
 # des mises à jour, déconnexion.
