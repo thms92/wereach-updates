@@ -5,6 +5,16 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.8.2
+
+**La recherche ne propose plus que des personnes à inviter.**
+Vos relations directes et les personnes à qui vous avez déjà envoyé une
+invitation (« En attente ») sont écartées de la liste. Si vous demandez 20
+profils, la recherche continue jusqu'à en trouver 20 nouveaux.
+
+**Deux cabinets en plus.**
+Adone et Wivoo rejoignent la liste des cabinets concurrents.
+
 ## 1.8.1
 
 **Des menus plus lisibles.**
