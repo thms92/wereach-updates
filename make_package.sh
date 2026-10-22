@@ -130,98 +130,92 @@ chmod +x "$BOOT"
 echo "4) LIRE-MOI au niveau supérieur…"
 cat > "$STAGE/We.Reach/0 - LIRE-MOI.txt" <<'TXT'
 ==========================================================
-  We.Reach — Installation (Mac)
-  ~5 minutes, UNE SEULE FOIS. Rien à installer à la main.
+  We.Reach - Installation (Mac)
+  5 minutes, UNE SEULE FOIS. Suis les etapes DANS L'ORDRE.
 ==========================================================
 
+ETAPE 1 - Sortir le dossier du zip
+----------------------------------
+Si un ancien dossier "We.Reach" est deja dans Telechargements, mets-le
+d'abord a la corbeille (sinon le nouveau s'appellera "We.Reach 2").
+Double-clic sur le zip -> un dossier "We.Reach" apparait.
+LAISSE-LE DANS TELECHARGEMENTS (ne le deplace pas pour l'instant).
+
+
+ETAPE 2 - Autoriser We.Reach (une seule fois, 30 secondes)
 ----------------------------------------------------------
-ETAPE 1 — Sortir le dossier du zip
-----------------------------------------------------------
-Double-clic sur We.Reach.zip -> tu obtiens un dossier "We.Reach".
-Mets-le où tu veux (ex. le Bureau).
+macOS bloque tout fichier venu d'internet qui ne vient pas de l'App
+Store. Si tu double-cliques tout de suite sur le lanceur, il refusera de
+l'ouvrir. On l'autorise d'abord :
 
-----------------------------------------------------------
-ETAPE 2 — Autoriser le lanceur (la seule etape un peu penible)
-----------------------------------------------------------
-macOS bloque par principe TOUT fichier venu d'internet. C'est normal,
-ce n'est pas un probleme de l'outil : Apple ne peut pas verifier un
-programme qui ne vient pas de son Store.
+  a. Ouvre l'app "Terminal" :
+     Cmd + Espace, tape  Terminal  puis Entree.
 
-Si tu double-cliques maintenant, tu verras une alerte qui ne propose que
-"Placer dans la corbeille" et "Termine". Ne clique SURTOUT PAS sur la
-corbeille : clique "Termine", et suis l'une des deux methodes ci-dessous.
+  b. Copie la ligne ci-dessous EN ENTIER (selectionne-la, Cmd + C) :
 
-  >> A faire UNE SEULE FOIS. Plus jamais ensuite, mises a jour comprises. <<
+        xattr -cr ~/Downloads/We.Reach
 
+  c. Colle-la dans le Terminal (Cmd + V) et appuie sur Entree.
 
-  METHODE RAPIDE (30 secondes, une commande a coller)
-  ---------------------------------------------------
-    1. Ouvre l'app "Terminal" (Cmd+Espace, tape "Terminal", Entree)
-    2. Tape ceci SANS valider, avec un espace a la fin :
+  d. Rien ne s'affiche ? C'est REUSSI. Tu peux fermer le Terminal.
 
-           xattr -cr 
-
-    3. Fais glisser le dossier "We.Reach" depuis le Finder JUSQUE DANS
-       la fenetre du Terminal : son chemin s'ecrit tout seul.
-    4. Appuie sur Entree. Rien ne s'affiche = c'est reussi.
-    5. Double-clic sur "1 - Lancer We.Reach.command" -> ETAPE 3.
+     Un message "No such file" ? Le dossier n'est pas dans
+     Telechargements : remets-le dans Telechargements et recommence c.
 
 
-  METHODE SANS TERMINAL (2 minutes, par les Reglages)
-  ---------------------------------------------------
-    1. Double-clic sur "1 - Lancer We.Reach.command"
-       -> l'alerte apparait, clique "Termine"
-    2. Ouvre  Reglages Systeme > Confidentialite et securite
-    3. Descends tout en bas, section "Securite". Tu vois la ligne :
-           << "1 - Lancer We.Reach.command" a ete bloque... >>
-    4. Clique "Ouvrir quand meme", puis saisis le mot de passe de ta
-       session Mac
-    5. Re-double-clic sur "1 - Lancer We.Reach.command" -> "Ouvrir"
+ETAPE 3 - Lancer We.Reach
+-------------------------
+Ouvre le dossier We.Reach et double-clic sur :
 
-  (Sur les macOS plus anciens, un CLIC DROIT > Ouvrir suffisait. Ca ne
-   marche plus depuis macOS Sequoia : utilise une des deux methodes.)
+        1 - Lancer We.Reach.command
 
-----------------------------------------------------------
-ETAPE 3 — Laisser faire (2 a 5 min, automatique)
-----------------------------------------------------------
-Une fenetre noire installe TOUT toute seule :
-  - Python si tu ne l'as pas (macOS demandera le mot de passe de ta
-    session — c'est normal, c'est pour installer Python),
-  - les composants + le navigateur.
-Laisse faire, ne ferme rien.
-Ton navigateur s'ouvre ensuite sur We.Reach.
+Une fenetre noire s'ouvre et installe TOUT toute seule (2 a 5 min) :
+Python si besoin (macOS peut demander le mot de passe de ta session,
+c'est normal), les composants et le navigateur. Ne ferme rien.
+We.Reach s'ouvre ensuite dans ton navigateur.
 
-  >> Garde la fenetre noire OUVERTE pendant que tu utilises l'outil. <<
+  >> Garde la fenetre noire OUVERTE pendant que tu utilises l'outil
+     (tu peux la reduire dans le Dock). <<
 
-----------------------------------------------------------
-MISES A JOUR — automatiques, rien a faire
-----------------------------------------------------------
-A chaque ouverture, We.Reach se met a jour tout seul si une nouvelle
-version existe (quelques secondes).
-- Tu ne recevras JAMAIS de nouveau zip a reinstaller.
-- Tu n'auras JAMAIS a refaire l'ETAPE 2.
-- Ta version est affichee en bas de la barre de gauche : "We.Reach vX.Y.Z".
-- Au premier lancement, We.Reach te demande ton prenom et ton nom. A chaque
-  ouverture, il signale a Thomas ton nom, ta version et l'heure : rien
-  d'autre (ni contacts, ni recherches, ni session LinkedIn).
+Tu peux maintenant deplacer le dossier We.Reach ou tu veux (Bureau,
+Documents...) : il restera autorise.
 
-----------------------------------------------------------
-UTILISER
-----------------------------------------------------------
-- Recupere ton cookie LinkedIn (li_at) : voir l'encadre "Comment recuperer
-  mon cookie" dans l'app (page Recherche). Colle-le -> Enregistrer.
-  (Ton cookie est personnel et chiffre sur TON Mac — ne le partage jamais.)
-- Limite volontaire : 20 invitations / jour (protege ton compte LinkedIn).
-- Pour relancer un autre jour : re-double-clic sur le meme fichier (instantane).
 
-----------------------------------------------------------
+SI L'ETAPE 2 NE MARCHE PAS (methode sans Terminal)
+--------------------------------------------------
+  1. Double-clic sur "1 - Lancer We.Reach.command"
+     -> une alerte apparait : clique "Termine" (JAMAIS "Corbeille").
+  2. Ouvre Reglages Systeme > Confidentialite et securite.
+  3. Descends tout en bas : clique "Ouvrir quand meme", puis saisis le
+     mot de passe de ta session Mac.
+  4. Double-clic a nouveau sur "1 - Lancer We.Reach.command"
+     -> "Ouvrir". L'installation demarre (ETAPE 3).
+
+
+==========================================================
+ENSUITE - TOUT EST AUTOMATIQUE
+==========================================================
+- Au quotidien : double-clic sur "1 - Lancer We.Reach.command".
+  L'outil s'ouvre dans un onglet de ton navigateur, que tu peux garder
+  ouvert toute la journee (favori : http://localhost:8501).
+- Si tu fermes la fenetre noire ou redemarres le Mac : relance le meme
+  fichier.
+- Mises a jour : automatiques a chaque lancement. Tu ne recevras JAMAIS
+  de nouveau zip, et tu n'auras JAMAIS a refaire l'ETAPE 2.
+- Ta version s'affiche en bas de la barre de gauche ("We.Reach X.Y.Z").
+- Au premier lancement, We.Reach te demande ton prenom et ton nom. A
+  chaque ouverture, il signale a Thomas ton nom, ta version et l'heure :
+  rien d'autre (ni contacts, ni recherches, ni session LinkedIn).
+- Session LinkedIn : l'outil t'explique comment la recuperer (page
+  Recherche). Elle est personnelle : ne la partage jamais.
+
 UN SOUCI ?
-----------------------------------------------------------
-- Bloque sur "Email:" dans la fenetre noire -> appuie juste sur Entree.
-- Ecran "Ce site est inaccessible" -> attends 1 min (1re fois = longue).
-- Autre -> envoie une capture de la fenetre noire a Thomas.
+----------
+- En cas d'erreur, une fenetre propose d'envoyer un rapport a Thomas, et
+  un fichier diagnostic-wereach.txt est depose sur ton Bureau.
+- Sinon, envoie une photo de la fenetre noire a Thomas.
 
-(Le dossier "app" contient le programme — n'y touche pas.)
+(Le dossier "app" contient le programme : n'y touche pas.)
 ==========================================================
 TXT
 
