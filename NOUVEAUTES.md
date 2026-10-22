@@ -5,6 +5,15 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.8.4
+
+**« Tester la session » fonctionne pour tout le monde.**
+Le test vérifie désormais la session LinkedIn que vous avez enregistrée.
+
+**Des boutons lisibles.**
+Le texte des boutons bleus est toujours blanc, et le navigateur ne traduit
+plus la page de travers.
+
 ## 1.8.3
 
 **Votre nom, demandé une seule fois.**
