@@ -38,7 +38,7 @@ diagnostic() {
   echo "Version      : $(cat VERSION 2>/dev/null || echo inconnue)"
   echo "macOS        : $(sw_vers -productVersion 2>/dev/null || echo inconnu)"
   echo "Mac          : $(sysctl -n hw.model 2>/dev/null || echo inconnu)"
-  echo "Python       : $(python3 --version 2>&1 || echo introuvable)"
+  echo "Python       : $("$HOME/Library/Application Support/We.Reach/python/bin/python3" --version 2>&1 || python3 --version 2>&1 || echo introuvable)"
   echo "Dossier      : $PWD"
   if command -v venv_ok >/dev/null 2>&1 && [ -n "${VENV:-}" ]; then
     echo "Environnement: $(venv_ok "$VENV" && echo sain || echo "absent ou casse")"
@@ -88,27 +88,43 @@ rm -f ".werite_test"
 # plus rien a evaluer, jamais.
 xattr -cr "$PWD/.." 2>/dev/null || true
 
-# 1) Python 3 (>= 3.10) — sinon INSTALLATION AUTOMATIQUE
+# L'environnement et Python vivent HORS du dossier de l'application (voir
+# l'etape 2 pour la raison : iCloud).
+SUPPORT="$HOME/Library/Application Support/We.Reach"
+VENV="$SUPPORT/venv"
+mkdir -p "$SUPPORT" 2>/dev/null
+
+# 1) Python — version AUTONOME, rangee dans le dossier de We.Reach.
+# L'installeur officiel (.pkg) exige le mot de passe d'un ADMINISTRATEUR : sur
+# un Mac gere par l'entreprise, ou si la fenetre est fermee, l'installation
+# echouait (cas reel, 2026-10-22). La version autonome (python-build-standalone,
+# 15 Mo) se decompresse simplement : ni mot de passe, ni droits, rien dans le
+# systeme. Elle ne sert qu'a creer l'environnement de l'outil (etape 2).
 # 3.10 est le vrai plancher : utils/user_context.py et utils/app_auth.py
 # annotent en `str | None`, syntaxe qui lève une TypeError à l'import sous 3.9.
 PYVER="3.12.7"
-PKG_URL="https://www.python.org/ftp/python/${PYVER}/python-${PYVER}-macos11.pkg"
-python_ok() { command -v python3 &>/dev/null && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; }
-
-if ! python_ok; then
-  echo "Python n'est pas installe — installation automatique."
-  echo "(macOS va te demander le mot de passe de ta session, c'est normal.)"
-  osascript -e 'display notification "Installation de Python en cours..." with title "We.Reach"' >/dev/null 2>&1
-  curl -fsSL -o /tmp/wereach-python.pkg "$PKG_URL" \
-    || { open "https://www.python.org/downloads/" 2>/dev/null; fail "Telechargement de Python impossible (connexion internet ?). Installe-le depuis la page ouverte, puis relance."; }
-  osascript -e 'do shell script "installer -pkg /tmp/wereach-python.pkg -target /" with administrator privileges' \
-    || { open "https://www.python.org/downloads/" 2>/dev/null; fail "Installation automatique de Python echouee (droits admin ?). Installe-le depuis la page ouverte, puis relance."; }
-  rm -f /tmp/wereach-python.pkg
-  export PATH="/usr/local/bin:/Library/Frameworks/Python.framework/Versions/Current/bin:$PATH"
-  hash -r
-  python_ok || fail "Python installe mais introuvable. Redemarre le Mac et relance, ou contacte Thomas."
-  echo "Python installe avec succes."
-fi
+PYBUILD="20241016"
+installer_python() {
+  local arch tmp
+  PY="$SUPPORT/python/bin/python3"
+  [ -x "$PY" ] && "$PY" -c 'import sys' >/dev/null 2>&1 && return 0
+  case "$(uname -m)" in
+    arm64) arch="aarch64" ;;
+    *)     arch="x86_64" ;;
+  esac
+  echo "Installation de Python (15 Mo, sans mot de passe)..."
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "$tmp/python.tgz" \
+    "https://github.com/astral-sh/python-build-standalone/releases/download/${PYBUILD}/cpython-${PYVER}+${PYBUILD}-${arch}-apple-darwin-install_only.tar.gz" \
+    || { rm -rf "$tmp"; fail "Telechargement de Python impossible (connexion internet ?). Relance le lanceur."; }
+  rm -rf "$SUPPORT/python"
+  tar xzf "$tmp/python.tgz" -C "$SUPPORT" || { rm -rf "$tmp"; fail "Python telecharge mais illisible. Relance le lanceur."; }
+  rm -rf "$tmp"
+  xattr -cr "$SUPPORT/python" 2>/dev/null || true
+  "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' \
+    || fail "Python installe mais inutilisable. Contacte Thomas."
+  echo "Python installe."
+}
 
 # Double-cliquer le lanceur alors que l'outil tourne deja remplacait les
 # fichiers sous le processus en cours : il rechargeait le nouveau
@@ -152,9 +168,6 @@ venv_ok() {
 # du venv. Seul Telechargements y echappait, d'ou un outil qui ne demarrait
 # qu'a cet endroit. Application Support n'est jamais synchronise : le dossier
 # de l'app devient deplacable n'importe ou.
-SUPPORT="$HOME/Library/Application Support/We.Reach"
-VENV="$SUPPORT/venv"
-mkdir -p "$SUPPORT" 2>/dev/null
 
 if ! venv_ok "$VENV"; then
   if [ -d "$VENV" ]; then
@@ -164,7 +177,8 @@ if ! venv_ok "$VENV"; then
   else
     echo "Premiere installation (2 a 5 minutes)..."
   fi
-  python3 -m venv "$VENV" || fail "Impossible de creer l'environnement Python."
+  installer_python
+  "$PY" -m venv "$VENV" || fail "Impossible de creer l'environnement Python."
 fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate" || fail "Environnement Python illisible. Contacte Thomas."

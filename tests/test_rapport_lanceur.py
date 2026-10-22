@@ -71,3 +71,10 @@ def test_le_diagnostic_tient_sans_journal(tmp_path):
     sortie = _executer(script, cwd=tmp_path)
     assert "journal introuvable" in sortie
     assert "une erreur" in sortie
+
+
+def test_python_sans_droits_administrateur():
+    """L'installeur .pkg exigeait un administrateur : échec réel le 2026-10-22."""
+    texte = LANCEUR.read_text(encoding="utf-8")
+    assert "with administrator privileges" not in texte
+    assert "python-build-standalone" in texte and "install_only.tar.gz" in texte

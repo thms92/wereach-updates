@@ -5,6 +5,17 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.8.3
+
+**Votre nom, demandé une seule fois.**
+Au premier lancement, We.Reach vous demande votre prénom et votre nom. Vous
+pouvez le modifier dans la barre latérale (« Votre nom »). À chaque
+ouverture, l'outil signale à Thomas votre nom, votre version et l'heure de
+connexion, et rien d'autre.
+
+**Installation plus simple.**
+Plus besoin de mot de passe administrateur pour installer l'outil.
+
 ## 1.8.2
 
 **La recherche ne propose plus que des personnes à inviter.**
