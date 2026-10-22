@@ -180,6 +180,10 @@ def construire_url_recherche(
 
     params.append("origin=FACETED_SEARCH")
 
+    # 2e et 3e degré seulement : les relations directes n'ont rien à
+    # recevoir (retour d'une collègue, 2026-10-22).
+    params.append('network=%5B%22S%22%2C%22O%22%5D')
+
     # Filtre géographique Île-de-France
     if ile_de_france:
         params.append('geoUrn=%5B%22104246759%22%5D')

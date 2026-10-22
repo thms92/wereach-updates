@@ -25,6 +25,7 @@ def espion(monkeypatch):
     class FauxScraper:
         def __init__(self, **kwargs):
             self.errors = []
+            self.ecartes_reseau = etat.get("ecartes", 0)
 
         def run_scraper(self, **kwargs):
             etat["recherches"].append(kwargs)
@@ -92,3 +93,10 @@ def test_sans_critere_rien_ne_part(espion):
     at = _rechercher(mots="")
     assert espion["recherches"] == []
     assert any("au moins un filtre" in e.value for e in at.error)
+
+
+def test_les_profils_deja_en_relation_ou_invites_sont_comptes(espion):
+    espion["ecartes"] = 4
+    at = _rechercher()
+    assert any("4 profils déjà dans votre réseau ou déjà invités ont été écartés" in c.value
+               for c in at.caption)

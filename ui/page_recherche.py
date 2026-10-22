@@ -298,6 +298,7 @@ def afficher_page_recherche():
                 } for r in (df.to_dict("records") if df is not None and not df.empty else [])
                     if r.get("URL du profil")]
                 st.session_state["crit_erreurs"] = list(scraper.errors)
+                st.session_state["crit_ecartes"] = getattr(scraper, "ecartes_reseau", 0)
                 reinitialiser_choix("crit")
                 st.session_state.pop("crit_message", None)
 
@@ -308,13 +309,17 @@ def afficher_page_recherche():
             st.subheader("2. Choisir les profils", anchor=False)
             if not profils:
                 st.info(
-                    "Aucun nouveau profil trouvé. Les profils déjà dans votre fichier "
-                    "sont écartés ; essayez d'élargir les critères, ou sans entreprise "
+                    "Aucun nouveau profil trouvé. Les profils déjà dans votre fichier, "
+                    "dans votre réseau ou déjà invités sont écartés ; essayez d'élargir les critères, ou sans entreprise "
                     "si elle n'a pas pu être identifiée (détail dans le Journal)."
                 )
             else:
-                st.caption("Les profils trouvés sont enregistrés dans l'Historique. "
-                           "Décochez ceux que vous ne voulez pas inviter.")
+                ecartes = st.session_state.get("crit_ecartes") or 0
+                st.caption(
+                    "Les profils trouvés sont enregistrés dans l'Historique. "
+                    "Décochez ceux que vous ne voulez pas inviter."
+                    + (f" {pluriel(ecartes, 'profil déjà dans votre réseau ou déjà invité a été écarté', 'profils déjà dans votre réseau ou déjà invités ont été écartés')}."
+                       if ecartes else ""))
                 choisis = choisir_profils(profils, "crit")
                 st.subheader("3. Inviter", anchor=False)
                 if not choisis:

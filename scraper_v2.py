@@ -47,6 +47,15 @@ def lecture_ratee(ou: str) -> str:
 
 
 
+def deja_en_relation_ou_invite(profil: dict) -> bool:
+    """Déjà dans le réseau (1er) ou invitation en attente : rien à proposer.
+
+    Le bouton « Message » seul ne suffit pas : LinkedIn l'affiche aussi pour
+    des 2e ou 3e degré au profil ouvert, qui restent invitables.
+    """
+    return profil.get("degre") == "1er" or bool(profil.get("en_attente"))
+
+
 class LinkedInScraperV2:
     """
     Scraper LinkedIn V2 - Version améliorée avec async/await
@@ -65,6 +74,7 @@ class LinkedInScraperV2:
         self.config = ScraperConfig()
         self.profil_file = profiles_csv or self.config.PROFIL_FILE
         self.errors = []
+        self.ecartes_reseau = 0
         self.use_database = use_database
 
         # Initialiser le gestionnaire réseau avec retry
@@ -1014,6 +1024,7 @@ class LinkedInScraperV2:
         start_time = datetime.now()
         donnees = []
         self.errors = []
+        self.ecartes_reseau = 0
 
         # Réinitialiser la fatigue pour chaque nouvelle session
         self.human = self._nouvelle_session_humaine()
@@ -1272,6 +1283,12 @@ class LinkedInScraperV2:
                         # Vérifier si déjà vu dans cette session
                         if url_profil in urls_session:
                             logger.info(f"⏭️ {nom} - Déjà vu dans cette session")
+                            continue
+
+                        if deja_en_relation_ou_invite(profile):
+                            urls_session.add(url_profil)
+                            self.ecartes_reseau += 1
+                            logger.info(f"⏭️ {nom} - Déjà en relation ou invitation en attente")
                             continue
 
                         # Vérifier si déjà scrapé globalement

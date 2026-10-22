@@ -47,6 +47,8 @@ class ProfileExtractor:
                 'url': url,
                 'localisation': location,
                 'connexions': connections,
+                'degre': profile_data.get('degre', '') or '',
+                'en_attente': bool(profile_data.get('enAttente')),
             }
 
             logger.debug(f"✅ Profil extrait : {name} - {job_title} @ {company}")

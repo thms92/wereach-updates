@@ -53,15 +53,17 @@ def choisir_profils(profils: list, prefixe: str, note: str = "") -> list:
               on_click=_tout, args=(False,))
 
     avec_deja = any(p.get("deja") for p in profils)
+    avec_relation = any(p.get("degre") for p in profils)
     lignes = []
     for p in profils:
         ligne = {
             "Choisir": bool(choix.get(p.get("url"), _par_defaut(p))),
             "Nom": p.get("nom") or "",
             "Intitulé": p.get("intitule") or "",
-            "Relation": p.get("degre") or "",
-            "Invitable": "Oui" if p.get("invitable") else "Non",
         }
+        if avec_relation:
+            ligne["Relation"] = p.get("degre") or ""
+        ligne["Invitable"] = "Oui" if p.get("invitable") else "Non"
         if avec_deja:
             ligne["Déjà au fichier"] = "Oui" if p.get("deja") else ""
         ligne["Profil"] = p.get("url") or ""

@@ -432,6 +432,20 @@ class DOMSelectors:
                     }
                 }
 
+                // Relation et invitation en attente, lues sur la carte : la
+                // recherche écarte ceux qui sont déjà dans le réseau (1er) ou
+                // déjà invités (« En attente »). Retour d'une collègue, 2026-10-22.
+                const texteCarte = container.innerText || container.textContent || '';
+                const marqueDegre = texteCarte.match(/[·•]\s*(1er|2e|3e|1st|2nd|3rd)/);
+                const degre = marqueDegre
+                    ? ({'1st': '1er', '2nd': '2e', '3rd': '3e'}[marqueDegre[1]] || marqueDegre[1])
+                    : '';
+                const enAttente = Array.from(
+                    container.querySelectorAll('button, a[role="button"], a[aria-label]')
+                ).some(b => /^\s*(en attente|pending)\b|retirer l.invitation|withdraw invitation/i.test(
+                    (b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')
+                ));
+
                 seenHrefs.add(cleanHref);
 
                 return {
@@ -441,6 +455,8 @@ class DOMSelectors:
                     company: company,
                     location: location,
                     connections: '',
+                    degre: degre,
+                    enAttente: enAttente,
                     _method: usedMethod
                 };
             }
