@@ -142,54 +142,48 @@ Double-clic sur le zip -> un dossier "We.Reach" apparait.
 LAISSE-LE DANS TELECHARGEMENTS (ne le deplace pas pour l'instant).
 
 
-ETAPE 2 - Autoriser We.Reach (une seule fois, 30 secondes)
-----------------------------------------------------------
+ETAPE 2 - Autoriser We.Reach (une seule fois, 1 minute, sans Terminal)
+----------------------------------------------------------------------
 macOS bloque tout fichier venu d'internet qui ne vient pas de l'App
-Store. Si tu double-cliques tout de suite sur le lanceur, il refusera de
-l'ouvrir. On l'autorise d'abord :
+Store. La premiere fois, il faut l'autoriser :
 
-  a. Ouvre l'app "Terminal" :
-     Cmd + Espace, tape  Terminal  puis Entree.
-
-  b. Copie la ligne ci-dessous EN ENTIER (selectionne-la, Cmd + C) :
-
-        xattr -cr ~/Downloads/We.Reach
-
-  c. Colle-la dans le Terminal (Cmd + V) et appuie sur Entree.
-
-  d. Rien ne s'affiche ? C'est REUSSI. Tu peux fermer le Terminal.
-
-     Un message "No such file" ? Le dossier n'est pas dans
-     Telechargements : remets-le dans Telechargements et recommence c.
-
-
-ETAPE 3 - Lancer We.Reach
--------------------------
-Ouvre le dossier We.Reach et double-clic sur :
-
+  a. Ouvre le dossier We.Reach et double-clic sur
         1 - Lancer We.Reach.command
+     -> une alerte "Apple n'a pas pu verifier..." apparait.
+     Clique "Termine".  (JAMAIS "Placer dans la corbeille".)
 
-Une fenetre noire s'ouvre et installe TOUT toute seule (2 a 5 min) :
-Python si besoin (macOS peut demander le mot de passe de ta session,
-c'est normal), les composants et le navigateur. Ne ferme rien.
+  b. Ouvre  Reglages Systeme  (pomme en haut a gauche > Reglages
+     Systeme), puis  Confidentialite et securite  dans la colonne de
+     gauche.
+
+  c. Descends tout en bas de la page. Tu vois :
+        "1 - Lancer We.Reach.command" a ete bloque...
+     Clique  "Ouvrir quand meme" , puis saisis le mot de passe de ta
+     session Mac.
+
+  d. Double-clic a nouveau sur "1 - Lancer We.Reach.command"
+     -> clique "Ouvrir". C'est parti (ETAPE 3).
+
+
+ETAPE 3 - Laisser faire (2 a 5 min, automatique)
+------------------------------------------------
+Une fenetre noire s'ouvre et installe TOUT toute seule : Python si
+besoin (macOS peut redemander le mot de passe de ta session, c'est
+normal), les composants et le navigateur. Ne ferme rien.
 We.Reach s'ouvre ensuite dans ton navigateur.
 
   >> Garde la fenetre noire OUVERTE pendant que tu utilises l'outil
      (tu peux la reduire dans le Dock). <<
 
-Tu peux maintenant deplacer le dossier We.Reach ou tu veux (Bureau,
-Documents...) : il restera autorise.
 
+SI TU NE TROUVES PAS "Ouvrir quand meme" (secours, 1 ligne)
+----------------------------------------------------------
+  1. Cmd + Espace, tape  Terminal  puis Entree.
+  2. Copie cette ligne en entier, colle-la (Cmd + V), puis Entree :
 
-SI L'ETAPE 2 NE MARCHE PAS (methode sans Terminal)
---------------------------------------------------
-  1. Double-clic sur "1 - Lancer We.Reach.command"
-     -> une alerte apparait : clique "Termine" (JAMAIS "Corbeille").
-  2. Ouvre Reglages Systeme > Confidentialite et securite.
-  3. Descends tout en bas : clique "Ouvrir quand meme", puis saisis le
-     mot de passe de ta session Mac.
-  4. Double-clic a nouveau sur "1 - Lancer We.Reach.command"
-     -> "Ouvrir". L'installation demarre (ETAPE 3).
+        xattr -cr ~/Downloads/We.Reach
+
+  3. Rien ne s'affiche = reussi. Double-clic sur le lanceur (ETAPE 3).
 
 
 ==========================================================
