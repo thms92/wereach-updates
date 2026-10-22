@@ -244,80 +244,83 @@ section[data-testid="stSidebar"] [data-testid="stAlert"] > div { background:rgba
 .st-key-nav_menu { gap:2px !important; }
 /* Les libellés étaient centrés : Streamlit intercale un div interne qui
    recentre, il faut aligner le bouton ET ce div. */
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button {
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button {
   justify-content:flex-start !important; border:none !important; background:transparent !important;
   box-shadow:none !important; transform:none !important;
   font-weight:500 !important; border-radius:10px !important; padding:9px 12px !important;
   color:rgba(255,255,255,.86) !important;
   transition:background-color 120ms ease, color 120ms ease !important;
 }
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button * { color:inherit !important; }
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button > div { justify-content:flex-start !important; width:100% !important; }
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button:hover { background:rgba(255,255,255,.08) !important; color:#FFFFFF !important; }
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button * { color:inherit !important; }
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button > div { justify-content:flex-start !important; width:100% !important; }
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button:hover { background:rgba(255,255,255,.08) !important; color:#FFFFFF !important; }
 /* Item actif : le fond va sur le BOUTON SEUL (deux couches translucides
    dessinaient un rectangle autour du texte). */
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button[kind="primary"] { background:rgba(255,255,255,.14) !important; }
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button[kind="primary"],
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button[kind="primary"] * { color:#FFFFFF !important; font-weight:700 !important; }
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button[kind="primary"] { background:rgba(255,255,255,.14) !important; }
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button[kind="primary"],
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button[kind="primary"] * { color:#FFFFFF !important; font-weight:700 !important; }
 
 /* ---------- Boutons ---------- */
-.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+.stButton button, .stDownloadButton button, .stFormSubmitButton button {
   font-family:'Inter' !important; font-weight:600; font-size:.875rem; border-radius:10px; padding:.55rem 1.1rem;
   transition:transform 120ms var(--wf-ease), box-shadow 150ms var(--wf-ease), background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
-.stButton > button[kind="secondary"], .stDownloadButton > button[kind="secondary"], .stFormSubmitButton > button[kind="secondary"] {
+.stButton button[kind="secondary"], .stDownloadButton button[kind="secondary"], .stFormSubmitButton button[kind="secondary"] {
   border:1px solid var(--wf-border); background:var(--wf-surface); color:var(--wf-text);
 }
-.stButton > button[kind="secondary"]:hover, .stDownloadButton > button[kind="secondary"]:hover, .stFormSubmitButton > button[kind="secondary"]:hover {
+.stButton button[kind="secondary"]:hover, .stDownloadButton button[kind="secondary"]:hover, .stFormSubmitButton button[kind="secondary"]:hover {
   border-color:var(--wf-accent); color:var(--wf-accent-strong);
 }
-.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {
+.stButton button[kind="primary"], .stDownloadButton button[kind="primary"], .stFormSubmitButton button[kind="primary"] {
   background:var(--wf-accent) !important; color:var(--wf-on-accent) !important; border:none !important; font-weight:700;
   box-shadow:0 1px 2px rgba(23,41,130,.30);
 }
-.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {
+.stButton button[kind="primary"]:hover, .stDownloadButton button[kind="primary"]:hover, .stFormSubmitButton button[kind="primary"]:hover {
   background:var(--wf-accent-strong) !important;
 }
 /* Le soulèvement au survol est réservé à la souris (au toucher, le survol se
    déclenche par erreur) et aux boutons de taille normale : ni le menu, ni
    les petits boutons de la barre latérale, survolés des dizaines de fois. */
 @media (hover: hover) and (pointer: fine) {
-  [data-testid="stMain"] .stButton > button[kind="secondary"]:hover,
-  [data-testid="stMain"] .stDownloadButton > button[kind="secondary"]:hover { transform:translateY(-1px); box-shadow:var(--wf-shadow-hover); }
-  [data-testid="stMain"] .stButton > button[kind="primary"]:hover,
-  [data-testid="stMain"] .stFormSubmitButton > button[kind="primary"]:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(23,41,130,.24); }
+  [data-testid="stMain"] .stButton button[kind="secondary"]:hover,
+  [data-testid="stMain"] .stDownloadButton button[kind="secondary"]:hover { transform:translateY(-1px); box-shadow:var(--wf-shadow-hover); }
+  [data-testid="stMain"] .stButton button[kind="primary"]:hover,
+  [data-testid="stMain"] .stFormSubmitButton button[kind="primary"]:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(23,41,130,.24); }
 }
 /* Appui : un léger enfoncement confirme que le clic a été entendu. */
 /* `[kind]` et `[data-testid]` : aussi précis que la règle de survol, et
    placé après elle — sinon le bouton restait soulevé pendant l'appui. */
-.stButton > button:active, .stDownloadButton > button:active, .stFormSubmitButton > button:active,
-[data-testid="stMain"] .stButton > button[kind]:active, [data-testid="stMain"] .stDownloadButton > button[kind]:active,
-[data-testid="stMain"] .stFormSubmitButton > button[kind]:active { transform:scale(.97); transition-duration:80ms; }
-.stButton > button:disabled, .stDownloadButton > button:disabled, .stFormSubmitButton > button:disabled { transform:none !important; box-shadow:none !important; }
+.stButton button:active, .stDownloadButton button:active, .stFormSubmitButton button:active,
+[data-testid="stMain"] .stButton button[kind]:active, [data-testid="stMain"] .stDownloadButton button[kind]:active,
+[data-testid="stMain"] .stFormSubmitButton button[kind]:active { transform:scale(.97); transition-duration:80ms; }
+.stButton button:disabled, .stDownloadButton button:disabled, .stFormSubmitButton button:disabled { transform:none !important; box-shadow:none !important; }
+/* `.stButton button` et non le sélecteur « enfant direct » : un bouton avec une aide
+   (`help=`) est enveloppé dans une infobulle, et la règle « enfant direct »
+   le manquait — texte foncé sur bleu (« Tester la session », 2026-10-22). */
 /* Le texte interne hérite de la couleur du bouton — sinon la règle globale
    'span/p {color:var(--wf-text)}' rend le libellé illisible sur le bleu. */
-.stButton > button *, .stDownloadButton > button *, .stFormSubmitButton > button * { color:inherit !important; }
-.stButton > button[kind="primary"] *, .stFormSubmitButton > button[kind="primary"] * { color:var(--wf-on-accent) !important; }
+.stButton button *, .stDownloadButton button *, .stFormSubmitButton button * { color:inherit !important; }
+.stButton button[kind="primary"] *, .stFormSubmitButton button[kind="primary"] * { color:var(--wf-on-accent) !important; }
 /* Désactivé : il doit se lire comme indisponible. Le bleu plein d'un bouton
    principal désactivé passait pour cliquable (critique du 2026-10-18). */
-.stButton > button:disabled, .stDownloadButton > button:disabled, .stFormSubmitButton > button:disabled,
-.stButton > button:disabled *, .stDownloadButton > button:disabled *, .stFormSubmitButton > button:disabled * {
+.stButton button:disabled, .stDownloadButton button:disabled, .stFormSubmitButton button:disabled,
+.stButton button:disabled *, .stDownloadButton button:disabled *, .stFormSubmitButton button:disabled * {
   background:var(--wf-surface2) !important; color:var(--wf-muted) !important; cursor:not-allowed;
 }
-.stButton > button:disabled, .stDownloadButton > button:disabled, .stFormSubmitButton > button:disabled {
+.stButton button:disabled, .stDownloadButton button:disabled, .stFormSubmitButton button:disabled {
   border:1px dashed var(--wf-border-strong) !important; opacity:1 !important;
 }
 
 /* ---------- Focus clavier visible ---------- */
 /* Filet de sécurité : tout bouton (copie du code, repli de la barre…) */
 button:focus-visible, summary:focus-visible, [data-testid="stCode"] :focus-visible { outline:2px solid var(--wf-focus) !important; outline-offset:2px; }
-.stButton > button:focus-visible, .stDownloadButton > button:focus-visible, .stFormSubmitButton > button:focus-visible,
+.stButton button:focus-visible, .stDownloadButton button:focus-visible, .stFormSubmitButton button:focus-visible,
 [data-testid="stPills"] button:focus-visible, [data-testid="stButtonGroup"] button:focus-visible,
 .stTabs [data-baseweb="tab"]:focus-visible, [data-testid="stExpander"] summary:focus-visible,
 [data-testid="stLinkButton"] a:focus-visible, a:focus-visible {
   outline:2px solid var(--wf-focus) !important; outline-offset:2px !important;
 }
-section[data-testid="stSidebar"] .st-key-nav_menu .stButton > button:focus-visible { outline:2px solid #FFFFFF !important; outline-offset:2px !important; }
+section[data-testid="stSidebar"] .st-key-nav_menu .stButton button:focus-visible { outline:2px solid #FFFFFF !important; outline-offset:2px !important; }
 .stTextInput input:focus-visible, .stNumberInput input:focus-visible, .stTextArea textarea:focus-visible,
 [data-baseweb="select"] input:focus-visible { outline:none; }
 [data-baseweb="input"]:focus-within, [data-baseweb="textarea"]:focus-within, [data-baseweb="select"] > div:focus-within {
@@ -554,9 +557,9 @@ ol.wf-vide__etapes li::marker { color:var(--wf-accent); font-weight:700; }
   [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > * { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
   .wf-cran, .wf-entonnoir__barre > span { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
   .wf-direct::after { animation:none !important; display:none; }
-  .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button { transition:background-color 150ms ease, border-color 150ms ease, color 150ms ease !important; }
-  .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover,
-  .stButton > button:active, .stDownloadButton > button:active, .stFormSubmitButton > button:active { transform:none !important; }
+  .stButton button, .stDownloadButton button, .stFormSubmitButton button { transition:background-color 150ms ease, border-color 150ms ease, color 150ms ease !important; }
+  .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover,
+  .stButton button:active, .stDownloadButton button:active, .stFormSubmitButton button:active { transform:none !important; }
 }
 """
 

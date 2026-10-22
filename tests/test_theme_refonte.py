@@ -115,9 +115,9 @@ def test_config_streamlit_coque_marine():
 # --- focus, mouvement ----------------------------------------------------
 
 def test_focus_clavier_visible():
-    assert ".stButton > button:focus-visible" in CSS
+    assert ".stButton button:focus-visible" in CSS
     assert '.stTabs [data-baseweb="tab"]:focus-visible' in CSS
-    assert ".st-key-nav_menu .stButton > button:focus-visible { outline:2px solid #FFFFFF" in CSS
+    assert ".st-key-nav_menu .stButton button:focus-visible { outline:2px solid #FFFFFF" in CSS
     assert "var(--wf-focus)" in CSS
     # Aucun focus retiré sans remplaçant
     assert not re.search(r":focus(-visible)?\s*\{[^}]*outline:\s*(none|0)[^}]*\}", CSS.replace(
@@ -201,3 +201,10 @@ def test_pastilles_du_multiselect_texte_blanc_sur_marine():
     assert re.search(r'\[data-baseweb="tag"\]\s*\{[^}]*background:var\(--wf-accent\)', CSS)
     assert '[data-baseweb="tag"] * { color:var(--wf-on-accent) !important; }' in CSS
     assert contraste("#FFFFFF", "#172982") >= 4.5
+
+
+def test_boutons_avec_aide_aussi_en_texte_blanc():
+    """Un bouton avec `help=` est enveloppé dans une infobulle : aucune règle
+    de bouton ne doit exiger l'enfant direct (`.stButton > button`)."""
+    assert not re.search(r"\.(stButton|stDownloadButton|stFormSubmitButton) > button", CSS)
+    assert '.stButton button[kind="primary"] *' in CSS

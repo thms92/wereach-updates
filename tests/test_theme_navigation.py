@@ -53,7 +53,7 @@ def test_la_regle_du_menu_ne_deborde_pas_sur_les_autres_boutons():
         selecteur
         for selecteur, _ in regles_css(css_du_theme())
         if "stSidebar" in selecteur
-        and ".stButton > button" in selecteur
+        and ".stButton button" in selecteur
         and SELECTEUR_NAV not in selecteur
     ]
     assert deborde == [], (
