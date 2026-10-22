@@ -16,6 +16,7 @@ Le script :
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -24,7 +25,17 @@ from playwright.async_api import async_playwright
 
 
 def load_cookie() -> str:
-    """Charge le cookie li_at depuis config/cookie.txt (chiffré)."""
+    """La session à tester.
+
+    Depuis l'app : transmise par la variable WEREACH_COOKIE, car chaque
+    personne a désormais son propre dossier de réglages ; l'ancien
+    config/cookie.txt n'existe que sur les vieilles installations (un
+    nouveau collègue obtenait toujours « Aucun cookie trouvé », 2026-10-22).
+    En ligne de commande : repli sur config/cookie.txt.
+    """
+    transmis = os.environ.get("WEREACH_COOKIE", "").strip()
+    if transmis:
+        return transmis
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from cookie_utils import CookieManager
     cookie = CookieManager().load_cookie()

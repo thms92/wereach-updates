@@ -2,6 +2,7 @@
 """Page Recherche : session LinkedIn, Candidats, Clients et entreprises,
 Profils similaires."""
 
+import os
 import sys
 
 import pandas as pd
@@ -68,6 +69,9 @@ def _tester_session():
             result = subprocess.run(
                 [_sys.executable, "diagnostic_cookie.py", "--headless"],
                 capture_output=True, text=True, timeout=60,
+                # La session en mémoire, celle de la personne connectée
+                # (variable d'environnement : invisible dans la liste des processus).
+                env={**os.environ, "WEREACH_COOKIE": st.session_state.global_cookie or ""},
             )
         except subprocess.TimeoutExpired:
             st.error("La vérification a dépassé 60 secondes : réseau lent ou navigateur bloqué.")

@@ -140,6 +140,13 @@ TRADUCTIONS_INTERFACE = (
 # la déclaration de langue. D'où `forEach` et `=== -1`.
 _SCRIPT_FRANCAIS = (
     "document.documentElement.lang='fr';"
+    # Chrome voyait une page « anglaise » (lang="en" servi par Streamlit) et la
+    # traduisait en français : « Modifier » devenait « Modificateur » chez un
+    # collègue (2026-10-22). On interdit la traduction automatique.
+    "document.documentElement.setAttribute('translate','no');"
+    "document.documentElement.classList.add('notranslate');"
+    "if(!document.querySelector('meta[name=google]')){var m=document.createElement('meta');"
+    "m.name='google';m.content='notranslate';document.head.appendChild(m);}"
     "(function(){if(window.__wfTraduction)return;window.__wfTraduction=true;"
     "var T=[" + ",".join(f"[/{motif}/,'{fr}']" for motif, fr in TRADUCTIONS_INTERFACE) + "];"
     "function tr(n){var v=(n.nodeValue||'').trim();if(v.indexOf('Select ')!==0)return;"
