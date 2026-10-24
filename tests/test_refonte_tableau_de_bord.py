@@ -120,8 +120,11 @@ def test_la_page_repond_a_que_faire_aujourd_hui(tmp_path, monkeypatch):
     assert "Alertes et limites" not in [h.value for h in at.header]
 
 
-def test_nouvelle_recherche_mene_a_la_page_recherche():
+def test_connecter_la_session_mene_a_la_page_recherche(tmp_path, monkeypatch):
+    # Le bouton « Nouvelle recherche » est parti avec le bloc « Dernière
+    # recherche » ; sans session, c'est la carte « À faire » qui y mène.
+    monkeypatch.setenv("WEREACH_DATA_DIR", str(tmp_path))
     at = lancer_app("📊 Dashboard")
-    at.button(key="tdb_nouvelle_recherche").click().run()
+    at.button(key="tdb_aller_recherche").click().run()
     assert not at.exception, [str(e.value) for e in at.exception]
     assert at.session_state["page"] == PAGE_RECHERCHE

@@ -42,10 +42,10 @@ ETAPES = [
            "Chaque matin, ouvrez le Tableau de bord : il vous dit qui a accepté et ce qui "
            "attend une réponse.",
            page=_TDB, cible='[class*="st-key-wf_carte_"], .wf-action, .wf-vide'),
-    _etape("Votre parcours",
-           "Trouvés, invités, acceptés, contactés : vous voyez où en sont vos prospects, "
-           "et votre taux d'acceptation.",
-           page=_TDB, cible="ol.wf-entonnoir, .wf-vide"),
+    _etape("Vos chiffres",
+           "Invitations, acceptations, messages : vos chiffres sur la période choisie, "
+           "filtrables par école, entreprise et poste.",
+           page=_TDB, cible=".st-key-tdb_chiffres, .wf-vide"),
     _etape("Votre session LinkedIn",
            "À faire une seule fois : connectez votre session LinkedIn ici. Sans elle, "
            "aucune recherche ne peut partir.",

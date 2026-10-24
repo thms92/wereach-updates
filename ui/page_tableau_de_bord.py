@@ -4,22 +4,19 @@
 Trois questions, dans l'ordre où on se les pose en ouvrant l'outil :
 qu'est-ce que je dois faire maintenant (bloc « À faire »), combien
 d'invitations me reste-t-il (la puce du bandeau ; la jauge, elle, vit dans la
-barre latérale), où en sont mes prospects (le parcours trouvés → invités →
-acceptés → message envoyé).
+barre latérale), et que donnent mes invitations (bloc « Vos chiffres »,
+ui/bloc_chiffres.py : période, filtres, tuiles, semaines, tableaux).
 """
 
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
-import pandas as pd
-import plotly.express as px
 import streamlit as st
 
+from ui.bloc_chiffres import afficher_bloc_chiffres
 from ui.composants import (afficher_bandeau_contexte, afficher_carte_action,
-                           afficher_entonnoir, afficher_etat_vide, pluriel,
-                           texte_budget, ton_budget)
+                           pluriel, texte_budget, ton_budget)
 from utils.budget import budget_du_jour
-from wefiit_theme import PALETTE_GRAPHIQUES
 
 # Identifiants internes des pages (voir PAGES dans app_advanced.py).
 PAGE_MESSAGES = "✉️ Messages"
@@ -147,86 +144,11 @@ def _bloc_a_faire(actions) -> None:
                       width="content")
 
 
-def _bloc_derniere_recherche(derniere) -> None:
-    with st.container(border=True):
-        if derniere:
-            mots = (derniere.get("keyword") or "Sans mot-clé").replace("*", "").replace("_", " ")
-            st.markdown(f"**Dernière recherche**  \n{mots}")
-            st.caption(f"{date_locale(derniere.get('date'))} · "
-                       f"{pluriel(int(derniere.get('nb_profils') or 0), 'profil')}")
-        else:
-            st.markdown("**Dernière recherche**")
-            st.caption("Aucune recherche pour l'instant.")
-        st.button("Nouvelle recherche", key="tdb_nouvelle_recherche",
-                  icon=":material/search:", on_click=_aller_a,
-                  args=(PAGE_RECHERCHE,), width="stretch")
-
-
-def _bloc_ecoles(par_ecole: dict) -> None:
-    """Répartition par école : secondaire, repliée.
-
-    Gardée parce que l'équipe cible des écoles précises et veut voir où se
-    concentre son fichier ; repliée parce qu'elle ne dit pas quoi faire
-    aujourd'hui. Barres horizontales triées (lisibles même avec 15 écoles,
-    contrairement à l'ancien camembert).
-    """
-    if not par_ecole:
-        return
-    with st.expander("Répartition par école"):
-        df = (pd.DataFrame(list(par_ecole.items()), columns=["École", "Profils"])
-              .sort_values("Profils", ascending=True))
-        fig = px.bar(df, x="Profils", y="École", orientation="h", text="Profils",
-                     color_discrete_sequence=PALETTE_GRAPHIQUES[:1])
-        fig.update_traces(textposition="outside", cliponaxis=False,
-                          hovertemplate="%{y} : %{x}<extra></extra>")
-        fig.update_layout(
-            font_family="Inter, sans-serif", showlegend=False,
-            margin=dict(t=10, b=10, l=10, r=30),
-            height=max(160, 34 * len(df) + 40),
-            xaxis=dict(title=None, showgrid=False, showticklabels=False),
-            yaxis=dict(title=None),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        )
-        st.plotly_chart(fig, width="stretch",
-                        config={"displayModeBar": False})
-
-
-def _bloc_parcours(parcours: dict) -> None:
-    st.header("Parcours de vos prospects", anchor=False)
-    if not parcours["trouves"]:
-        # Un mur de zéros n'apprend rien : on dit comment le remplir.
-        afficher_etat_vide(
-            "Lancez votre première recherche",
-            "Le parcours de vos prospects s'affichera ici dès les premiers "
-            "profils trouvés.",
-            etapes=("Connecter la session LinkedIn",
-                    "Lancer une recherche",
-                    "Suivre les réponses dans Messages"),
-        )
-        return
-    afficher_entonnoir([
-        ("Profils trouvés", parcours["trouves"]),
-        ("Invités", parcours["invites"]),
-        ("Acceptés", parcours["acceptes"]),
-        ("Message envoyé", parcours["messages"]),
-    ])
-    if parcours["invites"]:
-        st.caption(
-            f"Taux d'acceptation : {taux_acceptation(parcours['invites'], parcours['acceptes'])}"
-            " des personnes invitées. Chaque pourcentage compare une étape à la précédente."
-        )
-    else:
-        st.caption("Aucune invitation envoyée pour l'instant : le taux d'acceptation "
-                   "apparaîtra dès la première.")
-
-
 def afficher_page_tableau_de_bord():
     st.title("Tableau de bord", anchor=False)
 
     db = st.session_state.db
     chemins = st.session_state.user_paths
-    stats = db.get_statistiques()
-    parcours = db.compter_parcours()
     budget = budget_du_jour(chemins.config_dir)
     session_active = bool(st.session_state.get("global_cookie"))
 
@@ -245,15 +167,6 @@ def afficher_page_tableau_de_bord():
         budget_plafond=budget.plafond,
     )
 
-    col_gauche, col_droite = st.columns([2, 1], gap="large")
-    with col_gauche:
-        _bloc_a_faire(actions)
-    with col_droite:
-        # Pas de jauge ici : celle de la barre latérale est toujours visible,
-        # et la puce du bandeau la reprend en court (budget au plus deux
-        # fois par écran, critique phase 4).
-        _bloc_derniere_recherche(stats.get("derniere_recherche"))
+    _bloc_a_faire(actions)
 
-    _bloc_parcours(parcours)
-
-    _bloc_ecoles(stats.get("par_ecole") or {})
+    afficher_bloc_chiffres(db, str(chemins.config_dir))

@@ -244,11 +244,16 @@ def test_tableau_de_bord_rempli(donnees):
     # 3 acceptés dont 1 déjà messagé : 2 à qui écrire.
     assert cartes[0] == "2 personnes ont accepté votre invitation", cartes
     assert html.count("wf-action--vedette") == 1
-    # h1 puis h2, pas de h3 ; aucune ancre.
-    assert [h.value for h in at.header] == ["À faire", "Parcours de vos prospects"]
-    assert not list(at.main.subheader)
-    assert all(h.proto.hide_anchor for h in list(at.header) + list(at.title))
-    assert '<ol class="wf-entonnoir"' in html and "Message envoyé" in html
+    # h1, puis h2 « À faire » et « Vos chiffres », dont les tableaux sont
+    # les h3 ; aucune ancre.
+    assert [h.value for h in at.header] == ["À faire", "Vos chiffres"]
+    assert [h.value for h in at.main.subheader] == ["Par école", "Par entreprise",
+                                                    "Par poste"]
+    assert all(h.proto.hide_anchor
+               for h in list(at.header) + list(at.title) + list(at.main.subheader))
+    # Le parcours a laissé la place aux chiffres de la période.
+    assert '<ol class="wf-entonnoir"' not in html
+    assert [m.value for m in at.main.metric][:2] == ["6", "3"]
 
 
 def test_premier_lancement_un_seul_bouton_principal(donnees):
@@ -257,7 +262,6 @@ def test_premier_lancement_un_seul_bouton_principal(donnees):
     verifier_page_affichee(at, "📊 Dashboard")
     principaux = [b.key for b in at.main.button if b.proto.type == "primary"]
     assert principaux == ["tdb_aller_recherche"]
-    assert at.button(key="tdb_nouvelle_recherche").proto.type == "secondary"
     html = _principal(at)
     assert "Lancez votre première recherche" in html and '<ol class="wf-entonnoir"' not in html
     for etape in ("Connecter la session LinkedIn", "Lancer une recherche",

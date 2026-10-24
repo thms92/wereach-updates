@@ -54,7 +54,10 @@ def test_le_plafond_d_invitations_n_est_pas_une_hausse():
     assert "Invitations du jour" in jauges[0] and " sur " in jauges[0]
     page = " ".join(m.value for m in at.main.markdown)
     assert re.search(r"restantes? sur 20|\(20 conseillées\)", page)
-    assert not [x for x in at.metric if x.delta]
+    # Seul delta admis : le « X sur Y » du taux (bloc « Vos chiffres »),
+    # sans flèche.
+    from streamlit.proto.Metric_pb2 import Metric
+    assert not [x for x in at.metric if x.delta and x.proto.direction != Metric.NONE]
 
 
 def test_plus_de_libelles_anglais_dans_le_tableau_de_bord():
