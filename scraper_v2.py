@@ -1560,10 +1560,14 @@ class LinkedInScraperV2:
 
     def _enregistrer_invitation(self, url: str, nom: str, profile_data: dict, message: str) -> None:
         """Enregistre en base une invitation envoyée, même si le profil n'a pas pu être lu.
-        Ne touche pas à une école déjà connue (ecole='') et n'échoue jamais."""
+        Ne touche pas à une école déjà connue (ecole='') et n'échoue jamais.
+        Sans extraction, `nom` est tiré du lien : il ne sert que pour un profil
+        nouveau (la colonne est obligatoire) et n'écrase jamais un vrai nom."""
         if not (self.use_database and self.db):
             return
         try:
+            if not profile_data.get('nom') and self.db.profil_existe(url):
+                nom = ''
             profile_id = self.db.ajouter_profil(
                 nom=nom, poste=profile_data.get('poste', ''),
                 entreprise=profile_data.get('entreprise', ''), ecole='', url=url)

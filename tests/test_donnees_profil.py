@@ -51,6 +51,18 @@ def test_invitation_enregistree_garde_l_ecole_de_la_recherche(tmp_path):
     assert _profil(sc.db, URL)["ecole"] == "Dauphine"
 
 
+def test_invitation_sans_extraction_garde_le_vrai_nom(tmp_path):
+    sc = _scraper(tmp_path)
+    sc.db.ajouter_profil("Ana Test", "PM", "Orbique", "Dauphine", URL)
+    # Le nom tiré du lien (« Ana Test 4b2a1 ») n'écrase pas celui déjà lu.
+    sc._enregistrer_invitation(URL, "Ana Test 4b2a1", {}, "")
+    con = sqlite3.connect(sc.db.db_file)
+    (nom,) = con.execute("SELECT nom FROM profiles WHERE url = ?", (URL,)).fetchone()
+    con.close()
+    assert nom == "Ana Test"
+    assert sc.db.compter_parcours()["invites"] == 1
+
+
 def test_invitation_sans_extraction_est_enregistree(tmp_path):
     sc = _scraper(tmp_path)
     sc._enregistrer_invitation(URL, "Ana Test", {}, "")
