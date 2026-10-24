@@ -5,6 +5,19 @@ annoncée aux utilisateurs au premier lancement suivant la mise à jour.
 Écrire pour eux, pas pour un développeur — ce qui change à l'écran, pas
 ce qui change dans le code.
 
+## 1.9.0
+
+**Vos chiffres sur le Tableau de bord.**
+Invitations, acceptations et messages, à suivre par période, école,
+entreprise et poste.
+
+**Des acceptations plus justes.**
+Seules vos vraies relations comptent, et chaque vérification passe en revue
+les invitations pas encore vérifiées.
+
+Les invitations envoyées avant cette version depuis « Par critères » ou
+« Profils similaires » n'apparaissent pas dans les chiffres.
+
 ## 1.8.4
 
 **« Tester la session » fonctionne pour tout le monde.**
