@@ -81,6 +81,13 @@ class DatabaseManager:
             except Exception:
                 pass  # colonne déjà présente
 
+            # Migration douce : colonne date_verification (dernière vérification
+            # de l'acceptation de cette invitation)
+            try:
+                cursor.execute("ALTER TABLE invitations ADD COLUMN date_verification TIMESTAMP")
+            except Exception:
+                pass  # colonne déjà présente
+
             conn.commit()
             conn.close()
             # Niveau debug : le message tombait à chaque scraper créé (chaque action)
@@ -219,7 +226,10 @@ class DatabaseManager:
     # Suivi des acceptations & messages (page "Messages")
     # ------------------------------------------------------------------
     def invitations_en_attente(self) -> List[Dict]:
-        """Profils invités dont l'invitation est encore 'envoyee' (pas encore acceptée)."""
+        """Profils invités dont l'invitation est encore 'envoyee' (pas encore acceptée).
+
+        Jamais vérifiées d'abord (les plus récemment envoyées en tête), puis
+        les vérifiées, la moins récemment vérifiée en premier."""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
@@ -227,7 +237,7 @@ class DatabaseManager:
                 SELECT DISTINCT p.url, p.nom, p.poste, p.entreprise
                 FROM invitations i JOIN profiles p ON i.profile_id = p.id
                 WHERE i.statut = 'envoyee'
-                ORDER BY i.date_envoi ASC
+                ORDER BY i.date_verification IS NOT NULL, i.date_verification ASC, i.date_envoi DESC
             """)
             rows = cursor.fetchall()
             conn.close()
@@ -235,6 +245,21 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Erreur invitations_en_attente: {e}")
             return []
+
+    def marquer_verifiees(self, urls: List[str]) -> None:
+        """Date la vérification des invitations 'envoyee' de ces profils."""
+        if not urls:
+            return
+        try:
+            conn = sqlite3.connect(self.db_file)
+            conn.executemany("""
+                UPDATE invitations SET date_verification = CURRENT_TIMESTAMP
+                WHERE statut = 'envoyee' AND profile_id = (SELECT id FROM profiles WHERE url = ?)
+            """, [(u,) for u in urls])
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Erreur marquer_verifiees: {e}")
 
     def marquer_acceptee(self, url: str) -> bool:
         """Passe l'invitation d'un profil au statut 'acceptee'."""
