@@ -113,12 +113,18 @@ class DatabaseManager:
                 result = cursor.fetchone()
                 if result:
                     profile_id = result[0]
-                    # Mettre à jour la date de dernière mise à jour
+                    # Mettre à jour la date de dernière mise à jour. Une valeur vide
+                    # ne remplace jamais une valeur connue ; l'école déjà renseignée
+                    # est conservée (une nouvelle n'est prise que si elle était vide).
                     cursor.execute("""
                         UPDATE profiles
                         SET derniere_mise_a_jour = CURRENT_TIMESTAMP,
-                            nom = ?, poste = ?, entreprise = ?, ecole = ?,
-                            localisation = ?, nb_connexions = ?
+                            nom = COALESCE(NULLIF(?, ''), nom),
+                            poste = COALESCE(NULLIF(?, ''), poste),
+                            entreprise = COALESCE(NULLIF(?, ''), entreprise),
+                            ecole = COALESCE(NULLIF(ecole, ''), NULLIF(?, ''), ecole),
+                            localisation = COALESCE(NULLIF(?, ''), localisation),
+                            nb_connexions = COALESCE(NULLIF(?, ''), nb_connexions)
                         WHERE id = ?
                     """, (nom, poste, entreprise, ecole, localisation, nb_connexions, profile_id))
 
