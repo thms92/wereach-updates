@@ -35,3 +35,23 @@ def test_nouvelle_valeur_remplace_sauf_l_ecole(tmp_path):
     assert _profil(db, URL)["poste"] == "Head of Product"
     assert _profil(db, URL)["entreprise"] == "Nexa"
     assert _profil(db, URL)["ecole"] == "Dauphine"
+
+
+def _scraper(tmp_path):
+    from scraper_v2 import LinkedInScraperV2
+    return LinkedInScraperV2(use_database=True, db_file=str(tmp_path / "s.db"),
+                             config_dir=str(tmp_path))
+
+
+def test_invitation_enregistree_garde_l_ecole_de_la_recherche(tmp_path):
+    sc = _scraper(tmp_path)
+    sc.db.ajouter_profil("Ana Test", "PM", "Orbique", "Dauphine", URL)
+    sc._enregistrer_invitation(URL, "Ana Test", {"nom": "Ana Test", "poste": "PM", "entreprise": "Orbique"}, "")
+    assert sc.db.compter_parcours()["invites"] == 1
+    assert _profil(sc.db, URL)["ecole"] == "Dauphine"
+
+
+def test_invitation_sans_extraction_est_enregistree(tmp_path):
+    sc = _scraper(tmp_path)
+    sc._enregistrer_invitation(URL, "Ana Test", {}, "")
+    assert sc.db.compter_parcours() == {"trouves": 1, "invites": 1, "acceptes": 0, "messages": 0}

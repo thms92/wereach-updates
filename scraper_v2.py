@@ -1514,6 +1514,19 @@ class LinkedInScraperV2:
 
         return urls
 
+    def _enregistrer_invitation(self, url: str, nom: str, profile_data: dict, message: str) -> None:
+        """Enregistre en base une invitation envoyée, même si le profil n'a pas pu être lu.
+        Ne touche pas à une école déjà connue (ecole='') et n'échoue jamais."""
+        if not (self.use_database and self.db):
+            return
+        try:
+            profile_id = self.db.ajouter_profil(
+                nom=nom, poste=profile_data.get('poste', ''),
+                entreprise=profile_data.get('entreprise', ''), ecole='', url=url)
+            self.db.ajouter_invitation(profile_id, message)
+        except Exception as e:
+            logger.error(f"  Erreur enregistrement invitation: {e}")
+
     def _sauvegarder_profil(self, nom: str, poste: str, entreprise: str,
                             ecole: str, url: str, invite: bool):
         """Sauvegarde un profil dans le CSV (rétrocompatibilité)"""
@@ -2110,6 +2123,7 @@ class LinkedInScraperV2:
                                 ligne['Invitation'] = 'Oui' if invited else 'Non'
                                 if invited:
                                     self.human.daily_limits.increment_invitations()
+                                    self._enregistrer_invitation(url, nom, profile_data, message_invitation)
                             except Exception as _e:
                                 logger.warning(f"  ⚠️ Invitation échouée: {_e}")
                                 ligne['Invitation'] = 'Non'
