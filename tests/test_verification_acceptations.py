@@ -103,3 +103,112 @@ ENTETE_3E = "\n".join([
 ])
 def test_degre_depuis_entete(texte, attendu):
     assert degre_depuis_entete(texte) == attendu
+
+
+# ── Moteur : seul un degré lu fait d'une page une page vérifiée ──
+
+import asyncio
+
+from scraper_v2 import LinkedInScraperV2
+
+
+class _FauxPlaywright:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FauxNavigateur:
+    async def close(self):
+        pass
+
+
+class _FauxLocator:
+    def __init__(self, entete):
+        self.entete = entete
+
+    @property
+    def first(self):
+        return self
+
+    async def inner_text(self, timeout=None):
+        if isinstance(self.entete, Exception):
+            raise self.entete
+        return self.entete
+
+
+class _FaussePage:
+    """En-tête rendu selon l'URL visitée ; `None` = chargement raté."""
+
+    def __init__(self, entetes):
+        self.entetes = entetes
+        self.url = ""
+
+    def locator(self, selecteur):
+        return _FauxLocator(self.entetes[self.url])
+
+
+def _verifier(tmp_path, monkeypatch, entetes):
+    scraper = LinkedInScraperV2(use_database=False, config_dir=str(tmp_path))
+    page = _FaussePage(entetes)
+
+    async def ouvrir(p, cookie, status_callback=None):
+        return _FauxNavigateur(), page
+
+    async def aller(pg, url, *a, **k):
+        if entetes.get(url) is None:
+            return False
+        page.url = url
+        return True
+
+    async def rien(*a, **k):
+        return None
+
+    monkeypatch.setattr("scraper_v2.async_playwright", lambda: _FauxPlaywright())
+    monkeypatch.setattr(scraper, "_open_linkedin_page", ouvrir)
+    monkeypatch.setattr(scraper.network_manager, "safe_page_goto", aller)
+    monkeypatch.setattr(scraper.human, "human_delay", rien)
+    profils = [{"url": url, "nom": url[-2]} for url in entetes]
+    acceptees = asyncio.run(scraper.verifier_acceptations_async("COOKIE-DE-TEST", profils))
+    return scraper, [a["url"] for a in acceptees]
+
+
+LISIBLE = "https://exemple.test/in/a/"
+SANS_DEGRE = "https://exemple.test/in/b/"
+EN_ECHEC = "https://exemple.test/in/c/"
+EXPIRE = "https://exemple.test/in/d/"
+
+
+def test_un_degre_lu_vaut_acceptation_et_verification(tmp_path, monkeypatch):
+    scraper, acceptees = _verifier(tmp_path, monkeypatch, {LISIBLE: "Ana Test · 1er\nPM"})
+    assert acceptees == [LISIBLE]
+    assert scraper.verifiees == [LISIBLE]
+    assert scraper.errors == []
+
+
+def test_un_degre_illisible_laisse_la_personne_en_attente_et_le_dit(tmp_path, monkeypatch):
+    scraper, acceptees = _verifier(tmp_path, monkeypatch, {
+        LISIBLE: "Ana Test · 2e\nPM", SANS_DEGRE: "Bob Test\nPM",
+        EXPIRE: TimeoutError("en-tête absent"),
+    })
+    assert acceptees == []
+    assert scraper.verifiees == [LISIBLE]
+    assert scraper.errors == [
+        "Degré de relation illisible pour 2 profils : ils restent en attente."]
+
+
+def test_un_seul_degre_illisible_s_accorde_au_singulier(tmp_path, monkeypatch):
+    scraper, _ = _verifier(tmp_path, monkeypatch, {SANS_DEGRE: "Bob Test\nPM"})
+    assert scraper.verifiees == []
+    assert scraper.errors == [
+        "Degré de relation illisible pour 1 profil : ils restent en attente."]
+
+
+def test_un_chargement_rate_n_est_pas_verifie(tmp_path, monkeypatch):
+    scraper, acceptees = _verifier(tmp_path, monkeypatch, {
+        EN_ECHEC: None, LISIBLE: "Ana Test · 3e\nPM"})
+    assert acceptees == []
+    assert scraper.verifiees == [LISIBLE]
+    assert scraper.errors == []

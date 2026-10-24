@@ -163,3 +163,32 @@ def test_session_occupee_n_enregistre_aucune_verification(deux_invitations):
     ScraperVerifie.erreurs = [OCCUPE]
     _verifier()
     assert derniere_verification(str(chemins_de_test().config_dir)) is None
+
+
+ILLISIBLE = "Degré de relation illisible pour 1 profil : ils restent en attente."
+
+
+def test_erreur_generique_n_enregistre_aucune_verification(deux_invitations):
+    ScraperVerifie.verifiees = []
+    ScraperVerifie.erreurs = ["Erreur: navigateur introuvable"]
+    _verifier()
+    assert derniere_verification(str(chemins_de_test().config_dir)) is None
+
+
+def test_aucune_page_lue_n_enregistre_aucune_verification(deux_invitations):
+    ScraperVerifie.verifiees = []
+    ScraperVerifie.erreurs = []
+    _verifier()
+    assert derniere_verification(str(chemins_de_test().config_dir)) is None
+
+
+def test_degre_illisible_dit_dans_les_details_sans_bloquer_la_date(deux_invitations):
+    ScraperVerifie.verifiees = [URL]
+    ScraperVerifie.erreurs = [ILLISIBLE]
+    at = _verifier()
+    dates = _dates(deux_invitations)
+    assert dates[URL] is not None and dates[URL_B] is None
+    assert derniere_verification(str(chemins_de_test().config_dir)) is not None
+    assert not at.error
+    assert any("Aucune nouvelle acceptation" in i.value for i in at.info)
+    assert any(ILLISIBLE in m.value for m in at.markdown)

@@ -147,7 +147,12 @@ def afficher_page_messages():
             db.marquer_verifiees(sc.verifiees)
             # Session occupée : rien n'a été vérifié, ce n'est pas « aucune acceptation ».
             occupe = message_occupe(sc.errors)
-            if not occupe and SESSION_EXPIREE not in sc.errors:
+            # La date de dernière vérification ne s'écrit qu'après une vraie
+            # vérification : au moins une page lue, sans interruption. Un degré
+            # illisible sur quelques profils ne l'empêche pas.
+            interrompue = (occupe or SESSION_EXPIREE in sc.errors
+                           or any(str(err).startswith("Erreur: ") for err in sc.errors))
+            if sc.verifiees and not interrompue:
                 enregistrer_verification(str(st.session_state.user_paths.config_dir))
             if occupe:
                 st.error(occupe)

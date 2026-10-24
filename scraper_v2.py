@@ -915,13 +915,15 @@ class LinkedInScraperV2:
 
         Une personne a accepté seulement si le degré lu dans l'en-tête de son
         profil est « 1er » : le bouton « Message » existe aussi pour un 2e ou
-        un 3e degré. Un degré illisible compte comme non accepté.
+        un 3e degré. Un degré illisible ne vaut ni acceptation ni vérification :
+        la personne reste en attente et revient en tête la fois suivante.
         Retourne la liste [{'url','nom'}] des profils ayant accepté ;
-        `self.verifiees` garde les URL dont la page a bien été lue."""
+        `self.verifiees` garde les URL dont le degré a bien été lu."""
         self.errors = []
         self.verifiees = []
         profils = list(profils)[:max_check]
         acceptees = []
+        illisibles = 0
         if not profils:
             return acceptees
         async with async_playwright() as p:
@@ -945,20 +947,23 @@ class LinkedInScraperV2:
                             self.errors.append(SESSION_EXPIREE)
                             break
                         await self.human.human_delay(1500, 400)
-                        # La page est lue : elle compte comme vérifiée, même si
-                        # l'en-tête se révèle illisible.
-                        self.verifiees.append(url)
                         try:
                             entete = await page.locator("main section").first.inner_text(timeout=5000)
                         except Exception as e:
                             logger.warning(f"  ⚠️ En-tête illisible pour {nom}: {e}")
                             entete = ""
                         degre = degre_depuis_entete(entete)
-                        if degre == "1er":
-                            acceptees.append({"url": url, "nom": nom})
-                            logger.info(f"  ✅ A accepté : {nom}")
+                        if not degre:
+                            illisibles += 1
+                            logger.info(f"  ⚠️ Degré illisible : {nom} reste en attente")
                         else:
-                            logger.info(f"  ⏳ Pas encore 1er degré : {nom} (degré lu : {degre or 'illisible'})")
+                            # Seul un degré lu fait de la page une page vérifiée.
+                            self.verifiees.append(url)
+                            if degre == "1er":
+                                acceptees.append({"url": url, "nom": nom})
+                                logger.info(f"  ✅ A accepté : {nom}")
+                            else:
+                                logger.info(f"  ⏳ Pas encore 1er degré : {nom} (degré lu : {degre})")
                     except Exception as e:
                         logger.warning(f"  ⚠️ Vérif {nom}: {e}")
                     if progress_callback:
@@ -969,6 +974,9 @@ class LinkedInScraperV2:
                     )
             finally:
                 await browser.close()
+        if illisibles:
+            self.errors.append(f"Degré de relation illisible pour {illisibles} "
+                               f"profil{'s' if illisibles > 1 else ''} : ils restent en attente.")
         return acceptees
 
     async def envoyer_messages_async(self, cookie: str, cibles, message: str, max_msg: int = 20,
