@@ -349,6 +349,42 @@ class DatabaseManager:
             logger.error(f"Erreur compter_parcours: {e}")
             return vide
 
+    def lignes_suivi(self) -> List[Dict]:
+        """Une ligne par profil invité, pour les chiffres du tableau de bord.
+
+        `date_envoi` est celle de la première invitation (texte UTC brut) ;
+        `acceptee` : une invitation du profil est acceptée ; `messagee` : une
+        invitation acceptée porte une date de message ; `verifiee` : une
+        invitation a déjà été vérifiée. Une colonne absente d'une base
+        ancienne donne False. En cas d'erreur, liste vide.
+        """
+        try:
+            conn = sqlite3.connect(self.db_file)
+            try:
+                cursor = conn.cursor()
+                colonnes = {c[1] for c in cursor.execute("PRAGMA table_info(invitations)")}
+                messagee = ("MAX(i.statut = 'acceptee' AND i.date_message IS NOT NULL)"
+                            if "date_message" in colonnes else "0")
+                verifiee = ("MAX(i.date_verification IS NOT NULL)"
+                            if "date_verification" in colonnes else "0")
+                lignes = cursor.execute(f"""
+                    SELECT p.url, p.ecole, p.entreprise, p.poste,
+                           MIN(i.date_envoi),
+                           MAX(i.statut = 'acceptee'), {messagee}, {verifiee}
+                    FROM invitations i JOIN profiles p ON p.id = i.profile_id
+                    WHERE i.statut IN ('envoyee', 'acceptee')
+                    GROUP BY p.id
+                """).fetchall()
+                return [{"url": url, "ecole": ecole or "", "entreprise": entreprise or "",
+                         "poste": poste or "", "date_envoi": date_envoi,
+                         "acceptee": bool(acc), "messagee": bool(msg), "verifiee": bool(ver)}
+                        for url, ecole, entreprise, poste, date_envoi, acc, msg, ver in lignes]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error(f"Erreur lignes_suivi: {e}")
+            return []
+
     def get_statistiques(self) -> Dict:
         """Récupère les statistiques globales"""
         try:
