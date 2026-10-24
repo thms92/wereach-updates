@@ -229,7 +229,8 @@ class DatabaseManager:
         """Profils invités dont l'invitation est encore 'envoyee' (pas encore acceptée).
 
         Jamais vérifiées d'abord (les plus récemment envoyées en tête), puis
-        les vérifiées, la moins récemment vérifiée en premier."""
+        les vérifiées, la moins récemment vérifiée en premier. À la même
+        seconde, la dernière enregistrée passe devant."""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
@@ -237,7 +238,7 @@ class DatabaseManager:
                 SELECT DISTINCT p.url, p.nom, p.poste, p.entreprise
                 FROM invitations i JOIN profiles p ON i.profile_id = p.id
                 WHERE i.statut = 'envoyee'
-                ORDER BY i.date_verification IS NOT NULL, i.date_verification ASC, i.date_envoi DESC
+                ORDER BY i.date_verification IS NOT NULL, i.date_verification ASC, i.date_envoi DESC, i.id DESC
             """)
             rows = cursor.fetchall()
             conn.close()

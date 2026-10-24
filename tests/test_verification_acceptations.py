@@ -214,3 +214,33 @@ def test_un_chargement_rate_n_est_pas_verifie(tmp_path, monkeypatch):
     assert acceptees == []
     assert scraper.verifiees == [LISIBLE]
     assert scraper.errors == []
+
+
+# ── Départage : même seconde d'envoi ──
+
+def _deux_invitations_meme_seconde(tmp_path):
+    """A puis B, envoyées à la même seconde (B insérée après A)."""
+    db = DatabaseManager(db_file=str(tmp_path / "egal.db"))
+    for url in (URL_A, URL_B):
+        db.ajouter_invitation(db.ajouter_profil(url[-1], "", "", "", url))
+    con = sqlite3.connect(db.db_file)
+    con.execute("UPDATE invitations SET date_envoi = '2026-10-20 09:00:00'")
+    con.commit()
+    con.close()
+    return db
+
+
+def test_jamais_verifiees_meme_seconde_la_derniere_inseree_d_abord(tmp_path):
+    db = _deux_invitations_meme_seconde(tmp_path)
+    assert [p["url"] for p in db.invitations_en_attente()] == [URL_B, URL_A]
+
+
+def test_verifiees_la_plus_anciennement_verifiee_d_abord(tmp_path):
+    db = _deux_invitations_meme_seconde(tmp_path)
+    con = sqlite3.connect(db.db_file)
+    for url, verif in ((URL_A, "2026-10-21 09:00:00"), (URL_B, "2026-10-22 09:00:00")):
+        con.execute("UPDATE invitations SET date_verification = ? WHERE profile_id = "
+                    "(SELECT id FROM profiles WHERE url = ?)", (verif, url))
+    con.commit()
+    con.close()
+    assert [p["url"] for p in db.invitations_en_attente()] == [URL_A, URL_B]
