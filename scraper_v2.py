@@ -51,14 +51,15 @@ def degre_depuis_entete(texte: str) -> str:
     Rend « 1er », « 2e », « 3e » ou « » (illisible). Le marqueur « · 2e » prime ;
     à défaut une ligne qui ne contient que le degré. Jamais un « 2e » trouvé au
     milieu d'un intitulé (« Alternante 2e année »), comme dans dom_selectors.
+    Seules les 4 premières lignes non vides comptent : le degré suit le nom,
+    plus bas ce sont l'intitulé et le reste du profil (« · 1er cycle »).
     """
-    texte = texte or ""
-    marque = _MARQUE_DEGRE.search(texte)
+    lignes = [l.strip() for l in (texte or "").splitlines() if l.strip()][:4]
+    marque = _MARQUE_DEGRE.search("\n".join(lignes))
     if marque:
         degre = marque.group(1)
     else:
-        degre = next((l.strip() for l in texte.splitlines()
-                      if _LIGNE_DEGRE.match(l.strip())), "")
+        degre = next((l for l in lignes if _LIGNE_DEGRE.match(l)), "")
     return _DEGRES_EN.get(degre, degre)
 
 

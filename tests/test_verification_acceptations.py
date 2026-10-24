@@ -100,6 +100,8 @@ ENTETE_3E = "\n".join([
     ("Ana Test\nAlternante 2e année · Paris", ""),
     ("", ""),
     (ENTETE_3E, "3e"),
+    # Plus bas que les 4 premières lignes, ce n'est plus l'en-tête du nom.
+    ("Jean\nÉtudiant\nParis\nOrbique\nÉtudiant · 1er cycle", ""),
 ])
 def test_degre_depuis_entete(texte, attendu):
     assert degre_depuis_entete(texte) == attendu
