@@ -107,21 +107,29 @@ def _tuiles(chiffres) -> None:
 
 def _graphique(lignes, periode: Periode) -> None:
     semaines = par_semaine(lignes, periode)
-    etiquettes = [f"S{lundi.isocalendar()[1]}" for lundi, _, _ in semaines]
-    dates = [f"semaine du {lundi:%d/%m}" for lundi, _, _ in semaines]
+    # L'axe porte la date du lundi, unique ; « S40 » seul reviendrait chaque
+    # année, d'où l'année ajoutée quand la période en couvre plusieurs.
+    lundis = [lundi.isoformat() for lundi, _, _ in semaines]
+    avec_annee = periode.debut.year != periode.fin.year
+    etiquettes = [f"S{n} {annee}" if avec_annee else f"S{n}"
+                  for annee, n, _ in (lundi.isocalendar() for lundi, _, _ in semaines)]
+    survols = [[etiquette, f"semaine du {lundi:%d/%m}"]
+               for etiquette, (lundi, _, _) in zip(etiquettes, semaines)]
     fig = go.Figure()
     for nom, valeurs, couleur in (
             ("Invitations", [inv for _, inv, _ in semaines], PALETTE_GRAPHIQUES[0]),
             ("Acceptées", [acc for _, _, acc in semaines], ORANGE_ACCEPTEES)):
-        fig.add_bar(name=nom, x=etiquettes, y=valeurs, marker_color=couleur,
-                    customdata=dates,
-                    hovertemplate=f"%{{x}} (%{{customdata}}) : %{{y}} {nom.lower()}<extra></extra>")
+        fig.add_bar(name=nom, x=lundis, y=valeurs, marker_color=couleur,
+                    customdata=survols,
+                    hovertemplate=(f"%{{customdata[0]}} (%{{customdata[1]}}) : "
+                                   f"%{{y}} {nom.lower()}<extra></extra>"))
     fig.update_layout(
         barmode="group", bargap=0.35, bargroupgap=0.08,
         font_family="Inter, sans-serif", height=260,
         margin=dict(t=30, b=10, l=10, r=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title=None),
-        xaxis=dict(title=None, showgrid=False, type="category"),
+        xaxis=dict(title=None, showgrid=False, type="category",
+                   tickmode="array", tickvals=lundis, ticktext=etiquettes),
         yaxis=dict(title=None, rangemode="tozero", tickformat="d",
                    gridcolor="rgba(127,127,127,0.15)"),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",

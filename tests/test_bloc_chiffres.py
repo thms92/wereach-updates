@@ -232,3 +232,25 @@ def test_base_sans_invitation_etat_vide(base):
     assert '<div class="wf-vide">' in html
     assert not list(at.main.metric)
     assert "tdb_periode" not in at.session_state
+
+
+def _figure(monkeypatch, periode):
+    import ui.bloc_chiffres as bc
+    figures = []
+    monkeypatch.setattr(bc.st, "plotly_chart", lambda fig, **k: figures.append(fig))
+    bc._graphique([], periode)
+    return figures[0]
+
+
+def test_graphique_sur_plus_d_un_an_des_semaines_distinctes(monkeypatch):
+    fig = _figure(monkeypatch, Periode(date(2025, 10, 1), AUJOURD_HUI))
+    x = list(fig.data[0].x)
+    # S40 2025 et S40 2026 ne se confondent plus sur l'axe.
+    assert len(x) == len(set(x))
+    etiquettes = list(fig.layout.xaxis.ticktext)
+    assert etiquettes[0] == "S40 2025" and etiquettes[-1] == "S43 2026"
+
+
+def test_graphique_dans_une_annee_etiquettes_sans_annee(monkeypatch):
+    fig = _figure(monkeypatch, Periode(date(2026, 9, 25), AUJOURD_HUI))
+    assert list(fig.layout.xaxis.ticktext) == ["S39", "S40", "S41", "S42", "S43"]
