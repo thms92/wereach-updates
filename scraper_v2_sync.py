@@ -177,7 +177,10 @@ class LinkedInScraperV2Sync:
 
     def verifier_acceptations(self, cookie, profils, max_check=30,
                               progress_callback=None, status_callback=None):
-        """Version synchrone : détecte les invitations acceptées (1er degré)."""
+        """Version synchrone : détecte les invitations acceptées (1er degré).
+
+        `self.verifiees` : URL dont la page a été lue ([] si session occupée ou erreur)."""
+        self.verifiees = []
         try:
             with session_linkedin(self.config_dir, "vérification des acceptations"):
                 result = asyncio.run(
@@ -187,6 +190,7 @@ class LinkedInScraperV2Sync:
                     )
                 )
             self.errors = self.scraper.errors.copy()
+            self.verifiees = list(self.scraper.verifiees)
             return result
         except VerrouOccupe as occupe:
             self.errors = [str(occupe)]

@@ -2,9 +2,12 @@
 """Chaque invitation garde la date de sa dernière vérification."""
 
 import sqlite3
+
+import pytest
 from datetime import datetime, timezone
 
 from database import DatabaseManager
+from scraper_v2 import degre_depuis_entete
 from utils.verification import derniere_verification, enregistrer_verification
 
 URL_A = "https://exemple.test/in/a"
@@ -76,3 +79,27 @@ def test_derniere_verification_absente_ou_illisible(tmp_path):
     assert derniere_verification(str(tmp_path)) is None
     (tmp_path / "derniere_verification.json").write_text("{pas du json")
     assert derniere_verification(str(tmp_path)) is None
+
+
+# En-tête réel d'un profil de 3e degré (page enregistrée le 2026-10-20) :
+# il montre pourtant un bouton « Message ».
+ENTETE_3E = "\n".join([
+    "Rodolphe LE BLEVENEC", "· 3e", "Product Builder @Roole chez WeFiiT", "WeFiiT",
+    "Paris, Île-de-France, France", "·", "Coordonnées", "WeFiiT", "500 ou +",
+    "relations", "Se connecter", "Message",
+])
+
+
+@pytest.mark.parametrize("texte,attendu", [
+    ("Ana Test · 1er\nProduct Manager chez Orbique", "1er"),
+    ("Ana Test\n· 2e\nPM", "2e"),
+    ("Ana Test · 1st\nPM", "1er"),
+    ("Ana Test · 2nd\nPM", "2e"),
+    ("Ana Test · 3rd\nPM", "3e"),
+    ("Ana Test\n1er\nPM", "1er"),
+    ("Ana Test\nAlternante 2e année · Paris", ""),
+    ("", ""),
+    (ENTETE_3E, "3e"),
+])
+def test_degre_depuis_entete(texte, attendu):
+    assert degre_depuis_entete(texte) == attendu

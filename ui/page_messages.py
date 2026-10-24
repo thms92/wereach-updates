@@ -15,6 +15,8 @@ import streamlit as st
 import scraper_v2_sync
 from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel
 from ui.invitations import confirmation, echapper_markdown  # noqa: F401 (réexporté)
+from scraper_v2 import SESSION_EXPIREE
+from utils.verification import enregistrer_verification
 from utils.verrou_linkedin import message_occupe
 
 MAX_ENVOIS = 20
@@ -140,8 +142,13 @@ def afficher_page_messages():
             )
             for a in acceptees:
                 db.marquer_acceptee(a["url"])
+            # Seules les pages réellement lues sont datées ; une session
+            # expirée en cours de route n'efface pas ce qui a été lu avant.
+            db.marquer_verifiees(sc.verifiees)
             # Session occupée : rien n'a été vérifié, ce n'est pas « aucune acceptation ».
             occupe = message_occupe(sc.errors)
+            if not occupe and SESSION_EXPIREE not in sc.errors:
+                enregistrer_verification(str(st.session_state.user_paths.config_dir))
             if occupe:
                 st.error(occupe)
             elif acceptees:

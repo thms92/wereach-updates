@@ -40,6 +40,28 @@ from utils.page_vide import diagnostiquer_page_vide
 # savoir quoi faire, pas quel cookie technique a expiré.
 SESSION_EXPIREE = ("Session LinkedIn expirée : mettez-la à jour dans la page "
                    "Recherche.")
+_DEGRES_EN = {"1st": "1er", "2nd": "2e", "3rd": "3e"}
+_MARQUE_DEGRE = re.compile(r"·\s*(1er|2e|3e|1st|2nd|3rd)\b")
+_LIGNE_DEGRE = re.compile(r"^(1er|2e|3e|1st|2nd|3rd)$")
+
+
+def degre_depuis_entete(texte: str) -> str:
+    """Degré de relation lu dans le texte de l'en-tête d'un profil.
+
+    Rend « 1er », « 2e », « 3e » ou « » (illisible). Le marqueur « · 2e » prime ;
+    à défaut une ligne qui ne contient que le degré. Jamais un « 2e » trouvé au
+    milieu d'un intitulé (« Alternante 2e année »), comme dans dom_selectors.
+    """
+    texte = texte or ""
+    marque = _MARQUE_DEGRE.search(texte)
+    if marque:
+        degre = marque.group(1)
+    else:
+        degre = next((l.strip() for l in texte.splitlines()
+                      if _LIGNE_DEGRE.match(l.strip())), "")
+    return _DEGRES_EN.get(degre, degre)
+
+
 def lecture_ratee(ou: str) -> str:
     """Message d'une première page de résultats affichée mais illisible."""
     return ("LinkedIn a affiché des résultats mais aucun profil n'a pu être lu — sa "
@@ -890,8 +912,14 @@ class LinkedInScraperV2:
     async def verifier_acceptations_async(self, cookie: str, profils, max_check: int = 30,
                                           progress_callback=None, status_callback=None):
         """Revisite les profils invités et détecte ceux devenus relation 1er degré.
-        Retourne la liste [{'url','nom'}] des profils ayant accepté."""
+
+        Une personne a accepté seulement si le degré lu dans l'en-tête de son
+        profil est « 1er » : le bouton « Message » existe aussi pour un 2e ou
+        un 3e degré. Un degré illisible compte comme non accepté.
+        Retourne la liste [{'url','nom'}] des profils ayant accepté ;
+        `self.verifiees` garde les URL dont la page a bien été lue."""
         self.errors = []
+        self.verifiees = []
         profils = list(profils)[:max_check]
         acceptees = []
         if not profils:
@@ -917,13 +945,20 @@ class LinkedInScraperV2:
                             self.errors.append(SESSION_EXPIREE)
                             break
                         await self.human.human_delay(1500, 400)
-                        btn = page.locator(
-                            'main button[aria-label^="Message"], main a[aria-label^="Message"], '
-                            'main button:has-text("Message"), main a:has-text("Message")'
-                        ).first
-                        if await btn.count() > 0 and await btn.is_visible():
+                        # La page est lue : elle compte comme vérifiée, même si
+                        # l'en-tête se révèle illisible.
+                        self.verifiees.append(url)
+                        try:
+                            entete = await page.locator("main section").first.inner_text(timeout=5000)
+                        except Exception as e:
+                            logger.warning(f"  ⚠️ En-tête illisible pour {nom}: {e}")
+                            entete = ""
+                        degre = degre_depuis_entete(entete)
+                        if degre == "1er":
                             acceptees.append({"url": url, "nom": nom})
                             logger.info(f"  ✅ A accepté : {nom}")
+                        else:
+                            logger.info(f"  ⏳ Pas encore 1er degré : {nom} (degré lu : {degre or 'illisible'})")
                     except Exception as e:
                         logger.warning(f"  ⚠️ Vérif {nom}: {e}")
                     if progress_callback:

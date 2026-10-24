@@ -12,8 +12,10 @@ import sqlite3
 import pytest
 
 import scraper_v2_sync
+from scraper_v2 import SESSION_EXPIREE
 from database import DatabaseManager
 from tests.conftest import chemins_de_test, lancer_app, verifier_page_affichee
+from utils.verification import derniere_verification
 from utils.verrou_linkedin import VerrouOccupe, message_occupe
 
 PAGE = "✉️ Messages"
@@ -26,6 +28,7 @@ class ScraperOccupe:
 
     def __init__(self, **k):
         self.errors = []
+        self.verifiees = []
         ScraperOccupe.instances.append(self)
 
     def verifier_acceptations(self, **k):
@@ -86,3 +89,77 @@ def test_envoi_refuse_par_le_verrou_le_dit_sans_relancer_la_page(invitation):
     assert not at.exception
     assert any(OCCUPE in e.value for e in at.error)
     assert not any("envoy" in s.value for s in at.success)
+
+
+URL_B = "https://www.linkedin.com/in/autre-profil-de-test-messages/"
+
+
+class ScraperVerifie:
+    """Scraper factice : rend ce que `lire` a été réglé à lire."""
+    verifiees = []
+    erreurs = []
+
+    def __init__(self, **k):
+        self.errors = []
+        self.verifiees = []
+
+    def verifier_acceptations(self, **k):
+        self.errors = list(ScraperVerifie.erreurs)
+        self.verifiees = list(ScraperVerifie.verifiees)
+        return []
+
+
+@pytest.fixture
+def deux_invitations(monkeypatch, invitation):
+    monkeypatch.setattr(scraper_v2_sync, "LinkedInScraperV2Sync", ScraperVerifie)
+    invitation.ajouter_invitation(invitation.ajouter_profil("Autre Test", "PM", "Orbique", "", URL_B), "")
+    fichier = chemins_de_test().config_dir / "derniere_verification.json"
+    fichier.unlink(missing_ok=True)
+    yield invitation
+    fichier.unlink(missing_ok=True)
+    con = sqlite3.connect(str(chemins_de_test().db_file))
+    con.execute("DELETE FROM invitations WHERE profile_id IN (SELECT id FROM profiles WHERE url = ?)", (URL_B,))
+    con.execute("DELETE FROM profiles WHERE url = ?", (URL_B,))
+    con.commit()
+    con.close()
+
+
+def _dates(db):
+    con = sqlite3.connect(db.db_file)
+    rows = dict(con.execute(
+        "SELECT p.url, i.date_verification FROM invitations i "
+        "JOIN profiles p ON i.profile_id = p.id WHERE p.url IN (?, ?)", (URL, URL_B)))
+    con.close()
+    return rows
+
+
+def _verifier():
+    at = _page()
+    [b for b in at.button if b.label == "Vérifier qui a accepté"][0].click()
+    at.run()
+    assert not at.exception
+    return at
+
+
+def test_session_expiree_ne_marque_que_les_pages_lues(deux_invitations):
+    ScraperVerifie.verifiees = [URL]
+    ScraperVerifie.erreurs = [SESSION_EXPIREE]
+    _verifier()
+    dates = _dates(deux_invitations)
+    assert dates[URL] is not None and dates[URL_B] is None
+    assert derniere_verification(str(chemins_de_test().config_dir)) is None
+
+
+def test_verification_reussie_enregistre_la_date(deux_invitations):
+    ScraperVerifie.verifiees = [URL, URL_B]
+    ScraperVerifie.erreurs = []
+    _verifier()
+    assert all(d is not None for d in _dates(deux_invitations).values())
+    assert derniere_verification(str(chemins_de_test().config_dir)) is not None
+
+
+def test_session_occupee_n_enregistre_aucune_verification(deux_invitations):
+    ScraperVerifie.verifiees = []
+    ScraperVerifie.erreurs = [OCCUPE]
+    _verifier()
+    assert derniere_verification(str(chemins_de_test().config_dir)) is None
