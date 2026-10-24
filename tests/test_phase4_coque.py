@@ -114,12 +114,6 @@ def test_le_point_en_direct_pulse_trois_fois_puis_s_arrete():
     assert "wf-pouls" in regle and " 3;" in regle and "infinite" not in regle
 
 
-def test_la_derniere_barre_du_parcours_n_est_plus_orange():
-    css = theme_css()
-    regle = re.search(r"\.wf-entonnoir__etape:last-child \.wf-entonnoir__barre > span \{[^}]*\}", css).group(0)
-    assert "orange" not in regle and "var(--wf-accent)" in regle
-
-
 def test_l_icone_d_onglet_est_la_marque_en_svg():
     from streamlit.elements.lib.image_utils import image_to_url
     from streamlit.elements.lib.layout_utils import LayoutConfig

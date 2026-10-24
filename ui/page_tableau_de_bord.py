@@ -8,7 +8,6 @@ barre latérale), et que donnent mes invitations (bloc « Vos chiffres »,
 ui/bloc_chiffres.py : période, filtres, tuiles, semaines, tableaux).
 """
 
-from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 import streamlit as st
@@ -27,33 +26,6 @@ PAGE_RECHERCHE = "🔍 Recherche"
 def _aller_a(page: str) -> None:
     """Rappel de bouton : change de page avant le rerun qui suit le clic."""
     st.session_state["page"] = page
-
-
-def date_locale(brut) -> str:
-    """Horodatage SQLite (UTC, « AAAA-MM-JJ HH:MM:SS ») → « jj/mm/aaaa hh:mm » local.
-
-    `CURRENT_TIMESTAMP` de SQLite est en UTC : affiché tel quel, une
-    recherche lancée à 10 h à Paris apparaîtrait à 8 h. Une valeur illisible
-    est rendue telle quelle plutôt que de faire tomber la page.
-    """
-    if not brut:
-        return "—"
-    texte = str(brut).strip()
-    for motif in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
-                  "%Y-%m-%d %H:%M"):
-        try:
-            moment = datetime.strptime(texte, motif)
-        except ValueError:
-            continue
-        return moment.replace(tzinfo=timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M")
-    return texte[:16]
-
-
-def taux_acceptation(invites: int, acceptes: int) -> str:
-    """« 42 % » des invités ont accepté ; « — » tant que personne n'est invité."""
-    if invites <= 0:
-        return "—"
-    return f"{round(acceptes * 100 / invites)}\u202f%"
 
 
 # Icône de la carte « ont accepté » : la seule mise en vedette (pic de réussite).

@@ -9,7 +9,7 @@ Le HTML tient sur une seule ligne : st.markdown traite le Markdown, et une
 ligne vide ou une indentation de quatre espaces y casserait le bloc HTML.
 """
 from html import escape
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Iterable, Optional, Sequence
 
 TONS = ("ok", "attention", "danger", "neutre", "accent")
 
@@ -166,47 +166,6 @@ def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) ->
     )
 
 
-# ------------------------------------------------------------ entonnoir
-
-def taux_passage(precedent: int, courant: int) -> str:
-    """« 42 % » ; « — » quand l'étape précédente est vide."""
-    if precedent <= 0:
-        return "—"
-    return f"{round(courant * 100 / precedent)}{_ESPACE_FINE}%"
-
-
-def entonnoir(etapes: Sequence[Tuple[str, int]],
-              titre_accessible: str = "Parcours des prospects") -> str:
-    """Parcours horizontal (3 à 5 étapes) : effectif, barre proportionnelle
-    au plus grand effectif, et taux de passage depuis l'étape précédente."""
-    etapes = list(etapes)
-    if not etapes:
-        return ""
-    plus_grand = max((max(int(n), 0) for _, n in etapes), default=0)
-    items = []
-    for i, (libelle, n) in enumerate(etapes):
-        n = max(int(n), 0)
-        largeur = 0 if plus_grand == 0 else max(round(n * 100 / plus_grand, 1), 2 if n else 0)
-        if i == 0:
-            taux = ""
-        else:
-            valeur = taux_passage(max(int(etapes[i - 1][1]), 0), n)
-            vide = " wf-entonnoir__taux--vide" if valeur == "—" else ""
-            explication = ("étape précédente vide" if valeur == "—"
-                           else "de l'étape précédente")
-            taux = (f'<span class="wf-entonnoir__taux{vide}">{valeur}'
-                    f'<span class="wf-sr"> {explication}</span></span>')
-        items.append(
-            f'<li class="wf-entonnoir__etape" style="--i:{i}">'
-            f'<div class="wf-entonnoir__tete"><span class="wf-entonnoir__libelle">{escape(libelle)}</span>{taux}</div>'
-            f'<div class="wf-entonnoir__nombre">{_nombre(n)}</div>'
-            f'<div class="wf-entonnoir__barre" aria-hidden="true"><span style="width:{largeur:g}%;--i:{i}"></span></div>'
-            '</li>'
-        )
-    return (f'<ol class="wf-entonnoir" style="--wf-etapes:{len(etapes)}" '
-            f'aria-label="{escape(titre_accessible)}">{"".join(items)}</ol>')
-
-
 # --------------------------------------------------- cartes et état vide
 
 def carte_action(titre: str, detail: str, ton: str = "neutre",
@@ -259,10 +218,6 @@ def afficher_bandeau_contexte(sous_titre: str, puces: Iterable[Sequence] = (),
 def afficher_jauge_budget(utilisees: int, plafond: int,
                           sur_fond_sombre: bool = False, conteneur=None) -> None:
     _ecrire(jauge_budget(utilisees, plafond, sur_fond_sombre), conteneur)
-
-
-def afficher_entonnoir(etapes: Sequence[Tuple[str, int]], conteneur=None) -> None:
-    _ecrire(entonnoir(etapes), conteneur)
 
 
 def afficher_carte_action(titre: str, detail: str, ton: str = "neutre",

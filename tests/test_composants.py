@@ -6,8 +6,8 @@ import re
 import pytest
 
 from ui.composants import (ICONES, TONS, bandeau_contexte, carte_action,
-                           entonnoir, etat_vide, jauge_budget, pluriel,
-                           point_direct, puce, taux_passage, ton_budget)
+                           etat_vide, jauge_budget, pluriel,
+                           point_direct, puce, ton_budget)
 
 NBSP_FINE = " "
 
@@ -48,7 +48,6 @@ def test_tout_texte_recu_est_echappe():
         bandeau_contexte(piege, [(piege, "neutre")]),
         carte_action(piege, piege),
         etat_vide(piege, piege),
-        entonnoir([(piege, 3), ("b", 1), ("c", 0)]),
         point_direct(piege),
     ):
         assert "<script>" not in html
@@ -57,7 +56,7 @@ def test_tout_texte_recu_est_echappe():
 
 def test_html_sur_une_ligne_pour_st_markdown():
     # Une ligne vide ou une indentation casserait le bloc HTML du Markdown.
-    for html in (jauge_budget(4, 20), entonnoir([("a", 3), ("b", 1), ("c", 0)]),
+    for html in (jauge_budget(4, 20),
                  carte_action("a", "b", "ok"), etat_vide("a", "b"),
                  bandeau_contexte("a", [("b", "ok", True)])):
         assert "\n" not in html
@@ -151,35 +150,6 @@ def test_jauge_bornee_et_plafond_nul():
 def test_jauge_sur_fond_sombre():
     assert "wf-jauge--sombre" in jauge_budget(3, 20, sur_fond_sombre=True)
     assert "wf-jauge--sombre" not in jauge_budget(3, 20)
-
-
-# ---------------------------------------------------------------- entonnoir
-
-def test_taux_de_passage():
-    assert taux_passage(200, 50) == f"25{NBSP_FINE}%"
-    assert taux_passage(3, 1) == f"33{NBSP_FINE}%"
-    assert taux_passage(0, 0) == "—"
-    assert taux_passage(0, 5) == "—"
-
-
-def test_entonnoir_gere_les_zeros():
-    html = entonnoir([("Trouvés", 0), ("Invités", 0), ("Acceptés", 0)])
-    assert html.count("<li") == 3
-    assert html.count("—") == 2
-    assert "width:0%" in html
-    assert "ZeroDivision" not in html
-
-
-def test_entonnoir_proportions_et_taux():
-    html = entonnoir([("Trouvés", 200), ("Invités", 50), ("Acceptés", 10), ("Message envoyé", 0)])
-    assert "width:100%" in html and "width:25%" in html and "width:5%" in html
-    assert f"25{NBSP_FINE}%" in html and f"20{NBSP_FINE}%" in html and f"0{NBSP_FINE}%" in html
-    assert "--wf-etapes:4" in html
-    assert html.startswith("<ol") and 'aria-label="Parcours des prospects"' in html
-
-
-def test_entonnoir_vide():
-    assert entonnoir([]) == ""
 
 
 # ------------------------------------------------- carte et état vide

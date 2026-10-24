@@ -6,8 +6,7 @@ import sqlite3
 from database import DatabaseManager
 from tests.conftest import lancer_app, verifier_page_affichee
 from ui.page_tableau_de_bord import (PAGE_MESSAGES, PAGE_RECHERCHE,
-                                     actions_du_jour, date_locale,
-                                     taux_acceptation)
+                                     actions_du_jour)
 
 
 # --- compter_parcours ------------------------------------------------------
@@ -63,19 +62,6 @@ def test_parcours_sans_colonne_date_message(tmp_path):
 
 # --- fonctions pures --------------------------------------------------------
 
-def test_taux_acceptation():
-    assert taux_acceptation(0, 0) == "—"
-    assert taux_acceptation(4, 1) == "25 %"
-
-
-def test_date_locale_au_format_francais():
-    rendu = date_locale("2026-10-18 08:05:00")
-    assert len(rendu) == 16 and rendu[2] == "/" and rendu[5] == "/" and rendu[10] == " "
-    assert rendu.startswith(("18/10/2026", "17/10/2026", "19/10/2026"))
-    assert date_locale(None) == "—"
-    assert date_locale("pas une date") == "pas une date"
-
-
 def test_rien_d_urgent_quand_tout_est_a_jour():
     assert actions_du_jour(0, 0, True) == []
 
@@ -110,8 +96,7 @@ def test_la_page_repond_a_que_faire_aujourd_hui(tmp_path, monkeypatch):
     verifier_page_affichee(at, "📊 Dashboard")
     html = " ".join(m.value for m in at.main.markdown)
     assert "Ce qui vous attend aujourd&#x27;hui." in html or "Ce qui vous attend aujourd'hui." in html
-    # Base vide : l'état vide apprend quoi faire au lieu d'un mur de zéros
-    # (l'entonnoir rempli est vérifié dans tests/test_phase4_coque.py).
+    # Base vide : l'état vide apprend quoi faire au lieu d'un mur de zéros.
     assert '<div class="wf-vide">' in html and "Lancez votre première recherche" in html
     assert '<ol class="wf-entonnoir"' not in html
     assert "wf-action" in html

@@ -462,25 +462,6 @@ __CODE__
 .wf-jauge--attention .wf-jauge__note { color:var(--wf-warn); }
 @keyframes wf-cran { from { transform:scaleY(.15); opacity:.25; } }
 
-/* Entonnoir du parcours */
-ol.wf-entonnoir { list-style:none !important; margin:0 0 1rem !important; padding:16px 4px !important; display:grid !important; width:100%; grid-template-columns:repeat(var(--wf-etapes,4),minmax(0,1fr)); background:var(--wf-surface); border-radius:var(--wf-radius); box-shadow:var(--wf-shadow); }
-.wf-entonnoir__etape { margin:0 !important; padding:0 16px !important; display:grid !important; list-style:none !important; gap:6px; align-content:start; min-width:0; }
-.wf-entonnoir__etape + .wf-entonnoir__etape { border-left:1px solid var(--wf-border); }
-.wf-entonnoir__tete { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-.wf-entonnoir__libelle { font-size:.8rem; font-weight:600; color:var(--wf-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.wf-entonnoir__taux { font-size:.75rem; font-weight:700; color:var(--wf-accent-strong); font-variant-numeric:tabular-nums; white-space:nowrap; }
-.wf-entonnoir__taux--vide { color:var(--wf-muted); }
-.wf-entonnoir__nombre { font-size:1.6rem; font-weight:800; letter-spacing:-.02em; color:var(--wf-text); font-variant-numeric:tabular-nums; line-height:1.1; }
-.wf-entonnoir__barre { height:6px; border-radius:3px; background:var(--wf-grid); overflow:hidden; }
-.wf-entonnoir__barre > span { display:block; height:100%; border-radius:3px; background:var(--wf-accent-vif); transform-origin:0 50%; animation:wf-barre 280ms var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 40ms); }
-/* Dernière étape (message envoyé) en marine : l'orange est réservé au budget. */
-.wf-entonnoir__etape:last-child .wf-entonnoir__barre > span { background:var(--wf-accent); }
-@keyframes wf-barre { from { transform:scaleX(.04); opacity:0; } }
-@media (max-width: 720px) {
-  ol.wf-entonnoir { grid-template-columns:1fr !important; gap:14px; }
-  .wf-entonnoir__etape + .wf-entonnoir__etape { border-left:none; }
-}
-
 /* Carte « À faire » */
 .wf-action { display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:var(--wf-radius); background:var(--wf-surface); box-shadow:var(--wf-shadow); margin-bottom:8px; }
 .wf-action__icone { width:34px; height:34px; flex:none; display:grid; place-items:center; border-radius:10px; color:var(--wf-muted); background:var(--wf-surface2); }
@@ -555,7 +536,7 @@ ol.wf-vide__etapes li::marker { color:var(--wf-accent); font-weight:700; }
    de remplissage ; un fondu court reste, il aide à voir ce qui change. */
 @media (prefers-reduced-motion: reduce) {
   [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] > * { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
-  .wf-cran, .wf-entonnoir__barre > span { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
+  .wf-cran { animation:wf-fondu 150ms ease backwards !important; animation-delay:0ms !important; }
   .wf-direct::after { animation:none !important; display:none; }
   .stButton button, .stDownloadButton button, .stFormSubmitButton button { transition:background-color 150ms ease, border-color 150ms ease, color 150ms ease !important; }
   .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover,

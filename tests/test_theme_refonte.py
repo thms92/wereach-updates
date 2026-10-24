@@ -128,12 +128,12 @@ def test_focus_clavier_visible():
 def test_mouvement_reduit_respecte():
     assert "@media (prefers-reduced-motion: reduce)" in CSS
     bloc = CSS.split("@media (prefers-reduced-motion: reduce)")[1]
-    for sel in (".wf-cran", ".wf-entonnoir__barre > span", ".wf-direct::after",
+    for sel in (".wf-cran", ".wf-direct::after",
                 "[data-testid=\"stMainBlockContainer\"]"):
         assert sel in bloc
     # Moins, pas rien : plus de déplacement ni de pulsation, un fondu reste.
     assert "transform:none" in bloc and "animation:none" in bloc
-    assert "wf-fondu" in bloc and "wf-entree" not in bloc and "wf-cran " not in bloc
+    assert "wf-fondu" in bloc and "wf-entree" not in bloc and "animation:wf-cran" not in bloc
     assert "@keyframes wf-fondu { from { opacity:0; } }" in CSS
 
 

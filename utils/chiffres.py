@@ -22,7 +22,7 @@ _VIDE_ENTREPRISE = "Non renseignée"
 _VIDE_POSTE = "Non renseigné"
 _VIDES = {"ecole": _VIDE_ECOLE, "entreprise": _VIDE_ENTREPRISE, "poste": _VIDE_POSTE}
 
-# Mêmes formats que `date_locale` de la page du tableau de bord.
+# Formats des horodatages SQLite lus (comme `moment_local` de la page Historique).
 _FORMATS_DATE = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
                  "%Y-%m-%d %H:%M")
 
