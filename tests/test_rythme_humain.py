@@ -327,3 +327,134 @@ def test_plafonds_par_passage():
         == C.MAX_MESSAGES_PAR_SEANCE == 10
     import ui.page_messages as pm
     assert pm.MAX_ENVOIS == C.MAX_MESSAGES_PAR_SEANCE
+
+
+# --- Recherche : une seule pause entre deux pas, jamais deux d'affilée ------
+
+def test_recherche_une_seule_pause_entre_deux_pas(tmp_path, monkeypatch):
+    """Pause avant chaque invitation sauf la première d'une page fraîchement
+    chargée : la porte attend déjà avant la page suivante, et rien après la
+    dernière invitation avant de fermer Chrome."""
+    from utils.human_behavior import HumanBehavior
+    s = _scraper(tmp_path, monkeypatch)
+    journal = []
+
+    async def aller(page, url, *a, **k):
+        journal.append("page " + url.rsplit("page=", 1)[-1])
+        page.url = url
+        return True
+
+    async def pause(self):
+        journal.append("pause")
+
+    async def vrai(*a, **k):
+        return True
+
+    def personne(n):
+        return {"nom": n, "url": f"https://www.linkedin.com/in/{n}/",
+                "poste": "PM", "entreprise": "X"}
+
+    async def profils(page):
+        return [personne("a"), personne("b")] if page.url.endswith("page=1") \
+            else [personne("c"), personne("d")]
+
+    async def inviter(page, url, nom, message=""):
+        journal.append("invite " + nom)
+        return True
+
+    async def ouvrir(p, cookie, status_callback=None):
+        return _FauxNavigateur(), _FaussePage()
+
+    monkeypatch.setattr(s.network_manager, "safe_page_goto", aller)
+    monkeypatch.setattr(HumanBehavior, "pause_entre_pages", pause)
+    for nom in ("page_entry_behavior", "browse_page_naturally", "simulate_distraction"):
+        monkeypatch.setattr(HumanBehavior, nom, _rien)
+    monkeypatch.setattr(HumanBehavior, "check_safety", vrai)
+    monkeypatch.setattr("scraper_v2.async_playwright", lambda: _FauxPlaywright())
+    monkeypatch.setattr(s, "_open_linkedin_page", ouvrir)
+    monkeypatch.setattr(s, "extraire_profils_page", profils)
+    monkeypatch.setattr(s, "envoyer_invitation", inviter)
+    monkeypatch.setattr(s, "_charger_urls_scrappees", lambda: set())
+
+    df = asyncio.run(s.run_scraper_async("C", "pm", None, 3, [], inviter=True))
+
+    assert len(df) == 3
+    assert journal == ["pause", "page 1", "invite a", "pause", "invite b",
+                       "pause", "page 2", "invite c"]
+
+
+# --- Panneau « profils similaires » : une page, comptée et contrôlée --------
+
+class _FauxLien:
+    def __init__(self, page):
+        self.page = page
+
+    async def scroll_into_view_if_needed(self):
+        pass
+
+    async def bounding_box(self):
+        return None
+
+    async def click(self):
+        self.page.clics += 1
+        self.page.url = self.page.url_apres_clic
+
+
+class _PageAvecPanneau(_FaussePage):
+    def __init__(self, url_apres_clic):
+        super().__init__()
+        self.url = PROFIL_A
+        self.url_apres_clic = url_apres_clic
+        self.clics = 0
+
+    async def wait_for_selector(self, selecteur, **k):
+        return _FauxLien(self)
+
+    async def wait_for_function(self, js, **k):
+        return True
+
+
+def _ouvrir_panneau(s, url_apres_clic=PROFIL_A + "overlay/browsemap-recommendations/"):
+    page = _PageAvecPanneau(url_apres_clic)
+    return page, asyncio.run(s._ouvrir_panneau(page))
+
+
+def test_ouvrir_le_panneau_compte_une_page(tmp_path, monkeypatch):
+    s = _scraper(tmp_path, monkeypatch)
+    monkeypatch.setattr(s.human, "human_delay", _rien)
+    page, echec = _ouvrir_panneau(s)
+    assert echec is None and page.clics == 1
+    assert s.human.daily_limits.pages_today == 1 and s.pages_cette_seance == 1
+
+
+def test_panneau_refuse_avant_le_clic_si_budget_epuise(tmp_path, monkeypatch):
+    s = _scraper(tmp_path, monkeypatch)
+    monkeypatch.setattr(s.human, "human_delay", _rien)
+    s.limite_pages_seance = 0
+    page = _PageAvecPanneau(PROFIL_A)
+    with pytest.raises(ArretLinkedIn) as arret:
+        asyncio.run(s._ouvrir_panneau(page))
+    assert arret.value.motif == "budget_seance" and page.clics == 0
+    s.limite_pages_seance = None
+    s.human.daily_limits.increment_pages(60)
+    with pytest.raises(ArretLinkedIn) as arret:
+        asyncio.run(s._ouvrir_panneau(page))
+    assert arret.value.motif == "budget_jour" and page.clics == 0
+
+
+def test_panneau_qui_mene_a_une_alerte_leve_alerte(tmp_path, monkeypatch):
+    s = _scraper(tmp_path, monkeypatch)
+    monkeypatch.setattr(s.human, "human_delay", _rien)
+    with pytest.raises(ArretLinkedIn) as arret:
+        _ouvrir_panneau(s, url_apres_clic=CHECKPOINT)
+    assert arret.value.motif == "alerte"
+    assert s.human.daily_limits.pages_today == 1
+
+
+def test_deux_pages_de_resultats_ne_sont_pas_le_meme_profil(tmp_path, monkeypatch):
+    # « &page=2 » ne diffère de « &page=1 » que par la requête : la règle
+    # « profil déjà ouvert » ne doit pas empêcher de charger la suivante.
+    s = _scraper(tmp_path, monkeypatch)
+    base = "https://www.linkedin.com/search/results/people/?keywords=pm"
+    _naviguer(s, _FaussePage(), base + "&page=1", base + "&page=2")
+    assert s.chargements == [base + "&page=1", base + "&page=2"]

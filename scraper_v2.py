@@ -71,8 +71,14 @@ def lecture_ratee(ou: str) -> str:
 
 
 
-def _cle_url(url: str) -> str:
-    """URL comparable : sans requête, sans ancre, sans « / » final."""
+def _cle_url(url: str) -> Optional[str]:
+    """Profil comparable : sans requête, sans ancre, sans « / » final.
+
+    None hors d'un profil (/in/) : deux pages de résultats ne diffèrent que
+    par leur requête (« &page=2 »), elles ne sont jamais « déjà ouvertes ».
+    """
+    if "/in/" not in urllib.parse.urlparse(url or "").path:
+        return None
     return (url or "").split("#")[0].split("?")[0].rstrip("/")
 
 
@@ -147,6 +153,39 @@ class LinkedInScraperV2:
         else:
             self.db = None
 
+    def _avant_page(self) -> None:
+        """Refuse une nouvelle page si le budget du jour ou de la séance est
+        épuisé (ArretLinkedIn « budget_jour » / « budget_seance »)."""
+        if not self.human.daily_limits.can_navigate():
+            raise ArretLinkedIn("budget_jour")
+        if (self.limite_pages_seance is not None
+                and self.pages_cette_seance >= self.limite_pages_seance):
+            raise ArretLinkedIn("budget_seance")
+
+    def _compter_page(self) -> None:
+        """Une page de plus, pour le jour et pour la séance."""
+        self.human.daily_limits.increment_pages()
+        self.pages_cette_seance += 1
+
+    async def _controler_arrivee(self, page, demande: str, statut: Optional[int] = None) -> None:
+        """Lève ArretLinkedIn « alerte » ou « session » si la page affichée est
+        un avertissement ou la connexion de LinkedIn (URL, statut, et texte
+        hors des pages de travail)."""
+        arrivee = page.url
+        texte = None
+        if not _page_de_travail(arrivee):
+            try:
+                texte = (await page.locator("body").inner_text(timeout=3000))[:3000]
+            except Exception:
+                texte = None
+        nature = nature_page(arrivee, texte, statut)
+        if nature == "alerte":
+            logger.error(f"🚨 Page d'alerte LinkedIn ({arrivee}) en ouvrant {demande} — arrêt immédiat")
+        elif nature == "session":
+            logger.warning(f"🔐 LinkedIn renvoie vers sa connexion ({arrivee}) — arrêt")
+        if nature:
+            raise ArretLinkedIn(nature, arrivee)
+
     async def _naviguer(self, page, url: str) -> bool:
         """La seule porte vers une page LinkedIn : comptée, rythmée, surveillée.
 
@@ -155,44 +194,26 @@ class LinkedInScraperV2:
         attend une pause humaine, charge, compte 1 page (même si le chargement
         échoue : la requête est partie), puis lève ArretLinkedIn « alerte » ou
         « session » si LinkedIn a répondu par une page d'avertissement ou de
-        connexion. Une URL déjà ouverte dans ce passage et toujours affichée
-        n'est pas rechargée. Rend le booléen de safe_page_goto.
+        connexion. Un profil déjà ouvert dans ce passage et toujours affiché
+        n'est pas rechargé. Rend le booléen de safe_page_goto.
+        Le panneau « profils similaires », ouvert par un clic, passe par les
+        mêmes contrôles (_ouvrir_panneau).
         """
         cle = _cle_url(url)
-        if cle in self._deja_ouvertes and _cle_url(page.url) == cle:
+        if cle is not None and cle in self._deja_ouvertes and _cle_url(page.url) == cle:
             return True
 
-        limites = self.human.daily_limits
-        if not limites.can_navigate():
-            raise ArretLinkedIn("budget_jour")
-        if (self.limite_pages_seance is not None
-                and self.pages_cette_seance >= self.limite_pages_seance):
-            raise ArretLinkedIn("budget_seance")
-
+        self._avant_page()
         await self.human.pause_entre_pages()
         ok = False
         try:
             ok = await self.network_manager.safe_page_goto(page, url)
         finally:
-            limites.increment_pages()
-            self.pages_cette_seance += 1
-        if ok:
+            self._compter_page()
+        if ok and cle is not None:
             self._deja_ouvertes.add(cle)
 
-        arrivee = page.url
-        texte = None
-        if not _page_de_travail(arrivee):
-            try:
-                texte = (await page.locator("body").inner_text(timeout=3000))[:3000]
-            except Exception:
-                texte = None
-        nature = nature_page(arrivee, texte, getattr(self.network_manager, "last_status", None))
-        if nature == "alerte":
-            logger.error(f"🚨 Page d'alerte LinkedIn ({arrivee}) en chargeant {url} — arrêt immédiat")
-        elif nature == "session":
-            logger.warning(f"🔐 LinkedIn renvoie vers sa connexion ({arrivee}) — arrêt")
-        if nature:
-            raise ArretLinkedIn(nature, arrivee)
+        await self._controler_arrivee(page, url, getattr(self.network_manager, "last_status", None))
         return ok
 
     def _noter_arret(self, arret: ArretLinkedIn) -> None:
@@ -1339,6 +1360,10 @@ class LinkedInScraperV2:
 
                         logger.info(f"📋 {len(profiles_page)} profils à traiter sur cette page")
 
+                        # Pause avant chaque invitation sauf la première de la
+                        # page : la porte attend déjà avant la page suivante.
+                        deja_invite_sur_la_page = False
+
                         # Traiter chaque profil
                         for profile in profiles_page:
 
@@ -1389,6 +1414,9 @@ class LinkedInScraperV2:
                                     status_callback(f"Invitation de {nom}…")
 
                                 try:
+                                    if deja_invite_sur_la_page:
+                                        await self.human.pause_entre_pages()
+                                    deja_invite_sur_la_page = True
                                     invite_envoyee = await self.envoyer_invitation(
                                         page,
                                         url_profil,
@@ -1402,9 +1430,6 @@ class LinkedInScraperV2:
                                         logger.info(f"   📊 Progression: {invitations_envoyees}/{nb_profils} invitations "
                                                     f"(jour: {self.human.daily_limits.invitations_today})")
 
-                                    # Même rythme qu'entre deux pages (pause
-                                    # « lecture » comprise), même sans changer de page.
-                                    await self.human.pause_entre_pages()
                                     # Augmenter légèrement la fatigue au fil des invitations
                                     self.human.increase_fatigue(0.02)
 
@@ -1865,23 +1890,34 @@ class LinkedInScraperV2:
         if lien is None:
             return "le lien « Tout afficher » de la section est introuvable"
 
+        # Le panneau est une page : mêmes budgets, même pause, même compte et
+        # même détecteur que la porte _naviguer — le clic ne les contourne pas.
+        self._avant_page()
+        await self.human.pause_entre_pages()
         try:
             await lien.scroll_into_view_if_needed()
             await self.human.human_delay(900, 300)
-            await self.human.human_hover_and_click(page, lien)
+            try:
+                await self.human.human_hover_and_click(page, lien)
+            finally:
+                self._compter_page()
         except Exception as err:
             logger.warning(f"⚠️ Clic sur « Tout afficher » impossible : {err}")
+            await self._controler_arrivee(page, "le panneau des profils similaires")
             return "le clic sur « Tout afficher » a échoué"
 
         # Borné : un panneau qui ne vient pas ne doit pas immobiliser l'outil,
         # on se rabat alors sur la section, avec un avertissement.
         attente = "() => (" + DOMSelectors.compter_panneau_browsemap_js() + ")() > 0"
+        echec = None
         try:
             await page.wait_for_function(attente, timeout=10000)
         except Exception as err:
             logger.warning(f"⚠️ Panneau des profils voisins absent après le clic : {err}")
-            return "le panneau ne s'est pas ouvert après le clic sur « Tout afficher »"
-        return None
+            echec = "le panneau ne s'est pas ouvert après le clic sur « Tout afficher »"
+        # Pas de statut HTTP ici : routage côté client, aucun chargement.
+        await self._controler_arrivee(page, "le panneau des profils similaires")
+        return echec
 
     async def recolter_browsemap_async(
         self,
