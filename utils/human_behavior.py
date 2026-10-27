@@ -26,6 +26,9 @@ from datetime import datetime, date
 from typing import Optional, Dict
 from playwright.async_api import Page, Locator, BrowserContext, Response
 from logger import logger
+from utils.alerte_linkedin import ArretLinkedIn
+
+URL_FIL = "https://www.linkedin.com/feed/"
 
 
 class DailyLimitsTracker:
@@ -257,6 +260,20 @@ class HumanBehavior:
         """Attend un délai gaussien réaliste."""
         delay = self.gaussian_delay(mean_ms, std_ms)
         await asyncio.sleep(delay / 1000)
+
+    async def pause_entre_pages(self):
+        """Attente entre deux pages LinkedIn, comme une personne qui lit.
+
+        Tirée au hasard entre DELAI_PAGE_MIN_S et DELAI_PAGE_MAX_S ; environ
+        une fois sur six (PAUSE_LECTURE_PROBA), une pause « lecture » plus
+        longue s'y ajoute. Appelée par la porte de navigation avant chaque
+        page : les boucles n'attendent plus elles-mêmes entre deux pages.
+        """
+        from config import ScraperConfig as C
+        attente = random.uniform(C.DELAI_PAGE_MIN_S, C.DELAI_PAGE_MAX_S)
+        if random.random() < C.PAUSE_LECTURE_PROBA:
+            attente += random.uniform(C.PAUSE_LECTURE_MIN_S, C.PAUSE_LECTURE_MAX_S)
+        await asyncio.sleep(attente)
 
     async def reading_pause(self, text_length: int = 100):
         """
@@ -552,28 +569,29 @@ class HumanBehavior:
     # WARM-UP SESSION
     # =========================================================================
 
-    async def warmup_session(self, page: Page):
+    async def warmup_session(self, page: Page, naviguer=None):
         """
         Simule le comportement d'un utilisateur qui ouvre LinkedIn :
-        1. Visite le feed
-        2. Scrolle un peu
-        3. Peut-être clique sur une notification
-        4. Puis va vers la recherche
-
-        Cela crée un historique de navigation naturel dans la session.
+        visite le fil d'actualité et le parcourt avant la première action.
         Un bot va directement sur /search/results/people — un humain, jamais.
+
+        `naviguer` est la porte de navigation du scraper (`_naviguer`) : le
+        fil y passe, compte 1 page et passe le détecteur d'alerte (qui lève
+        ArretLinkedIn, laissé remonter). Sans porte, pas de visite : une page
+        chargée hors de la porte ne serait pas comptée.
         """
+        if naviguer is None:
+            logger.warning("⚠️ Warm-up sans porte de navigation : visite du fil ignorée")
+            return True
+
         logger.info("🌡️ Warm-up session — visite du feed LinkedIn...")
 
         try:
-            # Aller sur le feed
-            await page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=30000)
+            # Aller sur le feed (session expirée ou alerte → ArretLinkedIn)
+            if not await naviguer(page, URL_FIL):
+                logger.warning("⚠️ Warm-up: fil d'actualité non chargé (non bloquant)")
+                return True
             await asyncio.sleep(random.uniform(2, 4))
-
-            # Vérifier qu'on est bien connecté
-            if any(x in page.url for x in ["login", "authwall", "checkpoint"]):
-                logger.error("❌ Warm-up: pas connecté, cookie invalide")
-                return False
 
             logger.info("✅ Warm-up: connecté au feed LinkedIn")
 
@@ -592,6 +610,8 @@ class HumanBehavior:
             logger.info("✅ Warm-up terminé — session naturelle établie")
             return True
 
+        except ArretLinkedIn:
+            raise
         except Exception as e:
             err_str = str(e)
             # Erreurs qui indiquent clairement un cookie expiré / session invalide.

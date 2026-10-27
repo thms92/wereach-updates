@@ -8,7 +8,7 @@ import sys
 import pandas as pd
 import streamlit as st
 
-from config import ECOLES, CONCURRENTS, SECTEURS
+from config import ECOLES, CONCURRENTS, SECTEURS, ScraperConfig
 from scraper_v2 import LinkedInScraperV2 as _S
 # Résolu à l'appel, pas à l'import : le remplacement de
 # scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
@@ -269,7 +269,8 @@ def afficher_page_recherche():
         )
         secteurs_selectionnes = [SECTEURS[s] for s in secteurs_noms]
         nb_profils = d.number_input("Nombre de profils", min_value=1,
-                                    max_value=80, value=10, key="crit_nb")
+                                    max_value=ScraperConfig.MAX_PROFILES_PER_RUN,
+                                    value=10, key="crit_nb")
         ile_de_france = d.toggle("Île-de-France uniquement", value=False, key="crit_idf",
                                  help="Ne garde que les profils situés en Île-de-France.")
         # Cabinets et saisie libre se cumulent — LinkedIn les combine en OU.

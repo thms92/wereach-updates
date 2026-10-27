@@ -33,6 +33,7 @@ from utils.human_behavior import HumanBehavior
 from utils.stealth_profile import StealthProfileManager
 import utils.requete_linkedin as requete
 from utils.page_vide import diagnostiquer_page_vide
+from utils.alerte_linkedin import ArretLinkedIn, CHEMINS_TRAVAIL, nature_page
 
 
 
@@ -70,6 +71,20 @@ def lecture_ratee(ou: str) -> str:
 
 
 
+def _cle_url(url: str) -> str:
+    """URL comparable : sans requête, sans ancre, sans « / » final."""
+    return (url or "").split("#")[0].split("?")[0].rstrip("/")
+
+
+def _page_de_travail(url: str) -> bool:
+    """Profil, recherche, fil… : pages où le texte peut citer « activité
+    inhabituelle » sans alerte. Leur texte n'est pas lu par le détecteur."""
+    chemin = (urllib.parse.urlparse(url or "").path or "/").lower()
+    if not chemin.endswith("/"):
+        chemin += "/"
+    return chemin.startswith(CHEMINS_TRAVAIL)
+
+
 def deja_en_relation_ou_invite(profil: dict) -> bool:
     """Déjà dans le réseau (1er) ou invitation en attente : rien à proposer.
 
@@ -99,6 +114,13 @@ class LinkedInScraperV2:
         self.errors = []
         self.ecartes_reseau = 0
         self.use_database = use_database
+        # Rythme : plafond de pages de la séance (posé par l'enveloppe ;
+        # None = pas de plafond), pages déjà chargées dans la séance, et
+        # pages ouvertes dans le passage en cours (remis à zéro par chaque
+        # point d'entrée) pour ne pas recharger un profil déjà ouvert.
+        self.limite_pages_seance: Optional[int] = None
+        self.pages_cette_seance = 0
+        self._deja_ouvertes: set = set()
 
         # Initialiser le gestionnaire réseau avec retry
         self.network_manager = NetworkManager(RetryConfig(
@@ -124,6 +146,71 @@ class LinkedInScraperV2:
                 self.db = None
         else:
             self.db = None
+
+    async def _naviguer(self, page, url: str) -> bool:
+        """La seule porte vers une page LinkedIn : comptée, rythmée, surveillée.
+
+        Refuse avant tout chargement si le budget du jour ou de la séance est
+        épuisé (ArretLinkedIn « budget_jour » / « budget_seance »). Sinon
+        attend une pause humaine, charge, compte 1 page (même si le chargement
+        échoue : la requête est partie), puis lève ArretLinkedIn « alerte » ou
+        « session » si LinkedIn a répondu par une page d'avertissement ou de
+        connexion. Une URL déjà ouverte dans ce passage et toujours affichée
+        n'est pas rechargée. Rend le booléen de safe_page_goto.
+        """
+        cle = _cle_url(url)
+        if cle in self._deja_ouvertes and _cle_url(page.url) == cle:
+            return True
+
+        limites = self.human.daily_limits
+        if not limites.can_navigate():
+            raise ArretLinkedIn("budget_jour")
+        if (self.limite_pages_seance is not None
+                and self.pages_cette_seance >= self.limite_pages_seance):
+            raise ArretLinkedIn("budget_seance")
+
+        await self.human.pause_entre_pages()
+        ok = False
+        try:
+            ok = await self.network_manager.safe_page_goto(page, url)
+        finally:
+            limites.increment_pages()
+            self.pages_cette_seance += 1
+        if ok:
+            self._deja_ouvertes.add(cle)
+
+        arrivee = page.url
+        texte = None
+        if not _page_de_travail(arrivee):
+            try:
+                texte = (await page.locator("body").inner_text(timeout=3000))[:3000]
+            except Exception:
+                texte = None
+        nature = nature_page(arrivee, texte, getattr(self.network_manager, "last_status", None))
+        if nature == "alerte":
+            logger.error(f"🚨 Page d'alerte LinkedIn ({arrivee}) en chargeant {url} — arrêt immédiat")
+        elif nature == "session":
+            logger.warning(f"🔐 LinkedIn renvoie vers sa connexion ({arrivee}) — arrêt")
+        if nature:
+            raise ArretLinkedIn(nature, arrivee)
+        return ok
+
+    def _noter_arret(self, arret: ArretLinkedIn) -> None:
+        """Range dans self.errors la raison d'un arrêt, pour la personne."""
+        if arret.motif == "budget_jour":
+            msg = (f"Limite du jour atteinte : {self.human.daily_limits.pages_today} "
+                   "pages LinkedIn consultées. Vous pourrez reprendre demain.")
+        elif arret.motif == "budget_seance":
+            msg = (f"Séance terminée : {self.pages_cette_seance} pages consultées. "
+                   f"Prochaine séance possible dans "
+                   f"{self.config.PAUSE_ENTRE_SEANCES_MIN} minutes.")
+        else:
+            # Alerte comme session : la personne voit la page de LinkedIn,
+            # l'outil n'ajoute aucun texte (décision de Thomas, 2026-10-27).
+            msg = SESSION_EXPIREE
+        if arret.motif.startswith("budget"):
+            logger.warning(f"🚫 {msg}")
+        self.errors.append(msg)
 
     def _context_kwargs(self, profile, viewport) -> dict:
         kwargs = {
@@ -355,8 +442,9 @@ class LinkedInScraperV2:
 
         Plus robuste que l'API typeahead (qui peut échouer avec "Failed to
         fetch" selon l'environnement) : on réutilise la navigation normale
-        (page.goto), qui fonctionne déjà pour la recherche de personnes.
-        Le résultat est mis en cache (config/company_urns.json).
+        (la porte `_naviguer`), qui fonctionne déjà pour la recherche de
+        personnes. Le résultat est mis en cache (config/company_urns.json).
+        Un ArretLinkedIn (alerte, budget) remonte au point d'entrée appelant.
         """
         if not entreprise:
             return None
@@ -369,7 +457,7 @@ class LinkedInScraperV2:
                 "https://www.linkedin.com/search/results/companies/"
                 f"?keywords={kw_q}&origin=SWITCH_SEARCH_VERTICAL"
             )
-            ok = await self.network_manager.safe_page_goto(page, search_url)
+            ok = await self._naviguer(page, search_url)
             if not ok:
                 logger.warning(f"⚠️ Navigation recherche entreprise '{entreprise}' échouée")
                 return None
@@ -418,6 +506,8 @@ class LinkedInScraperV2:
             except Exception as dump_err:
                 logger.warning(f"⚠️ Échec dump page entreprises: {dump_err}")
             return None
+        except ArretLinkedIn:
+            raise
         except Exception as e:
             logger.warning(f"⚠️ Erreur résolution URN '{entreprise}' via navigation: {e}")
             return None
@@ -603,7 +693,7 @@ class LinkedInScraperV2:
                     # "Se connecter" (section principale, sinon menu "Plus").
                     clean_url = profile_url.split('?')[0].rstrip('/') + '/'
                     if vanity_name not in page.url:
-                        await self.network_manager.safe_page_goto(page, clean_url)
+                        await self._naviguer(page, clean_url)
                         await self.human.human_delay(2000, 500)
                     c = page.locator(
                         'main button[aria-label*="nviter"][aria-label*="onnecter"], '
@@ -651,6 +741,8 @@ class LinkedInScraperV2:
                 await self.human.human_hover_and_click(page, connect)
                 logger.info("  ✓ Clic sur 'Se connecter'")
 
+            except ArretLinkedIn:
+                raise
             except Exception as e:
                 logger.warning(f"  ⚠️ Erreur lors du clic sur 'Se connecter': {e}")
                 return False
@@ -788,6 +880,8 @@ class LinkedInScraperV2:
 
             return False
 
+        except ArretLinkedIn:
+            raise
         except Exception as e:
             logger.error(f"❌ Erreur invitation {profile_name}: {e}")
             try:
@@ -809,7 +903,7 @@ class LinkedInScraperV2:
         try:
             logger.info(f"💬 Message à : {profile_name}")
             clean_url = profile_url.split('?')[0].rstrip('/') + '/'
-            await self.network_manager.safe_page_goto(page, clean_url)
+            await self._naviguer(page, clean_url)
             await self.human.human_delay(2000, 500)
 
             btn = page.locator(
@@ -872,13 +966,17 @@ class LinkedInScraperV2:
             await self.human.human_delay(1000, 250)
             return True
 
+        except ArretLinkedIn:
+            raise
         except Exception as e:
             logger.warning(f"  ⚠️ Erreur message {profile_name}: {e}")
             return False
 
     async def _open_linkedin_page(self, p, cookie: str, status_callback=None):
         """Ouvre Chrome + session LinkedIn (cookie) + warm-up.
-        Retourne (browser, page) ou (None, None) si le cookie est invalide/expiré."""
+        Retourne (browser, page) ou (None, None) si le cookie est invalide/expiré.
+        Lève ArretLinkedIn, Chrome déjà fermé, si le warm-up est refusé
+        (budget) ou tombe sur une page d'alerte ou de connexion."""
         profile = StealthProfileManager.load_or_generate(prefer_mac=True)
         viewport = profile.viewport
         launch_args = [
@@ -905,12 +1003,18 @@ class LinkedInScraperV2:
         self.human.attach_monitor(page)
         if status_callback:
             status_callback("Préparation de la session LinkedIn…")
-        if not await self.human.warmup_session(page):
+        try:
+            warmup_ok = await self.human.warmup_session(page, naviguer=self._naviguer)
+        except ArretLinkedIn:
+            await browser.close()
+            raise
+        if not warmup_ok:
             await browser.close()
             return None, None
         return browser, page
 
-    async def verifier_acceptations_async(self, cookie: str, profils, max_check: int = 30,
+    async def verifier_acceptations_async(self, cookie: str, profils,
+                                          max_check: int = ScraperConfig.MAX_VERIFICATIONS_PAR_PASSAGE,
                                           progress_callback=None, status_callback=None):
         """Revisite les profils invités et détecte ceux devenus relation 1er degré.
 
@@ -918,10 +1022,13 @@ class LinkedInScraperV2:
         profil est « 1er » : le bouton « Message » existe aussi pour un 2e ou
         un 3e degré. Un degré illisible ne vaut ni acceptation ni vérification :
         la personne reste en attente et revient en tête la fois suivante.
+        Au plus MAX_VERIFICATIONS_PAR_PASSAGE profils par passage.
         Retourne la liste [{'url','nom'}] des profils ayant accepté ;
         `self.verifiees` garde les URL dont le degré a bien été lu."""
         self.errors = []
         self.verifiees = []
+        self._deja_ouvertes = set()
+        max_check = min(max_check, self.config.MAX_VERIFICATIONS_PAR_PASSAGE)
         profils = list(profils)[:max_check]
         acceptees = []
         illisibles = 0
@@ -930,11 +1037,12 @@ class LinkedInScraperV2:
         async with async_playwright() as p:
             if status_callback:
                 status_callback("Ouverture du navigateur…")
-            browser, page = await self._open_linkedin_page(p, cookie, status_callback)
-            if page is None:
-                self.errors.append(SESSION_EXPIREE)
-                return acceptees
+            browser = None
             try:
+                browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+                if page is None:
+                    self.errors.append(SESSION_EXPIREE)
+                    return acceptees
                 total = len(profils)
                 for i, prof in enumerate(profils):
                     url = prof.get("url"); nom = prof.get("nom", "")
@@ -942,11 +1050,10 @@ class LinkedInScraperV2:
                         status_callback(f"Vérification {i+1} sur {total} : {nom}")
                     try:
                         clean_url = url.split('?')[0].rstrip('/') + '/'
-                        if not await self.network_manager.safe_page_goto(page, clean_url):
+                        # La porte attend la pause entre pages et arrête tout
+                        # sur une page d'alerte ou de connexion.
+                        if not await self._naviguer(page, clean_url):
                             continue
-                        if any(x in page.url for x in ["login", "authwall"]):
-                            self.errors.append(SESSION_EXPIREE)
-                            break
                         await self.human.human_delay(1500, 400)
                         try:
                             entete = await page.locator("main section").first.inner_text(timeout=5000)
@@ -965,26 +1072,31 @@ class LinkedInScraperV2:
                                 logger.info(f"  ✅ A accepté : {nom}")
                             else:
                                 logger.info(f"  ⏳ Pas encore 1er degré : {nom} (degré lu : {degre})")
+                    except ArretLinkedIn:
+                        raise
                     except Exception as e:
                         logger.warning(f"  ⚠️ Vérif {nom}: {e}")
                     if progress_callback:
                         progress_callback(min((i + 1) / total, 1.0))
-                    await self.human.human_delay(
-                        self.config.DELAY_BETWEEN_PROFILES_MIN,
-                        (self.config.DELAY_BETWEEN_PROFILES_MAX - self.config.DELAY_BETWEEN_PROFILES_MIN) // 3,
-                    )
+            except ArretLinkedIn as arret:
+                self._noter_arret(arret)
             finally:
-                await browser.close()
+                if browser is not None:
+                    await browser.close()
         if illisibles:
             self.errors.append(f"Degré de relation illisible pour {illisibles} "
                                f"profil{'s' if illisibles > 1 else ''} : ils restent en attente.")
         return acceptees
 
-    async def envoyer_messages_async(self, cookie: str, cibles, message: str, max_msg: int = 20,
+    async def envoyer_messages_async(self, cookie: str, cibles, message: str,
+                                     max_msg: int = ScraperConfig.MAX_MESSAGES_PAR_SEANCE,
                                      progress_callback=None, status_callback=None):
-        """Envoie `message` à chaque cible (relation 1er degré).
+        """Envoie `message` à chaque cible (relation 1er degré), au plus
+        MAX_MESSAGES_PAR_SEANCE par séance.
         Retourne la liste [{'url','nom'}] des personnes effectivement messagées."""
         self.errors = []
+        self._deja_ouvertes = set()
+        max_msg = min(max_msg, self.config.MAX_MESSAGES_PAR_SEANCE)
         cibles = list(cibles)[:max_msg]
         envoyes = []
         if not cibles or not message.strip():
@@ -992,30 +1104,33 @@ class LinkedInScraperV2:
         async with async_playwright() as p:
             if status_callback:
                 status_callback("Ouverture du navigateur…")
-            browser, page = await self._open_linkedin_page(p, cookie, status_callback)
-            if page is None:
-                self.errors.append(SESSION_EXPIREE)
-                return envoyes
+            browser = None
             try:
+                browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+                if page is None:
+                    self.errors.append(SESSION_EXPIREE)
+                    return envoyes
                 total = len(cibles)
                 for i, c in enumerate(cibles):
                     url = c.get("url"); nom = c.get("nom", "")
                     if status_callback:
                         status_callback(f"Message {i+1} sur {total} : {nom}")
                     try:
+                        # envoyer_message passe par la porte : pause entre
+                        # pages comprise, arrêt sur page d'alerte.
                         if await self.envoyer_message(page, url, nom, message):
                             envoyes.append({"url": url, "nom": nom})
+                    except ArretLinkedIn:
+                        raise
                     except Exception as e:
                         logger.warning(f"  ⚠️ Message {nom}: {e}")
                     if progress_callback:
                         progress_callback(min((i + 1) / total, 1.0))
-                    await self.human.human_delay(
-                        self.config.DELAY_BETWEEN_PROFILES_MIN,
-                        (self.config.DELAY_BETWEEN_PROFILES_MAX - self.config.DELAY_BETWEEN_PROFILES_MIN) // 3,
-                    )
-                    await self.human.random_long_pause(probability=0.10)
+            except ArretLinkedIn as arret:
+                self._noter_arret(arret)
             finally:
-                await browser.close()
+                if browser is not None:
+                    await browser.close()
         return envoyes
 
     def _nouvelle_session_humaine(self) -> HumanBehavior:
@@ -1069,21 +1184,15 @@ class LinkedInScraperV2:
         donnees = []
         self.errors = []
         self.ecartes_reseau = 0
+        self._deja_ouvertes = set()
+        # Au plus MAX_PROFILES_PER_RUN profils par recherche.
+        nb_profils = min(nb_profils, self.config.MAX_PROFILES_PER_RUN)
 
         # Réinitialiser la fatigue pour chaque nouvelle session
         self.human = self._nouvelle_session_humaine()
 
-        # Vérifier les limites quotidiennes AVANT de lancer
-        if not self.human.daily_limits.can_scrape():
-            msg = (f"Limite du jour atteinte ({self.human.daily_limits.profiles_today} profils consultés). "
-                   f"Réessayez demain.")
-            logger.error(msg)
-            self.errors.append(msg)
-            return pd.DataFrame()
-
-        # Pas de refus sur les invitations du jour : la limite de 20 est
-        # conseillée, pas bloquante (utils/budget.py).
-
+        # Les profils consultés restent une statistique : c'est le budget de
+        # pages (porte _naviguer) qui bloque désormais.
         self.human.daily_limits.increment_sessions()
 
         logger.info(f"🔧 Paramètres: inviter={inviter}, reinviter={reinviter_profils_scrapes}")
@@ -1106,355 +1215,280 @@ class LinkedInScraperV2:
                 if status_callback:
                     status_callback("Ouverture du navigateur…")
 
-                logger.info("Démarrage Playwright (async)…")
-
-                # ═══ STEALTH PROFILE ═══
-                # Générer un profil navigateur complet et cohérent
-                # (UA + viewport + screen + headers — tout matche)
-                profile = StealthProfileManager.load_or_generate(prefer_mac=True)
-                viewport = profile.viewport
-
-                logger.info(f"🎭 Profil: {profile.platform} / Chrome {profile.chrome_major} / "
-                             f"{viewport['width']}x{viewport['height']}")
-
-                # Lancer le navigateur avec configuration naturelle
-                launch_args = [
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-infobars",
-                    "--disable-dev-shm-usage",
-                    f"--window-size={profile.screen['width']},{profile.screen['height']}",
-                ]
-                try:
-                    browser = await p.chromium.launch(
-                        channel="chrome",
-                        headless=self.config.HEADLESS,
-                        args=launch_args
-                    )
-                except Exception:
-                    browser = await p.chromium.launch(
-                        headless=self.config.HEADLESS,
-                        args=launch_args
-                    )
-
-                # Créer le contexte avec le profil stealth complet
-                context = await browser.new_context(
-                    **self._context_kwargs(profile, viewport)
-                )
-
-                # Appliquer les headers stealth (avec Sec-CH-UA) — sauf si désactivé
-                if self._stealth:
-                    stealth_headers = StealthProfileManager.get_stealth_headers(profile)
-                    await context.set_extra_http_headers(stealth_headers)
-
-                # Appliquer le cookie
-                await context.add_cookies([{
-                    "name": "li_at",
-                    "value": cookie,
-                    "domain": ".linkedin.com",
-                    "path": "/",
-                    "httpOnly": True,
-                    "secure": True,
-                }])
-
-                page = await context.new_page()
-
-                # Injecter les scripts stealth cohérents avec le profil — sauf si désactivé
-                if self._stealth:
-                    stealth_script = StealthProfileManager.get_stealth_init_script(profile)
-                    await page.add_init_script(stealth_script)
-
-                # ═══ MONITORING HTTP ═══
-                self.human.attach_monitor(page)
-
-                # ═══ WARM-UP SESSION ═══
-                if status_callback:
-                    status_callback("Préparation de la session LinkedIn…")
-
-                warmup_ok = await self.human.warmup_session(page)
-                if not warmup_ok:
+                # Chrome, session, warm-up par la porte de navigation.
+                browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+                if page is None:
                     logger.error("❌ Warm-up échoué — cookie invalide ?")
                     self.errors.append(SESSION_EXPIREE)
-                    await browser.close()
                     return pd.DataFrame()
 
-                # Vérifier la sécurité après le warm-up
-                if not await self.human.check_safety(page):
-                    logger.error("❌ Arrêt de sécurité post warm-up")
-                    self.errors.append("LinkedIn demande une vérification de sécurité : ouvrez linkedin.com dans Chrome, puis relancez.")
-                    await browser.close()
-                    return pd.DataFrame()
-
-                # Résoudre l'URN de l'entreprise via l'API typeahead LinkedIn
-                # (la page est maintenant authentifiée). Si succès, l'URN est
-                # ajouté au cache et utilisé par construire_url_recherche pour
-                # appliquer le vrai filtre `currentCompany` (beaucoup plus précis
-                # que la stratégie "AND keyword").
-                for entreprise in entreprises:
-                    if status_callback:
-                        status_callback(f"Identification de l'entreprise « {entreprise} »…")
-                    urn = await self._resoudre_company_urn_via_typeahead(entreprise, page)
-                    # Fallback navigation désactivé : /search/results/companies
-                    # boucle en redirections depuis une IP datacenter et n'apporte
-                    # rien de plus que le typeahead + le seed config.COMPANY_URNS.
-                    if not urn:
-                        logger.warning(
-                            f"⚠️ URN entreprise '{entreprise}' non résolu (typeahead) — "
-                            f"toute la facette entreprise bascule en recherche par mot-clé."
-                        )
-
-                # Construire l'URL de recherche
-                url_recherche = self.construire_url_recherche(
-                    keyword, entreprises, ecoles_ids, ile_de_france, secteurs_ids
-                )
-
-                if status_callback:
-                    status_callback("Chargement des résultats LinkedIn…")
-
-                logger.info(f"Accès URL : {url_recherche}")
-
-                # Charger la première page avec gestion d'erreurs
-                success = await self.network_manager.safe_page_goto(
-                    page,
-                    url_recherche + "&page=1"
-                )
-
-                if not success:
-                    # Distinguer le cas "cookie expiré" (boucle de redirections) d'une
-                    # vraie erreur réseau pour donner un message d'erreur exploitable.
-                    last_err = ""
-                    try:
-                        last_err = str(self.network_manager.last_error or "")
-                    except Exception:
-                        pass
-                    if "ERR_TOO_MANY_REDIRECTS" in last_err or "login" in page.url:
-                        msg = ("Session LinkedIn expirée (boucle de "
-                               "redirections). Reconnectez-vous à linkedin.com, "
-                               "puis mettez à jour votre session dans la page "
-                               "Recherche.")
-                        logger.error(f"❌ {msg}")
-                        self.errors.append(msg)
-                    else:
-                        logger.error("❌ Impossible de charger la page de recherche")
-                        self.errors.append("Impossible de charger la page de recherche")
-                    await browser.close()
-                    return pd.DataFrame()
-
-                # Comportement humain à l'arrivée sur la page
-                await self.human.page_entry_behavior(page)
-
-                # Vérifier qu'on n'est pas redirigé vers login
-                if "login" in page.url:
-                    logger.error("❌ Cookie invalide ou expiré")
-                    self.errors.append(SESSION_EXPIREE)
-                    await browser.close()
-                    return pd.DataFrame()
-
-                # Charger les profils déjà scrapés
-                deja_scrapes_global = self._charger_urls_scrappees()
-                logger.info(f"📚 {len(deja_scrapes_global)} profils déjà scrapés chargés")
-
-                urls_session = set()
                 profils_scrapes = 0
                 invitations_envoyees = 0
-                current_page = 1
-
-                # BOUCLE PRINCIPALE DE SCRAPING
-                # Si on envoie des invitations, on continue jusqu'à avoir le nombre d'invitations demandé
-                # Sinon, on continue jusqu'à avoir le nombre de profils scrapés demandé
-                while (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils):
-
-                    if status_callback:
-                        status_callback(f"Lecture de la page {current_page} des résultats…")
-
-                    logger.info(f"═══ Scraping page {current_page} ═══")
-
-                    # ═══ CHECK SÉCURITÉ à chaque page ═══
+                try:
+                    # Vérifier la sécurité après le warm-up
                     if not await self.human.check_safety(page):
-                        logger.error("🛑 Arrêt de sécurité en cours de scraping")
-                        self.errors.append("Arrêt par précaution : LinkedIn a montré un signal de limitation. Réessayez plus tard.")
-                        break
+                        logger.error("❌ Arrêt de sécurité post warm-up")
+                        self.errors.append("LinkedIn demande une vérification de sécurité : ouvrez linkedin.com dans Chrome, puis relancez.")
+                        return pd.DataFrame()
 
-                    # Vérifier la limite quotidienne en cours de route
-                    if not self.human.daily_limits.can_scrape():
-                        logger.warning("🚫 Limite quotidienne de profils atteinte en cours de session")
-                        break
-
-                    # Simuler la navigation naturelle sur la page (scroll, lecture)
-                    await self.human.browse_page_naturally(page)
-
-                    # Distraction aléatoire occasionnelle (5% de chance)
-                    await self.human.simulate_distraction(probability=0.05)
-
-                    # Screenshot de debug sur la première page
-                    if current_page == 1:
-                        try:
-                            await page.screenshot(path="debug_linkedin_v2.png")
-                            logger.info("📸 Screenshot sauvegardé: debug_linkedin_v2.png")
-                        except Exception as e:
-                            logger.warning(f"Erreur screenshot: {e}")
-
-                    # Extraire les profils de la page
-                    profiles_page = await self.extraire_profils_page(page)
-
-                    if not profiles_page:
-                        logger.warning("⚠️ Aucun profil trouvé sur cette page")
-                        if current_page == 1:
-                            ou = await diagnostiquer_page_vide(page, self._dumper_panneau,
-                                                               "recherche_resultats_dump.html")
-                            if ou:
-                                self.errors.append(lecture_ratee(ou))
-                        break
-
-                    logger.info(f"📋 {len(profiles_page)} profils à traiter sur cette page")
-
-                    # Traiter chaque profil
-                    for profile in profiles_page:
-
-                        # Vérifier la limite selon le mode
-                        if inviter:
-                            if invitations_envoyees >= nb_profils:
-                                logger.info(f"✋ Limite de {nb_profils} invitations atteinte")
-                                break
-                        else:
-                            if profils_scrapes >= nb_profils:
-                                logger.info(f"✋ Limite de {nb_profils} profils atteinte")
-                                break
-
-                        url_profil = profile['url']
-                        nom = profile['nom']
-
-                        # Vérifier si déjà vu dans cette session
-                        if url_profil in urls_session:
-                            logger.info(f"⏭️ {nom} - Déjà vu dans cette session")
-                            continue
-
-                        if deja_en_relation_ou_invite(profile):
-                            urls_session.add(url_profil)
-                            self.ecartes_reseau += 1
-                            logger.info(f"⏭️ {nom} - Déjà en relation ou invitation en attente")
-                            continue
-
-                        # Vérifier si déjà scrapé globalement
-                        if url_profil in deja_scrapes_global and not reinviter_profils_scrapes:
-                            logger.info(f"⏭️ {nom} - Déjà scrapé précédemment")
-                            continue
-
-                        urls_session.add(url_profil)
-
-                        # Compteur pour affichage
-                        num_affichage = invitations_envoyees + 1 if inviter else profils_scrapes + 1
-                        logger.info(f"👤 Profil #{num_affichage}: {nom}")
-                        logger.info(f"   📋 Poste: {profile['poste']}")
-                        logger.info(f"   🏢 Entreprise: {profile['entreprise']}")
-
-                        # Marquer comme déjà scrapé
-                        deja_scrape = url_profil in deja_scrapes_global
-
-                        # Envoi d'invitation si demandé
-                        invite_envoyee = False
-                        if inviter:
-                            if status_callback:
-                                status_callback(f"Invitation de {nom}…")
-
-                            try:
-                                invite_envoyee = await self.envoyer_invitation(
-                                    page,
-                                    url_profil,
-                                    nom,
-                                    message_invitation
-                                )
-
-                                if invite_envoyee:
-                                    invitations_envoyees += 1
-                                    self.human.daily_limits.increment_invitations()
-                                    logger.info(f"   📊 Progression: {invitations_envoyees}/{nb_profils} invitations "
-                                                f"(jour: {self.human.daily_limits.invitations_today})")
-
-                                # Délai humain entre profils (gaussien + fatigue progressive)
-                                await self.human.human_delay(
-                                    self.config.DELAY_BETWEEN_PROFILES_MIN,
-                                    (self.config.DELAY_BETWEEN_PROFILES_MAX - self.config.DELAY_BETWEEN_PROFILES_MIN) // 3
-                                )
-                                # Augmenter légèrement la fatigue au fil des invitations
-                                self.human.increase_fatigue(0.02)
-                                # Pause longue aléatoire (10% de chance)
-                                await self.human.random_long_pause(probability=0.10)
-
-                            except Exception as e:
-                                logger.error(f"❌ Erreur invitation {nom}: {e}")
-                                self.errors.append(f"Erreur invitation {nom}: {e}")
-
-                        # Sauvegarder le profil seulement si invitation envoyée OU si mode scraping sans invitation
-                        if invite_envoyee or not inviter:
-                            # Sauvegarder le profil
-                            self._sauvegarder_profil(
-                                profile['nom'],
-                                profile['poste'],
-                                profile['entreprise'],
-                                ecole_nom,
-                                url_profil,
-                                invite_envoyee
+                    # Résoudre l'URN de l'entreprise via l'API typeahead LinkedIn
+                    # (la page est maintenant authentifiée). Si succès, l'URN est
+                    # ajouté au cache et utilisé par construire_url_recherche pour
+                    # appliquer le vrai filtre `currentCompany` (beaucoup plus précis
+                    # que la stratégie "AND keyword").
+                    for entreprise in entreprises:
+                        if status_callback:
+                            status_callback(f"Identification de l'entreprise « {entreprise} »…")
+                        urn = await self._resoudre_company_urn_via_typeahead(entreprise, page)
+                        # Fallback navigation désactivé : /search/results/companies
+                        # boucle en redirections depuis une IP datacenter et n'apporte
+                        # rien de plus que le typeahead + le seed config.COMPANY_URNS.
+                        if not urn:
+                            logger.warning(
+                                f"⚠️ URN entreprise '{entreprise}' non résolu (typeahead) — "
+                                f"toute la facette entreprise bascule en recherche par mot-clé."
                             )
 
-                            # Sauvegarder dans la DB
-                            if self.use_database and self.db:
-                                try:
-                                    profile_id = self.db.ajouter_profil(
-                                        nom=profile['nom'],
-                                        poste=profile['poste'],
-                                        entreprise=profile['entreprise'],
-                                        ecole=ecole_nom,
-                                        url=url_profil,
-                                        localisation=profile.get('localisation', ''),
-                                        nb_connexions=profile.get('connexions', '')
-                                    )
+                    # Construire l'URL de recherche
+                    url_recherche = self.construire_url_recherche(
+                        keyword, entreprises, ecoles_ids, ile_de_france, secteurs_ids
+                    )
 
-                                    if invite_envoyee and profile_id:
-                                        self.db.ajouter_invitation(profile_id, message_invitation)
+                    if status_callback:
+                        status_callback("Chargement des résultats LinkedIn…")
 
-                                except Exception as e:
-                                    logger.error(f"Erreur sauvegarde DB: {e}")
+                    logger.info(f"Accès URL : {url_recherche}")
 
-                            # Ajouter aux données finales
-                            donnees.append(ProfileExtractor.format_for_display(
-                                profile,
-                                ecole_nom,
-                                invite_envoyee
-                            ))
+                    # Charger la première page (porte : pause, compte, détecteur)
+                    success = await self._naviguer(page, url_recherche + "&page=1")
 
-                            profils_scrapes += 1
-                            self.human.daily_limits.increment_profiles()
+                    if not success:
+                        # Distinguer le cas "cookie expiré" (boucle de redirections) d'une
+                        # vraie erreur réseau pour donner un message d'erreur exploitable.
+                        last_err = ""
+                        try:
+                            last_err = str(self.network_manager.last_error or "")
+                        except Exception:
+                            pass
+                        if "ERR_TOO_MANY_REDIRECTS" in last_err or "login" in page.url:
+                            msg = ("Session LinkedIn expirée (boucle de "
+                                   "redirections). Reconnectez-vous à linkedin.com, "
+                                   "puis mettez à jour votre session dans la page "
+                                   "Recherche.")
+                            logger.error(f"❌ {msg}")
+                            self.errors.append(msg)
+                        else:
+                            logger.error("❌ Impossible de charger la page de recherche")
+                            self.errors.append("Impossible de charger la page de recherche")
+                        return pd.DataFrame()
 
-                        # Mettre à jour la progression
-                        if progress_callback:
-                            if inviter:
-                                progress_callback(min(invitations_envoyees / nb_profils, 1.0))
-                            else:
-                                progress_callback(min(profils_scrapes / nb_profils, 1.0))
+                    # Comportement humain à l'arrivée sur la page (une redirection
+                    # vers la connexion a déjà arrêté la porte de navigation)
+                    await self.human.page_entry_behavior(page)
 
-                    # PAGE SUIVANTE
-                    # Vérifier si on a atteint la limite selon le mode
-                    continuer = (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils)
+                    # Charger les profils déjà scrapés
+                    deja_scrapes_global = self._charger_urls_scrappees()
+                    logger.info(f"📚 {len(deja_scrapes_global)} profils déjà scrapés chargés")
 
-                    if continuer:
-                        current_page += 1
-                        logger.info(f"➡️ Passage à la page {current_page}")
+                    urls_session = set()
+                    profils_scrapes = 0
+                    invitations_envoyees = 0
+                    current_page = 1
 
-                        next_url = url_recherche + f"&page={current_page}"
-                        success = await self.network_manager.safe_page_goto(page, next_url)
+                    # BOUCLE PRINCIPALE DE SCRAPING
+                    # Si on envoie des invitations, on continue jusqu'à avoir le nombre d'invitations demandé
+                    # Sinon, on continue jusqu'à avoir le nombre de profils scrapés demandé
+                    while (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils):
 
-                        if not success:
-                            logger.warning("⚠️ Impossible de charger la page suivante")
+                        if status_callback:
+                            status_callback(f"Lecture de la page {current_page} des résultats…")
+
+                        logger.info(f"═══ Scraping page {current_page} ═══")
+
+                        # ═══ CHECK SÉCURITÉ à chaque page ═══
+                        if not await self.human.check_safety(page):
+                            logger.error("🛑 Arrêt de sécurité en cours de scraping")
+                            self.errors.append("Arrêt par précaution : LinkedIn a montré un signal de limitation. Réessayez plus tard.")
                             break
 
-                        # Comportement humain sur la nouvelle page
-                        await self.human.page_entry_behavior(page)
-                    else:
-                        break
+                        # Simuler la navigation naturelle sur la page (scroll, lecture)
+                        await self.human.browse_page_naturally(page)
 
-                # Fermer le navigateur
-                await browser.close()
+                        # Distraction aléatoire occasionnelle (5% de chance)
+                        await self.human.simulate_distraction(probability=0.05)
+
+                        # Screenshot de debug sur la première page
+                        if current_page == 1:
+                            try:
+                                await page.screenshot(path="debug_linkedin_v2.png")
+                                logger.info("📸 Screenshot sauvegardé: debug_linkedin_v2.png")
+                            except Exception as e:
+                                logger.warning(f"Erreur screenshot: {e}")
+
+                        # Extraire les profils de la page
+                        profiles_page = await self.extraire_profils_page(page)
+
+                        if not profiles_page:
+                            logger.warning("⚠️ Aucun profil trouvé sur cette page")
+                            if current_page == 1:
+                                ou = await diagnostiquer_page_vide(page, self._dumper_panneau,
+                                                                   "recherche_resultats_dump.html")
+                                if ou:
+                                    self.errors.append(lecture_ratee(ou))
+                            break
+
+                        logger.info(f"📋 {len(profiles_page)} profils à traiter sur cette page")
+
+                        # Traiter chaque profil
+                        for profile in profiles_page:
+
+                            # Vérifier la limite selon le mode
+                            if inviter:
+                                if invitations_envoyees >= nb_profils:
+                                    logger.info(f"✋ Limite de {nb_profils} invitations atteinte")
+                                    break
+                            else:
+                                if profils_scrapes >= nb_profils:
+                                    logger.info(f"✋ Limite de {nb_profils} profils atteinte")
+                                    break
+
+                            url_profil = profile['url']
+                            nom = profile['nom']
+
+                            # Vérifier si déjà vu dans cette session
+                            if url_profil in urls_session:
+                                logger.info(f"⏭️ {nom} - Déjà vu dans cette session")
+                                continue
+
+                            if deja_en_relation_ou_invite(profile):
+                                urls_session.add(url_profil)
+                                self.ecartes_reseau += 1
+                                logger.info(f"⏭️ {nom} - Déjà en relation ou invitation en attente")
+                                continue
+
+                            # Vérifier si déjà scrapé globalement
+                            if url_profil in deja_scrapes_global and not reinviter_profils_scrapes:
+                                logger.info(f"⏭️ {nom} - Déjà scrapé précédemment")
+                                continue
+
+                            urls_session.add(url_profil)
+
+                            # Compteur pour affichage
+                            num_affichage = invitations_envoyees + 1 if inviter else profils_scrapes + 1
+                            logger.info(f"👤 Profil #{num_affichage}: {nom}")
+                            logger.info(f"   📋 Poste: {profile['poste']}")
+                            logger.info(f"   🏢 Entreprise: {profile['entreprise']}")
+
+                            # Marquer comme déjà scrapé
+                            deja_scrape = url_profil in deja_scrapes_global
+
+                            # Envoi d'invitation si demandé
+                            invite_envoyee = False
+                            if inviter:
+                                if status_callback:
+                                    status_callback(f"Invitation de {nom}…")
+
+                                try:
+                                    invite_envoyee = await self.envoyer_invitation(
+                                        page,
+                                        url_profil,
+                                        nom,
+                                        message_invitation
+                                    )
+
+                                    if invite_envoyee:
+                                        invitations_envoyees += 1
+                                        self.human.daily_limits.increment_invitations()
+                                        logger.info(f"   📊 Progression: {invitations_envoyees}/{nb_profils} invitations "
+                                                    f"(jour: {self.human.daily_limits.invitations_today})")
+
+                                    # Même rythme qu'entre deux pages (pause
+                                    # « lecture » comprise), même sans changer de page.
+                                    await self.human.pause_entre_pages()
+                                    # Augmenter légèrement la fatigue au fil des invitations
+                                    self.human.increase_fatigue(0.02)
+
+                                except ArretLinkedIn:
+                                    raise
+                                except Exception as e:
+                                    logger.error(f"❌ Erreur invitation {nom}: {e}")
+                                    self.errors.append(f"Erreur invitation {nom}: {e}")
+
+                            # Sauvegarder le profil seulement si invitation envoyée OU si mode scraping sans invitation
+                            if invite_envoyee or not inviter:
+                                # Sauvegarder le profil
+                                self._sauvegarder_profil(
+                                    profile['nom'],
+                                    profile['poste'],
+                                    profile['entreprise'],
+                                    ecole_nom,
+                                    url_profil,
+                                    invite_envoyee
+                                )
+
+                                # Sauvegarder dans la DB
+                                if self.use_database and self.db:
+                                    try:
+                                        profile_id = self.db.ajouter_profil(
+                                            nom=profile['nom'],
+                                            poste=profile['poste'],
+                                            entreprise=profile['entreprise'],
+                                            ecole=ecole_nom,
+                                            url=url_profil,
+                                            localisation=profile.get('localisation', ''),
+                                            nb_connexions=profile.get('connexions', '')
+                                        )
+
+                                        if invite_envoyee and profile_id:
+                                            self.db.ajouter_invitation(profile_id, message_invitation)
+
+                                    except Exception as e:
+                                        logger.error(f"Erreur sauvegarde DB: {e}")
+
+                                # Ajouter aux données finales
+                                donnees.append(ProfileExtractor.format_for_display(
+                                    profile,
+                                    ecole_nom,
+                                    invite_envoyee
+                                ))
+
+                                profils_scrapes += 1
+                                self.human.daily_limits.increment_profiles()
+
+                            # Mettre à jour la progression
+                            if progress_callback:
+                                if inviter:
+                                    progress_callback(min(invitations_envoyees / nb_profils, 1.0))
+                                else:
+                                    progress_callback(min(profils_scrapes / nb_profils, 1.0))
+
+                        # PAGE SUIVANTE
+                        # Vérifier si on a atteint la limite selon le mode
+                        continuer = (inviter and invitations_envoyees < nb_profils) or (not inviter and profils_scrapes < nb_profils)
+
+                        if continuer:
+                            current_page += 1
+                            logger.info(f"➡️ Passage à la page {current_page}")
+
+                            next_url = url_recherche + f"&page={current_page}"
+                            success = await self._naviguer(page, next_url)
+
+                            if not success:
+                                logger.warning("⚠️ Impossible de charger la page suivante")
+                                break
+
+                            # Comportement humain sur la nouvelle page
+                            await self.human.page_entry_behavior(page)
+                        else:
+                            break
+
+                except ArretLinkedIn as arret:
+                    # Alerte, connexion ou budget : on garde ce qui est fait
+                    # (déjà enregistré profil par profil), on s'arrête là.
+                    self._noter_arret(arret)
+                finally:
+                    # Fermer le navigateur
+                    await browser.close()
 
                 # Statistiques finales
                 duration = (datetime.now() - start_time).total_seconds()
@@ -1498,6 +1532,11 @@ class LinkedInScraperV2:
                         logger.warning(f"Erreur notification email: {e}")
 
                 return pd.DataFrame(donnees)
+
+        except ArretLinkedIn as arret:
+            # Refus ou alerte dès le warm-up : Chrome est déjà fermé.
+            self._noter_arret(arret)
+            return pd.DataFrame(donnees)
 
         except PermanentNetworkError as e:
             self.errors.append(f"Erreur permanente: {e}")
@@ -1866,6 +1905,7 @@ class LinkedInScraperV2:
         l'exclusion « ailleurs » en silence.
         """
         self.errors = []
+        self._deja_ouvertes = set()
 
         cible = normaliser_url(url_reference)
         if cible is None:
@@ -1883,21 +1923,19 @@ class LinkedInScraperV2:
             if status_callback:
                 status_callback("Ouverture du navigateur…")
 
-            browser, page = await self._open_linkedin_page(p, cookie, status_callback)
-            if page is None:
-                self.errors.append(SESSION_EXPIREE)
-                return [], None
-
+            browser = None
             try:
+                browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+                if page is None:
+                    self.errors.append(SESSION_EXPIREE)
+                    return [], None
+
                 if status_callback:
                     status_callback("Ouverture du profil de référence…")
 
-                if not await self.network_manager.safe_page_goto(page, cible):
+                # Connexion ou alerte à l'arrivée : ArretLinkedIn, traité plus bas.
+                if not await self._naviguer(page, cible):
                     self.errors.append(f"Impossible d'ouvrir le profil : {cible}")
-                    return [], None
-
-                if self._est_page_de_connexion(page.url):
-                    self.errors.append(SESSION_EXPIREE)
                     return [], None
 
                 await self.human.human_delay(2000, 500)
@@ -2006,8 +2044,12 @@ class LinkedInScraperV2:
                 logger.info(f"✅ {len(suggestions)} profils voisins retenus")
                 return suggestions, entreprise
 
+            except ArretLinkedIn as arret:
+                self._noter_arret(arret)
+                return [], None
             finally:
-                await browser.close()
+                if browser is not None:
+                    await browser.close()
 
     async def run_url_scraper_async(
         self,
@@ -2024,6 +2066,7 @@ class LinkedInScraperV2:
         Ouvre un navigateur visible, visite chaque profil et extrait les infos.
         """
         self.errors = []
+        self._deja_ouvertes = set()
         start_time = datetime.now()
         donnees = []
 
@@ -2043,169 +2086,114 @@ class LinkedInScraperV2:
                 if status_callback:
                     status_callback("Ouverture du navigateur…")
 
-                # ═══ STEALTH PROFILE ═══
-                profile = StealthProfileManager.load_or_generate(prefer_mac=True)
-                viewport = profile.viewport
-
-                logger.info(f"🎭 Profil: {profile.platform} / Chrome {profile.chrome_major}")
-
-                launch_args = [
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-infobars",
-                    "--disable-dev-shm-usage",
-                    f"--window-size={profile.screen['width']},{profile.screen['height']}",
-                ]
-                try:
-                    browser = await p.chromium.launch(
-                        channel="chrome",
-                        headless=self.config.HEADLESS,
-                        args=launch_args
-                    )
-                except Exception:
-                    browser = await p.chromium.launch(
-                        headless=self.config.HEADLESS,
-                        args=launch_args
-                    )
-
-                context = await browser.new_context(
-                    **self._context_kwargs(profile, viewport)
-                )
-
-                # Headers stealth (Sec-CH-UA) — sauf si désactivé
-                if self._stealth:
-                    stealth_headers = StealthProfileManager.get_stealth_headers(profile)
-                    await context.set_extra_http_headers(stealth_headers)
-
-                await context.add_cookies([{
-                    "name": "li_at",
-                    "value": cookie,
-                    "domain": ".linkedin.com",
-                    "path": "/",
-                    "httpOnly": True,
-                    "secure": True,
-                }])
-
-                page = await context.new_page()
-
-                # Script stealth cohérent avec le profil — sauf si désactivé
-                if self._stealth:
-                    stealth_script = StealthProfileManager.get_stealth_init_script(profile)
-                    await page.add_init_script(stealth_script)
-
-                # ═══ MONITORING HTTP ═══
-                self.human.attach_monitor(page)
-
-                # ═══ WARM-UP SESSION ═══
-                if status_callback:
-                    status_callback("Préparation de la session LinkedIn…")
-
-                warmup_ok = await self.human.warmup_session(page)
-                if not warmup_ok:
+                # Chrome, session, warm-up par la porte de navigation.
+                browser, page = await self._open_linkedin_page(p, cookie, status_callback)
+                if page is None:
                     logger.error("❌ Cookie invalide ou expiré (warm-up)")
                     self.errors.append(SESSION_EXPIREE)
-                    await browser.close()
                     return pd.DataFrame()
 
                 logger.info("✅ Session LinkedIn active")
 
-                # ── Boucle sur les URLs ──
-                for i, url in enumerate(urls):
-                    nom_affiche = url.split('/in/')[-1].strip('/').replace('-', ' ').title()
-                    logger.info(f"[{i+1}/{total}] {nom_affiche}")
+                try:
+                    # ── Boucle sur les URLs ──
+                    for i, url in enumerate(urls):
+                        nom_affiche = url.split('/in/')[-1].strip('/').replace('-', ' ').title()
+                        logger.info(f"[{i+1}/{total}] {nom_affiche}")
 
-                    if status_callback:
-                        status_callback(f"Profil {i+1} sur {total} : {nom_affiche}")
+                        if status_callback:
+                            status_callback(f"Profil {i+1} sur {total} : {nom_affiche}")
 
-                    try:
-                        success = await self.network_manager.safe_page_goto(page, url)
-                        if not success:
-                            logger.warning(f"  ⚠️ Impossible de charger {url}")
-                            self.errors.append(f"Erreur chargement: {url}")
-                            continue
+                        try:
+                            # La porte attend la pause entre pages, compte la
+                            # page et arrête tout sur une alerte ou la connexion.
+                            success = await self._naviguer(page, url)
+                            if not success:
+                                logger.warning(f"  ⚠️ Impossible de charger {url}")
+                                self.errors.append(f"Erreur chargement: {url}")
+                                continue
 
-                        # Vérifier la redirection login
-                        if any(x in page.url for x in ["login", "authwall"]):
-                            logger.error("  ❌ Redirigé vers login — arrêt")
-                            self.errors.append("Déconnecté de LinkedIn pendant la recherche : mettez à jour votre session dans la page Recherche.")
-                            break
+                            # Comportement humain : scroll + lecture
+                            await self.human.browse_page_naturally(page)
 
-                        # Comportement humain : scroll + lecture
-                        await self.human.browse_page_naturally(page)
+                            # Extraire les données du profil
+                            profile_data = await self.extraire_profil_depuis_page(page)
+                            profile_data['url'] = url
+                            nom = profile_data.get('nom') or nom_affiche
 
-                        # Extraire les données du profil
-                        profile_data = await self.extraire_profil_depuis_page(page)
-                        profile_data['url'] = url
-                        nom = profile_data.get('nom') or nom_affiche
+                            if profile_data.get('nom'):
+                                logger.info(f"  ✅ {profile_data['nom']} | {profile_data['poste']} | {profile_data['entreprise']}")
+                                if self.use_database and self.db:
+                                    try:
+                                        self.db.ajouter_profil(
+                                            nom=profile_data['nom'], poste=profile_data['poste'],
+                                            entreprise=profile_data['entreprise'], ecole='',
+                                            url=url, localisation='', nb_connexions=''
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"  Erreur DB: {e}")
+                                self._sauvegarder_profil(
+                                    profile_data['nom'], profile_data['poste'],
+                                    profile_data['entreprise'], '', url, False
+                                )
+                            else:
+                                logger.warning("  ⚠️ Données profil non extraites (invitation/message tentés quand même)")
 
-                        if profile_data.get('nom'):
-                            logger.info(f"  ✅ {profile_data['nom']} | {profile_data['poste']} | {profile_data['entreprise']}")
-                            if self.use_database and self.db:
+                            ligne = {
+                                'Nom': nom,
+                                'Poste': profile_data.get('poste', ''),
+                                'Entreprise': profile_data.get('entreprise', ''),
+                                'URL': url,
+                                'Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                            }
+
+                            # Invitation — INDÉPENDANTE de l'extraction du profil
+                            if inviter:
                                 try:
-                                    self.db.ajouter_profil(
-                                        nom=profile_data['nom'], poste=profile_data['poste'],
-                                        entreprise=profile_data['entreprise'], ecole='',
-                                        url=url, localisation='', nb_connexions=''
-                                    )
-                                except Exception as e:
-                                    logger.error(f"  Erreur DB: {e}")
-                            self._sauvegarder_profil(
-                                profile_data['nom'], profile_data['poste'],
-                                profile_data['entreprise'], '', url, False
-                            )
-                        else:
-                            logger.warning("  ⚠️ Données profil non extraites (invitation/message tentés quand même)")
+                                    invited = await self.envoyer_invitation(page, url, nom, message_invitation)
+                                    ligne['Invitation'] = 'Oui' if invited else 'Non'
+                                    if invited:
+                                        self.human.daily_limits.increment_invitations()
+                                        self._enregistrer_invitation(url, nom, profile_data, message_invitation)
+                                except ArretLinkedIn:
+                                    raise
+                                except Exception as _e:
+                                    logger.warning(f"  ⚠️ Invitation échouée: {_e}")
+                                    ligne['Invitation'] = 'Non'
 
-                        ligne = {
-                            'Nom': nom,
-                            'Poste': profile_data.get('poste', ''),
-                            'Entreprise': profile_data.get('entreprise', ''),
-                            'URL': url,
-                            'Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                        }
+                            # Message direct — INDÉPENDANT de l'extraction du profil
+                            if message_direct.strip():
+                                try:
+                                    sent = await self.envoyer_message(page, url, nom, message_direct)
+                                    ligne['Message'] = 'Oui' if sent else 'Non'
+                                except ArretLinkedIn:
+                                    raise
+                                except Exception as _e:
+                                    logger.warning(f"  ⚠️ Message échoué: {_e}")
+                                    ligne['Message'] = 'Non'
 
-                        # Invitation — INDÉPENDANTE de l'extraction du profil
-                        if inviter:
-                            try:
-                                invited = await self.envoyer_invitation(page, url, nom, message_invitation)
-                                ligne['Invitation'] = 'Oui' if invited else 'Non'
-                                if invited:
-                                    self.human.daily_limits.increment_invitations()
-                                    self._enregistrer_invitation(url, nom, profile_data, message_invitation)
-                            except Exception as _e:
-                                logger.warning(f"  ⚠️ Invitation échouée: {_e}")
-                                ligne['Invitation'] = 'Non'
+                            donnees.append(ligne)
 
-                        # Message direct — INDÉPENDANT de l'extraction du profil
-                        if message_direct.strip():
-                            try:
-                                sent = await self.envoyer_message(page, url, nom, message_direct)
-                                ligne['Message'] = 'Oui' if sent else 'Non'
-                            except Exception as _e:
-                                logger.warning(f"  ⚠️ Message échoué: {_e}")
-                                ligne['Message'] = 'Non'
+                        except ArretLinkedIn:
+                            raise
+                        except Exception as e:
+                            logger.error(f"  ❌ Erreur: {e}")
+                            self.errors.append(f"Erreur {url}: {e}")
 
-                        donnees.append(ligne)
+                        # Progression
+                        if progress_callback:
+                            progress_callback(min((i + 1) / total, 1.0))
 
-                    except Exception as e:
-                        logger.error(f"  ❌ Erreur: {e}")
-                        self.errors.append(f"Erreur {url}: {e}")
-
-                    # Progression
-                    if progress_callback:
-                        progress_callback(min((i + 1) / total, 1.0))
-
-                    # Délai humain entre chaque profil
-                    if i < total - 1:
-                        await self.human.human_delay(
-                            self.config.DELAY_BETWEEN_PROFILES_MIN,
-                            (self.config.DELAY_BETWEEN_PROFILES_MAX - self.config.DELAY_BETWEEN_PROFILES_MIN) // 3
-                        )
+                        # Le délai entre deux profils est la pause de la porte
+                        # de navigation, au chargement du suivant.
                         self.human.increase_fatigue(0.01)
-                        await self.human.random_long_pause(probability=0.08)
 
-                # Fermer le navigateur
-                await browser.close()
+                except ArretLinkedIn as arret:
+                    # Alerte, connexion ou budget : on garde ce qui est fait,
+                    # l'action en cours n'est pas ajoutée.
+                    self._noter_arret(arret)
+                finally:
+                    await browser.close()
 
                 duration = (datetime.now() - start_time).total_seconds()
                 logger.info(f"\n{'═'*60}")
@@ -2215,6 +2203,11 @@ class LinkedInScraperV2:
                 logger.info(f"{'═'*60}\n")
 
                 return pd.DataFrame(donnees)
+
+        except ArretLinkedIn as arret:
+            # Refus ou alerte dès le warm-up : Chrome est déjà fermé.
+            self._noter_arret(arret)
+            return pd.DataFrame(donnees)
 
         except Exception as e:
             self.errors.append(str(e))

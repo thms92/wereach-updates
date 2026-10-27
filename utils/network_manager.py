@@ -56,6 +56,9 @@ class NetworkManager:
         # Dernière erreur rencontrée par safe_page_goto (utile pour
         # diagnostiquer un cookie expiré vs une vraie panne réseau).
         self.last_error: Optional[Exception] = None
+        # Statut HTTP de la réponse principale du dernier safe_page_goto
+        # (None si aucune réponse) : le détecteur d'alerte le lit (429, 999).
+        self.last_status: Optional[int] = None
 
     async def retry_async(
         self,
@@ -299,13 +302,15 @@ class NetworkManager:
 
         async def _goto():
             try:
-                await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+                reponse = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+                self.last_status = getattr(reponse, "status", None)
                 return True
             except Exception as e:
                 raise self.classify_playwright_error(e)
 
         try:
             self.last_error = None
+            self.last_status = None
             return await self.retry_async(_goto, operation_name=f"goto {url[:50]}")
         except NetworkError as e:
             self.last_error = e

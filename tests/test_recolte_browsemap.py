@@ -213,6 +213,7 @@ def faux(scraper, monkeypatch):
         monkeypatch.setattr(scraper, "_open_linkedin_page", ouvrir)
         monkeypatch.setattr(scraper.network_manager, "safe_page_goto", aller)
         monkeypatch.setattr(scraper.human, "human_delay", rien)
+        monkeypatch.setattr(scraper.human, "pause_entre_pages", rien)
         monkeypatch.setattr(scraper, "_derouler_panneau", rien)
         monkeypatch.setattr(scraper, "_entreprise_reference", societe)
         # Jamais d'écriture dans le logs/ du dépôt : on note ce qui aurait

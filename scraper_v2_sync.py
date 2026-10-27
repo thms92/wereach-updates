@@ -8,6 +8,7 @@ import asyncio
 from typing import List, Optional, Callable, Union
 import pandas as pd
 
+from config import ScraperConfig
 from scraper_v2 import LinkedInScraperV2
 from logger import logger
 from utils.verrou_linkedin import VerrouOccupe, session_linkedin
@@ -175,7 +176,8 @@ class LinkedInScraperV2Sync:
             self.errors.append(f"Erreur: {e}")
             return [], None
 
-    def verifier_acceptations(self, cookie, profils, max_check=30,
+    def verifier_acceptations(self, cookie, profils,
+                              max_check=ScraperConfig.MAX_VERIFICATIONS_PAR_PASSAGE,
                               progress_callback=None, status_callback=None):
         """Version synchrone : détecte les invitations acceptées (1er degré).
 
@@ -200,7 +202,8 @@ class LinkedInScraperV2Sync:
             self.errors.append(f"Erreur: {e}")
             return []
 
-    def envoyer_messages(self, cookie, cibles, message, max_msg=20,
+    def envoyer_messages(self, cookie, cibles, message,
+                         max_msg=ScraperConfig.MAX_MESSAGES_PAR_SEANCE,
                          progress_callback=None, status_callback=None):
         """Version synchrone : envoie un message aux relations sélectionnées."""
         try:

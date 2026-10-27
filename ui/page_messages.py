@@ -13,13 +13,15 @@ import streamlit as st
 # Résolu à l'appel, pas à l'import : le remplacement de
 # scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
 import scraper_v2_sync
+from config import ScraperConfig
 from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel
 from ui.invitations import confirmation, echapper_markdown  # noqa: F401 (réexporté)
 from scraper_v2 import SESSION_EXPIREE
 from utils.verification import enregistrer_verification
 from utils.verrou_linkedin import message_occupe
 
-MAX_ENVOIS = 20
+MAX_ENVOIS = ScraperConfig.MAX_MESSAGES_PAR_SEANCE
+MAX_VERIFICATIONS = ScraperConfig.MAX_VERIFICATIONS_PAR_PASSAGE
 LIBELLE_VERIFIER = "Vérifier qui a accepté"
 LIBELLE_TOUT = "Tout sélectionner"
 LIBELLE_RIEN = "Tout désélectionner"
@@ -117,7 +119,7 @@ def afficher_page_messages():
         cA.markdown(
             f"{pluriel(len(en_attente), 'invitation')} en attente de réponse. "
             "We.Reach revisite les profils invités pour repérer ceux qui ont accepté "
-            "(30 au plus par vérification)."
+            f"({MAX_VERIFICATIONS} au plus par vérification)."
         )
         lancer = cB.button(LIBELLE_VERIFIER, type="primary", width="stretch",
                            icon=":material/how_to_reg:")
@@ -136,7 +138,7 @@ def afficher_page_messages():
             sc = _new_scraper()
             pb = st.progress(0); stt = st.empty()
             acceptees = sc.verifier_acceptations(
-                cookie=_ckm, profils=en_attente, max_check=30,
+                cookie=_ckm, profils=en_attente, max_check=MAX_VERIFICATIONS,
                 progress_callback=lambda p: pb.progress(p),
                 status_callback=lambda s: stt.text(s),
             )

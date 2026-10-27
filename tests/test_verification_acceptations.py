@@ -172,6 +172,7 @@ def _verifier(tmp_path, monkeypatch, entetes):
     monkeypatch.setattr(scraper, "_open_linkedin_page", ouvrir)
     monkeypatch.setattr(scraper.network_manager, "safe_page_goto", aller)
     monkeypatch.setattr(scraper.human, "human_delay", rien)
+    monkeypatch.setattr(scraper.human, "pause_entre_pages", rien)
     profils = [{"url": url, "nom": url[-2]} for url in entetes]
     acceptees = asyncio.run(scraper.verifier_acceptations_async("COOKIE-DE-TEST", profils))
     return scraper, [a["url"] for a in acceptees]

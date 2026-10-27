@@ -54,3 +54,18 @@ def nature_page(url: str, texte: Optional[str] = None,
         if any(t in bas for t in TEXTES_ALERTE):
             return "alerte"
     return None
+
+
+class ArretLinkedIn(Exception):
+    """Arrêt immédiat de l'action LinkedIn en cours.
+
+    `motif` : "alerte" (page d'avertissement), "session" (connexion à
+    refaire), "budget_jour" ou "budget_seance" (plafond de pages atteint).
+    Rangée ici et non dans scraper_v2 : le warm-up (utils/human_behavior)
+    doit la laisser passer sans importer le scraper.
+    """
+
+    def __init__(self, motif: str, url: Optional[str] = None):
+        super().__init__(motif if not url else f"{motif} ({url})")
+        self.motif = motif
+        self.url = url
