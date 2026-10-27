@@ -37,8 +37,9 @@ class DailyLimitsTracker:
     LIMITS_FILE = "config/daily_limits.json"
 
     def __init__(self, max_profiles: int = 80, max_invitations: int = 20,
-                 limits_file: str = None):
+                 limits_file: str = None, max_pages: int = 60):
         self.max_profiles = max_profiles
+        self.max_pages = max_pages
         self.max_invitations = max_invitations
         # Fichier de compteur PAR UTILISATEUR quand fourni (isolation multi-user)
         self.limits_file = limits_file or self.LIMITS_FILE
@@ -84,6 +85,21 @@ class DailyLimitsTracker:
         """
         self._data["pages_veille"] = self._data.get("pages_veille", 0) + n
         self._save()
+
+    def increment_pages(self, n: int = 1):
+        """Pages LinkedIn chargées par l'outil aujourd'hui (tous usages)."""
+        self._data["pages_linkedin"] = self._data.get("pages_linkedin", 0) + n
+        self._save()
+
+    @property
+    def pages_today(self) -> int:
+        return self._data.get("pages_linkedin", 0)
+
+    def remaining_pages(self) -> int:
+        return max(0, self.max_pages - self.pages_today)
+
+    def can_navigate(self) -> bool:
+        return self.pages_today < self.max_pages
 
     @property
     def pages_veille_today(self) -> int:
@@ -204,10 +220,12 @@ class HumanBehavior:
             from config import ScraperConfig
             _maxp = ScraperConfig.MAX_PROFILES_PER_RUN
             _maxi = ScraperConfig.MAX_INVITATIONS_PER_DAY
+            _maxpg = ScraperConfig.MAX_PAGES_PER_DAY
         except Exception:
-            _maxp, _maxi = 80, 20
+            _maxp, _maxi, _maxpg = 25, 20, 60
         self.daily_limits = DailyLimitsTracker(
-            max_profiles=_maxp, max_invitations=_maxi, limits_file=limits_file
+            max_profiles=_maxp, max_invitations=_maxi, limits_file=limits_file,
+            max_pages=_maxpg,
         )
 
     # =========================================================================

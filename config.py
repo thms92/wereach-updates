@@ -41,9 +41,26 @@ class ScraperConfig:
     # Plafonds PAR UTILISATEUR et PAR JOUR (source de vérité — appliqués dans
     # le scraper via DailyLimitsTracker). Conservateurs pour limiter le risque
     # LinkedIn quand plusieurs comptes partagent l'IP du serveur (sans proxy).
-    MAX_PROFILES_PER_RUN: int = 80
+    MAX_PROFILES_PER_RUN: int = 25
     # Limite CONSEILLÉE, affichée mais non bloquante (utils/budget.py).
     MAX_INVITATIONS_PER_DAY: int = 20
+
+    # Rythme humain : on compte les pages LinkedIn chargées (une navigation
+    # de l'outil vers linkedin.com = une page), par utilisateur et par jour.
+    MAX_PAGES_PER_DAY: int = 60
+    MAX_PAGES_PER_SEANCE: int = 25
+    SEANCE_FENETRE_MIN: int = 30
+    PAUSE_ENTRE_SEANCES_MIN: int = 20
+    MAX_SEANCES_PER_DAY: int = 4
+    # Délai entre deux pages (secondes) et pause de « lecture » occasionnelle
+    DELAI_PAGE_MIN_S: int = 8
+    DELAI_PAGE_MAX_S: int = 20
+    PAUSE_LECTURE_PROBA: float = 1 / 6
+    PAUSE_LECTURE_MIN_S: int = 30
+    PAUSE_LECTURE_MAX_S: int = 90
+    MAX_VERIFICATIONS_PAR_JOUR: int = 1
+    MAX_VERIFICATIONS_PAR_PASSAGE: int = 10
+    MAX_MESSAGES_PAR_SEANCE: int = 10
     MAX_RETRY_ATTEMPTS: int = 3
     # Headless pilotable par variable d'env : SCRAPER_HEADLESS=false lance un
     # navigateur VISIBLE (headed). LinkedIn masque certains boutons d'action
