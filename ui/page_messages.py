@@ -16,7 +16,8 @@ import streamlit as st
 import scraper_v2_sync
 from config import ScraperConfig
 from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel
-from ui.invitations import confirmation, echapper_markdown  # noqa: F401 (réexporté)
+from ui.invitations import (confirmation, echapper_markdown,  # noqa: F401 (réexporté)
+                            messages_d_arret)
 from scraper_v2 import SESSION_EXPIREE
 from utils.seances import message_refus, verification_permise
 from utils.verification import enregistrer_verification
@@ -157,14 +158,19 @@ def afficher_page_messages():
             db.marquer_verifiees(sc.verifiees)
             # Session occupée ou refus de séance : rien n'a été vérifié, ce
             # n'est pas « aucune acceptation ».
-            occupe = message_occupe(sc.errors) or message_refus(sc.errors)
+            occupe = message_occupe(sc.errors) or (
+                None if sc.verifiees else message_refus(sc.errors))
+            # Limite, fin de séance, session expirée : dits en clair.
+            arrets = [] if occupe else messages_d_arret(sc.errors)
             # La date de dernière vérification ne s'écrit qu'après une vraie
             # vérification : au moins une page lue, sans interruption. Un degré
             # illisible sur quelques profils ne l'empêche pas.
-            interrompue = (occupe or SESSION_EXPIREE in sc.errors
+            interrompue = (occupe or arrets or SESSION_EXPIREE in sc.errors
                            or any(str(err).startswith("Erreur: ") for err in sc.errors))
             if sc.verifiees and not interrompue:
                 enregistrer_verification(str(st.session_state.user_paths.config_dir))
+            for arret in arrets:
+                st.warning(arret)
             if occupe:
                 st.error(occupe)
             elif acceptees:
@@ -172,11 +178,12 @@ def afficher_page_messages():
                 verbe = "a accepté" if n < 2 else "ont accepté"
                 st.success(f"{pluriel(n, 'personne')} {verbe} votre invitation.")
                 acc = db.acceptees_non_messagees()
-            else:
+            elif sc.verifiees:
                 st.info("Aucune nouvelle acceptation pour l'instant. Réessayez dans quelques jours.")
-            if sc.errors and not occupe:
+            autres = [err for err in sc.errors if str(err) not in arrets]
+            if autres and not occupe:
                 with st.expander("Détails"):
-                    for e in sc.errors:
+                    for e in autres:
                         st.write(f"- {e}")
 
     st.divider()
@@ -259,14 +266,23 @@ def afficher_page_messages():
                 db.marquer_messagee(e["url"])
             # Session occupée ou refus de séance : rien n'est parti ; le
             # dire, et ne pas relancer la page, qui effacerait l'explication.
-            occupe = message_occupe(sc.errors) or message_refus(sc.errors)
+            # Même chose pour un arrêt en cours (limite, fin de séance,
+            # session expirée) : il reste à l'écran.
+            occupe = message_occupe(sc.errors) or (
+                None if envoyes else message_refus(sc.errors))
+            arrets = [] if occupe else messages_d_arret(sc.errors)
             if occupe:
                 st.error(occupe)
             else:
+                for arret in arrets:
+                    st.warning(arret)
                 n = len(envoyes)
-                st.success(f"{pluriel(n, 'message envoyé', 'messages envoyés')}.")
-                if sc.errors:
+                if n or not arrets:
+                    st.success(f"{pluriel(n, 'message envoyé', 'messages envoyés')}.")
+                autres = [er for er in sc.errors if str(er) not in arrets]
+                if autres:
                     with st.expander("Détails"):
-                        for er in sc.errors:
+                        for er in autres:
                             st.write(f"- {er}")
-                st.rerun()
+                if not arrets:
+                    st.rerun()

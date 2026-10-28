@@ -19,8 +19,9 @@ import streamlit as st
 # remplacement de scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
 import scraper_v2_sync
 from ui.composants import afficher_carte_action, afficher_jauge_budget, pluriel
+from scraper_v2 import SESSION_EXPIREE
 from utils.budget import budget_du_jour, refus_invitations
-from utils.seances import message_refus
+from utils.seances import debut_action, message_refus
 
 MESSAGE_SESSION_MANQUANTE = (
     "Session LinkedIn manquante : renseignez-la en haut de la page Recherche."
@@ -52,19 +53,55 @@ def budget():
     return budget_du_jour(st.session_state.user_paths.config_dir)
 
 
+def pages_seance():
+    """Profils que la séance peut encore ouvrir : ses pages restantes, moins
+    une pour l'ouverture de Chrome. None quand aucune séance ne peut
+    commencer maintenant (pause, séances du jour) : le moteur refusera avec
+    la raison et l'heure."""
+    refus, restantes = debut_action(str(st.session_state.user_paths.config_dir),
+                                    datetime.now())
+    if refus:
+        return None
+    return max(restantes - 1, 0)
+
+
+def refus_pages_seance(n_prevues: int, pages):
+    """Refus si `n_prevues` profils dépassent les pages restantes de la
+    séance (`pages_seance`), sinon None."""
+    if pages is None or int(n_prevues) <= pages:
+        return None
+    return (f"Il reste {pluriel(pages, 'page')} dans cette séance : "
+            f"sélectionnez-en {pages} au plus, ou attendez la prochaine séance.")
+
+
+_DEBUTS_ARRET = ("Limite du jour atteinte : ", "Séance terminée : ")
+
+
+def messages_d_arret(erreurs) -> list:
+    """Les arrêts d'un passage parmi `erreurs` : limite du jour (pages ou
+    invitations), fin de séance, session expirée. Ils se disent au-dessus
+    des résultats, pas dans un encadré replié."""
+    return [str(e) for e in erreurs or ()
+            if str(e).startswith(_DEBUTS_ARRET) or str(e) == SESSION_EXPIREE]
+
+
 # --------------------------------------------------------- confirmation
 
-def recap_invitations(n: int, utilisees: int, plafond: int, message: str = "") -> str:
+def recap_invitations(n: int, utilisees: int, plafond: int, message: str = "",
+                      pages_seance=None) -> str:
     """Ce qui partira, en Markdown sûr : « Jusqu'à 3 invitations partiront
     depuis votre compte LinkedIn ; vous en serez à 20 aujourd'hui (limite du
     jour : 20). … » Une sélection au-delà du reste est refusée avant (voir
-    `refus_invitations`), le récapitulatif ne la montre donc jamais."""
+    `refus_invitations`), le récapitulatif ne la montre donc jamais.
+    `pages_seance` : pages restantes de la séance, dites aussi."""
     n = max(int(n), 0)
     total = max(int(utilisees), 0) + n
     verbe = "partira" if n < 2 else "partiront"
     texte = (f"Jusqu'à {pluriel(n, 'invitation')} {verbe} depuis votre compte "
              f"LinkedIn ; vous en serez à {total} aujourd'hui (limite du jour : "
              f"{plafond}).")
+    if pages_seance is not None:
+        texte += f" Il reste {pluriel(pages_seance, 'page')} dans cette séance."
     message = (message or "").strip()
     if message:
         texte += f" Message joint : « {echapper_markdown(message)} »"
@@ -146,6 +183,11 @@ def afficher_resultats(df: pd.DataFrame, inviter: bool, nom_export: str,
                        prefixe: str, erreurs=()) -> None:
     """Bilan et suite, tableau lisible, exports et incidents d'un passage."""
     erreurs = list(erreurs or [])
+    # Limite, fin de séance, session : au-dessus, même avec des résultats.
+    arrets = messages_d_arret(erreurs)
+    for arret in arrets:
+        st.warning(arret)
+    erreurs = [e for e in erreurs if str(e) not in arrets]
 
     if df is not None and not df.empty:
         invitations = nombre_invitations(df) if inviter else None
@@ -221,6 +263,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
     message = ""
     b = None
     refus = None
+    pages = None
     with st.container(border=True, key=f"bloc_{prefixe}_inviter"):
         st.markdown("**Invitations**")
         if inviter_seulement:
@@ -233,7 +276,9 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         if inviter:
             b = budget()
             afficher_jauge_budget(b.utilisees, b.plafond)
-            refus = refus_invitations(len(urls), b.utilisees, b.plafond)
+            pages = pages_seance()
+            refus = (refus_invitations(len(urls), b.utilisees, b.plafond)
+                     or refus_pages_seance(len(urls), pages))
             if refus:
                 st.error(refus)
             message = st.text_area(
@@ -252,9 +297,9 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
     clic = st.button(libelle, type="primary", disabled=refus is not None,
                      width="stretch", key=f"{prefixe}_btn_recuperer")
 
-    # Le plafond du jour est bloquant : une sélection plus grande que le reste
-    # ne se confirme pas (le refus est écrit au-dessus du bouton), et une
-    # confirmation déjà ouverte se referme.
+    # Le plafond du jour et les pages de la séance sont bloquants : une
+    # sélection plus grande que le reste ne se confirme pas (le refus est
+    # écrit au-dessus du bouton), et une confirmation déjà ouverte se referme.
     if refus:
         _annuler(f"confirmer_{prefixe}")
         return
@@ -267,6 +312,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         b.utilisees if b is not None else 0,
         b.plafond if b is not None else 0,
         message,
+        pages,
     )
     parametres = {"urls": tuple(urls), "inviter": inviter, "message": message}
     if not confirmation(prefixe, clic, inviter, parametres, recap):

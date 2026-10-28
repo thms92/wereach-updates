@@ -37,7 +37,7 @@ def espion(monkeypatch):
         def run_url_scraper(self, **kwargs):
             etat["invitations"].append(kwargs)
             self.errors = list(etat.get("erreurs_invitation", []))
-            return pd.DataFrame()
+            return etat.get("df_invitation", pd.DataFrame())
 
     monkeypatch.setattr(scraper_v2_sync, "LinkedInScraperV2Sync", FauxScraper)
     return etat
@@ -165,3 +165,71 @@ def test_une_invitation_arretee_sans_resultat_dit_pourquoi(espion, erreur):
     assert any(erreur in w.value for w in at.warning)
     assert not any("Aucun profil récupéré" in w.value for w in at.warning)
     assert not any(e.label.startswith("Incidents") for e in at.expander)
+
+
+# ── Arrêt en cours de passage : dit au-dessus des résultats ──
+
+SEANCE_FINIE = "Séance terminée : 25 pages consultées. Prochaine séance possible dans 20 minutes."
+
+
+def _dans_l_ordre(at):
+    def parcourir(noeud):
+        yield noeud
+        for enfant in getattr(noeud, "children", {}).values():
+            yield from parcourir(enfant)
+    return list(parcourir(at.main))
+
+
+@pytest.mark.parametrize("arret", [
+    SEANCE_FINIE,
+    LIMITE_PAGES,
+    "Limite du jour atteinte : 20 invitations envoyées. Vous pourrez reprendre demain.",
+    "Session LinkedIn expirée : mettez-la à jour dans la page Recherche.",
+])
+def test_un_arret_en_cours_d_invitation_se_voit_au_dessus_des_resultats(espion, arret):
+    espion["df_invitation"] = TROUVES.head(2)
+    espion["erreurs_invitation"] = [arret, "Profil illisible : exemple-9"]
+    at = _rechercher()
+    at.button(key="crit_btn_recuperer").click().run()
+    at.button(key="confirmer_crit_ok").click().run()
+    assert not at.exception
+    ordre = _dans_l_ordre(at)
+    alerte = next(i for i, n in enumerate(ordre) if getattr(n, "type", None) == "warning"
+                  and getattr(n, "value", "") == arret)
+    # Le bilan des résultats commence par ses boutons de suite.
+    bilan = next(i for i, n in enumerate(ordre) if getattr(n, "type", None) == "button"
+                 and getattr(n, "key", None) == "crit_vers_historique")
+    assert alerte < bilan
+    # Les autres incidents restent dans l'encadré, l'arrêt n'y est pas répété.
+    incidents = [e for e in at.expander if e.label.startswith("Incidents")]
+    assert incidents and incidents[0].label.endswith("(1)")
+
+
+# ── Pages restantes de la séance, avant d'inviter ──
+
+def _seance_restante(monkeypatch, restantes):
+    monkeypatch.setattr(ui.invitations, "debut_action", lambda _d, _t: (None, restantes))
+
+
+def test_le_recapitulatif_dit_les_pages_restantes_de_la_seance(espion, monkeypatch):
+    _seance_restante(monkeypatch, 10)
+    at = _rechercher()
+    at.button(key="crit_btn_recuperer").click().run()
+    recap = [m.value for m in at.markdown if m.value.startswith("Jusqu'à")]
+    assert recap and "Il reste 9 pages dans cette séance." in recap[0]
+
+
+@pytest.mark.parametrize("restantes,attendu", [
+    (3, "Il reste 2 pages dans cette séance : sélectionnez-en 2 au plus, "
+        "ou attendez la prochaine séance."),
+    (2, "Il reste 1 page dans cette séance : sélectionnez-en 1 au plus, "
+        "ou attendez la prochaine séance."),
+])
+def test_une_selection_plus_grande_que_la_seance_est_refusee(espion, monkeypatch,
+                                                             restantes, attendu):
+    _seance_restante(monkeypatch, restantes)
+    at = _rechercher()
+    assert [e.value for e in at.error] == [attendu]
+    assert at.button(key="crit_btn_recuperer").disabled
+    at.button(key="crit_btn_recuperer").click().run()
+    assert espion["invitations"] == []

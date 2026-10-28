@@ -248,3 +248,69 @@ def test_une_verification_deja_faite_aujourd_hui_rend_le_bouton_inactif(invitati
     finally:
         import os
         os.remove(os.path.join(config_dir, "seances.json"))
+
+
+# ── Arrêt en cours de passage (limite, fin de séance, session) : dit en clair ──
+
+LIMITE_PAGES = ("Limite du jour atteinte : 60 pages LinkedIn consultées. "
+                "Vous pourrez reprendre demain.")
+SEANCE_FINIE = "Séance terminée : 25 pages consultées. Prochaine séance possible dans 20 minutes."
+
+
+@pytest.mark.parametrize("arret", [LIMITE_PAGES, SEANCE_FINIE, SESSION_EXPIREE])
+def test_verification_arretee_sans_page_lue_le_dit_en_clair(deux_invitations, arret):
+    ScraperVerifie.verifiees = []
+    ScraperVerifie.erreurs = [arret]
+    at = _verifier()
+    assert any(arret == m.value for m in list(at.warning) + list(at.error))
+    assert not any("Aucune nouvelle acceptation" in i.value for i in at.info)
+    assert derniere_verification(str(chemins_de_test().config_dir)) is None
+
+
+def test_verification_arretee_apres_des_pages_le_dit_aussi(deux_invitations):
+    ScraperVerifie.verifiees = [URL]
+    ScraperVerifie.erreurs = [LIMITE_PAGES]
+    at = _verifier()
+    assert any(LIMITE_PAGES == w.value for w in at.warning)
+    assert not at.error
+    # Interrompue : pas de date de vérification complète.
+    assert derniere_verification(str(chemins_de_test().config_dir)) is None
+
+
+class ScraperArrete(ScraperOccupe):
+    arret = SEANCE_FINIE
+    envoyes = []
+
+    def envoyer_messages(self, **k):
+        self.errors = [ScraperArrete.arret]
+        return list(ScraperArrete.envoyes)
+
+
+def _envoyer(invitation, monkeypatch):
+    monkeypatch.setattr(scraper_v2_sync, "LinkedInScraperV2Sync", ScraperArrete)
+    invitation.marquer_acceptee(URL)
+    at = _page()
+    at.checkbox(key=f"msg_{URL}").check()
+    at.text_area[0].input("Bonjour !")
+    at.run()
+    at.button(key="msg_envoyer").click()
+    at.run()
+    at.button(key="confirmer_messages_ok").click()
+    at.run()
+    assert not at.exception
+    return at
+
+
+@pytest.mark.parametrize("arret", [LIMITE_PAGES, SEANCE_FINIE, SESSION_EXPIREE])
+def test_envoi_arrete_le_dit_sans_relancer_la_page(invitation, monkeypatch, arret):
+    ScraperArrete.arret, ScraperArrete.envoyes = arret, []
+    at = _envoyer(invitation, monkeypatch)
+    assert any(arret == m.value for m in list(at.warning) + list(at.error))
+    assert not any("envoy" in s.value for s in at.success)
+
+
+def test_envoi_arrete_apres_un_message_garde_l_arret_a_l_ecran(invitation, monkeypatch):
+    ScraperArrete.arret, ScraperArrete.envoyes = SEANCE_FINIE, [{"url": URL}]
+    at = _envoyer(invitation, monkeypatch)
+    assert any(SEANCE_FINIE == w.value for w in at.warning)
+    assert any("1 message envoyé" in s.value for s in at.success)
