@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 from config import ScraperConfig
+from utils.budget import LIMITE_PAGES_ATTEINTE
 
 NOM_FICHIER = "seances.json"
 
@@ -155,8 +156,8 @@ def noter_verification(config_dir: str, maintenant: datetime) -> None:
 
 
 def message_refus(erreurs: Optional[List]) -> Optional[str]:
-    """Le refus de séance (pause, séances du jour, vérification) parmi
-    `erreurs`, ou None.
+    """Le refus de séance (pause, séances du jour, vérification, pages
+    LinkedIn du jour) parmi `erreurs`, ou None.
 
     Le wrapper synchrone range le refus parmi ses erreurs et rend un
     résultat vide : l'appelant doit le dire en clair plutôt qu'afficher
@@ -166,5 +167,6 @@ def message_refus(erreurs: Optional[List]) -> Optional[str]:
         return any(texte.startswith(avant) and texte.endswith(apres)
                    for avant, _, apres in (REFUS_SEANCES.partition("{n}"),
                                            REFUS_PAUSE.partition("{heure}"),
-                                           REFUS_VERIFICATION.partition("\0")))
+                                           REFUS_VERIFICATION.partition("\0"),
+                                           LIMITE_PAGES_ATTEINTE.partition("{n}")))
     return next((str(e) for e in erreurs or () if _est_refus(str(e))), None)

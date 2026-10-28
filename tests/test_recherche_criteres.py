@@ -131,10 +131,31 @@ def test_une_invitation_refusee_dit_le_refus_et_pas_aucun_profil(espion):
 
 # ── Arrêt sans résultat (session occupée, limite du jour) : la cause en clair ──
 
-@pytest.mark.parametrize("erreur", [
-    str(VerrouOccupe("veille")),
-    "Limite du jour atteinte : 60 pages LinkedIn consultées. Vous pourrez reprendre demain.",
-])
+LIMITE_PAGES = ("Limite du jour atteinte : 60 pages LinkedIn consultées. "
+                "Vous pourrez reprendre demain.")
+
+
+def test_une_invitation_refusee_faute_de_pages_le_dit_en_clair(espion):
+    # Pages du jour épuisées : refus avant Chrome, dit comme les autres refus.
+    espion["erreurs_invitation"] = [LIMITE_PAGES]
+    at = _rechercher()
+    at.button(key="crit_btn_recuperer").click().run()
+    at.button(key="confirmer_crit_ok").click().run()
+    assert not at.exception
+    assert [e.value for e in at.error] == [LIMITE_PAGES]
+    assert not any("Aucun profil récupéré" in w.value for w in at.warning)
+
+
+def test_une_recherche_arretee_par_la_limite_garde_ses_profils(espion):
+    # Limite atteinte en cours de recherche : les profils déjà lus restent,
+    # la limite est dite au-dessus.
+    espion["erreurs_recherche"] = [LIMITE_PAGES]
+    at = _rechercher()
+    assert len(at.session_state["crit_profils"]) == 3
+    assert any(LIMITE_PAGES in w.value for w in at.warning)
+
+
+@pytest.mark.parametrize("erreur", [str(VerrouOccupe("veille"))])
 def test_une_invitation_arretee_sans_resultat_dit_pourquoi(espion, erreur):
     espion["erreurs_invitation"] = [erreur]
     at = _rechercher()

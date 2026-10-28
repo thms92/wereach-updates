@@ -36,6 +36,8 @@ class Budget:
 
 LIMITE_INVITATIONS_ATTEINTE = ("Limite du jour atteinte : {plafond} invitations "
                                "envoyées. Vous pourrez reprendre demain.")
+LIMITE_PAGES_ATTEINTE = ("Limite du jour atteinte : {n} pages LinkedIn "
+                         "consultées. Vous pourrez reprendre demain.")
 
 
 def _suivi(config_dir: str) -> DailyLimitsTracker:

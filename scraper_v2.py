@@ -34,7 +34,7 @@ from utils.stealth_profile import StealthProfileManager
 import utils.requete_linkedin as requete
 from utils.page_vide import diagnostiquer_page_vide
 from utils.alerte_linkedin import ArretLinkedIn, CHEMINS_TRAVAIL, nature_page
-from utils.budget import LIMITE_INVITATIONS_ATTEINTE
+from utils.budget import LIMITE_INVITATIONS_ATTEINTE, LIMITE_PAGES_ATTEINTE
 
 
 
@@ -221,8 +221,7 @@ class LinkedInScraperV2:
     def _noter_arret(self, arret: ArretLinkedIn) -> None:
         """Range dans self.errors la raison d'un arrêt, pour la personne."""
         if arret.motif == "budget_jour":
-            msg = (f"Limite du jour atteinte : {self.human.daily_limits.pages_today} "
-                   "pages LinkedIn consultées. Vous pourrez reprendre demain.")
+            msg = LIMITE_PAGES_ATTEINTE.format(n=self.human.daily_limits.pages_today)
         elif arret.motif == "budget_seance":
             msg = (f"Séance terminée : {self.pages_cette_seance} pages consultées. "
                    f"Prochaine séance possible dans "

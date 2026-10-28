@@ -287,8 +287,9 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         )
 
     # Refus de séance : rien n'a été tenté, ce n'est pas « aucun profil ».
+    # Une limite atteinte en cours de route garde les profils déjà lus.
     refus = message_refus(scraper.errors)
-    if refus:
+    if refus and df.empty:
         st.error(refus)
         return
     if df.empty:

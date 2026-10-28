@@ -266,3 +266,31 @@ def test_une_action_qui_echoue_compte_quand_meme_ses_pages(tmp_path, monkeypatch
     monkeypatch.setattr(wrapper.scraper, "envoyer_messages_async", plante)
     assert wrapper.envoyer_messages(cookie="c", cibles=[], message="m") == []
     assert debut_action(d, h("10:05")) == (None, 22)
+
+
+# ── Pages du jour épuisées : refus avant le verrou et avant Chrome ───────
+
+LIMITE_60_PAGES = ("Limite du jour atteinte : 60 pages LinkedIn consultées. "
+                   "Vous pourrez reprendre demain.")
+
+
+@pytest.mark.parametrize("methode,_async,kwargs,vide", ACTIONS)
+def test_pages_du_jour_epuisees_refus_sans_chrome(tmp_path, chrome_espion, methode, _async,
+                                                  kwargs, vide):
+    d = str(tmp_path)
+    wrapper = LinkedInScraperV2Sync(use_database=False, config_dir=d)
+    wrapper.scraper.human.daily_limits.increment_pages(60)
+    wrapper._horloge = lambda: h("10:00")
+
+    resultat = getattr(wrapper, methode)(**kwargs)
+
+    assert chrome_espion == []
+    assert _vide(resultat, vide)
+    assert wrapper.errors == [LIMITE_60_PAGES]
+    assert not (tmp_path / "session_linkedin.lock").exists()
+    # État de séance inchangé : rien d'écrit.
+    assert not (tmp_path / "seances.json").exists()
+
+
+def test_message_refus_reconnait_la_limite_de_pages():
+    assert message_refus(["autre", LIMITE_60_PAGES]) == LIMITE_60_PAGES

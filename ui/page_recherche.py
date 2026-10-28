@@ -313,8 +313,10 @@ def afficher_page_recherche():
                     if r.get("URL du profil")]
                 # Refus de séance : pas de recherche, donc pas d'étape 2 ni
                 # de « aucun nouveau profil » ; le refus s'affiche en clair.
+                # Une limite atteinte en cours de route garde les profils lus.
                 st.session_state["crit_profils"] = (
-                    None if message_refus(scraper.errors) else profils_trouves)
+                    None if message_refus(scraper.errors) and not profils_trouves
+                    else profils_trouves)
                 st.session_state["crit_erreurs"] = list(scraper.errors)
                 st.session_state["crit_ecartes"] = getattr(scraper, "ecartes_reseau", 0)
                 reinitialiser_choix("crit")
@@ -409,7 +411,8 @@ def afficher_page_recherche():
                 )
                 # Refus de séance : pas de liste vide à filtrer, le refus seul.
                 st.session_state["sim_suggestions"] = (
-                    None if message_refus(scraper.errors) else suggestions)
+                    None if message_refus(scraper.errors) and not suggestions
+                    else suggestions)
                 st.session_state["sim_entreprise"] = entreprise
                 # Par défaut, on écarte ceux qui travaillent encore chez
                 # l'entreprise du profil de départ : on cherche le même profil

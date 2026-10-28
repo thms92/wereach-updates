@@ -12,6 +12,7 @@ import pandas as pd
 
 from config import ScraperConfig
 from scraper_v2 import LinkedInScraperV2
+from utils.budget import LIMITE_PAGES_ATTEINTE
 from logger import logger
 from utils.seances import debut_action, fin_action, noter_verification, verification_permise
 from utils.verrou_linkedin import VerrouOccupe, session_linkedin
@@ -38,12 +39,17 @@ class LinkedInScraperV2Sync:
     def _refus_seance(self, verification: bool = False) -> Optional[str]:
         """Le refus de séance pour l'action qui commence, ou None.
 
-        Appelé avant le verrou et avant Chrome. Permise : le scraper reçoit
-        les pages qui restent dans la séance et repart de 0 page.
+        Appelé avant le verrou et avant Chrome. Pages LinkedIn du jour
+        épuisées : refus, comme la pause ou les séances du jour. Permise : le
+        scraper reçoit les pages qui restent dans la séance et repart de 0
+        page.
         """
         self._debut_seance = self._horloge()
         refus = None
-        if verification:
+        limites = self.scraper.human.daily_limits
+        if not limites.can_navigate():
+            refus = LIMITE_PAGES_ATTEINTE.format(n=limites.pages_today)
+        if refus is None and verification:
             refus = verification_permise(self.config_dir, self._debut_seance)
         if refus is None:
             refus, restantes = debut_action(self.config_dir, self._debut_seance)
