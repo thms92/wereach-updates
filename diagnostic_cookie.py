@@ -23,6 +23,31 @@ from datetime import datetime
 
 from playwright.async_api import async_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from utils.alerte_linkedin import nature_page
+from utils.human_behavior import DailyLimitsTracker
+
+# Erreurs où la requête n'est pas partie : rien n'a été demandé à LinkedIn.
+_ERREURS_SANS_REQUETE = ("ERR_INTERNET_DISCONNECTED", "ERR_NAME_NOT_RESOLVED",
+                         "ERR_CONNECTION_REFUSED", "ERR_PROXY")
+
+
+def compter_page(config_dir: str) -> None:
+    """Compte la page du fil dans le compteur du jour de la personne.
+
+    `config_dir` est transmis par l'app (WEREACH_CONFIG_DIR) ; sans lui,
+    le diagnostic tourne mais ne compte rien. Jamais bloqué par le plafond :
+    c'est le seul moyen de vérifier sa session.
+    """
+    if not config_dir:
+        return
+    try:
+        DailyLimitsTracker(
+            limits_file=str(Path(config_dir) / "daily_limits.json")
+        ).increment_pages(1)
+    except Exception as e:
+        print(f"   (page non comptée : {e})")
+
 
 def load_cookie() -> str:
     """La session à tester.
@@ -108,6 +133,9 @@ async def run_diagnostic(cookie: str, headless: bool = False) -> None:
         print("🌐 Tentative d'accès à https://www.linkedin.com/feed/ ...")
         final_url = ""
         error_msg = ""
+        statut_http = None
+        texte_page = ""
+        envoyee = False
         try:
             response = await page.goto(
                 "https://www.linkedin.com/feed/",
@@ -115,17 +143,28 @@ async def run_diagnostic(cookie: str, headless: bool = False) -> None:
                 timeout=20000,
             )
             final_url = page.url
+            envoyee = True
+            statut_http = response.status if response else None
             status = response.status if response else "?"
             print(f"   → réponse HTTP {status}")
             print(f"   → URL finale : {final_url}")
         except Exception as e:
             error_msg = str(e)
+            envoyee = not any(x in error_msg for x in _ERREURS_SANS_REQUETE)
             print(f"   ❌ ERREUR : {error_msg.splitlines()[0]}")
             try:
                 final_url = page.url
                 print(f"   → Dernière URL atteinte : {final_url}")
             except Exception:
                 pass
+
+        if envoyee:
+            compter_page(os.environ.get("WEREACH_CONFIG_DIR", ""))
+            try:
+                texte_page = await page.inner_text("body", timeout=3000)
+            except Exception:
+                texte_page = ""
+        nature = nature_page(final_url, texte_page, statut_http) if envoyee else None
 
         # Screenshot pour inspection visuelle
         screenshot_path = Path("diagnostic_cookie.png")
@@ -144,7 +183,7 @@ async def run_diagnostic(cookie: str, headless: bool = False) -> None:
         print()
 
         # Verdict
-        verdict = analyse(final_url, error_msg, redirects)
+        verdict = analyse(final_url, error_msg, redirects, nature)
         print(verdict)
 
         if not headless:
@@ -155,11 +194,19 @@ async def run_diagnostic(cookie: str, headless: bool = False) -> None:
         await browser.close()
 
 
-def analyse(final_url: str, error_msg: str, redirects: list) -> str:
+def analyse(final_url: str, error_msg: str, redirects: list,
+            nature: str = None) -> str:
     """Donne un verdict humainement compréhensible."""
     lines = ["═" * 60, "  VERDICT", "═" * 60]
 
-    if "ERR_TOO_MANY_REDIRECTS" in error_msg:
+    if nature in ("alerte", "session"):
+        # Page d'alerte ou de connexion : même rendu que l'expiration.
+        lines += [
+            "❌ COOKIE EXPIRÉ : la session est interrompue.",
+            "",
+            "À FAIRE : Reconnecte-toi à LinkedIn et copie un nouveau cookie li_at.",
+        ]
+    elif "ERR_TOO_MANY_REDIRECTS" in error_msg:
         lines += [
             "❌ COOKIE INVALIDE : LinkedIn redirige en boucle.",
             "",

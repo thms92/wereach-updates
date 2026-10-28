@@ -71,7 +71,10 @@ def _tester_session():
                 capture_output=True, text=True, timeout=60,
                 # La session en mémoire, celle de la personne connectée
                 # (variable d'environnement : invisible dans la liste des processus).
-                env={**os.environ, "WEREACH_COOKIE": st.session_state.global_cookie or ""},
+                env={**os.environ, "WEREACH_COOKIE": st.session_state.global_cookie or "",
+                     # Le dossier de réglages de la personne : la page du fil est
+                     # comptée dans ses pages du jour.
+                     "WEREACH_CONFIG_DIR": str(st.session_state.user_paths.config_dir)},
             )
         except subprocess.TimeoutExpired:
             st.error("La vérification a dépassé 60 secondes : réseau lent ou navigateur bloqué.")
