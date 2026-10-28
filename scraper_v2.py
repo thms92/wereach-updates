@@ -32,6 +32,7 @@ from utils.network_manager import NetworkManager, RetryConfig, PermanentNetworkE
 from utils.human_behavior import HumanBehavior
 from utils.stealth_profile import StealthProfileManager
 import utils.requete_linkedin as requete
+import utils.listes_linkedin as listes
 from utils.page_vide import diagnostiquer_page_vide
 from utils.alerte_linkedin import ArretLinkedIn, CHEMINS_TRAVAIL, STATUTS_ALERTE, nature_page
 from utils.budget import LIMITE_INVITATIONS_ATTEINTE, LIMITE_PAGES_ATTEINTE
@@ -1064,27 +1065,151 @@ class LinkedInScraperV2:
             return None, None
         return browser, page
 
+    async def _lire_une_liste(self, page, url: str, motif_total) -> Optional[listes.ListeLue]:
+        """Charge une page de liste (1 page) et la fait défiler (0 page)
+        jusqu'à lire tout le monde ou ne plus rien voir arriver.
+        None si la page ne se charge pas ou ne se lit pas comme une liste."""
+        if not await self._naviguer(page, url):
+            return None
+        try:
+            await page.wait_for_selector('[data-component-type="LazyColumn"]', timeout=8000)
+        except Exception:
+            pass  # liste vide ou illisible : lire_liste le dira
+        await self.human.human_delay(1500, 400)
+        try:
+            lue = listes.lire_liste(await page.content(), url, motif_total)
+        except Exception as e:
+            logger.warning(f"  ⚠️ Liste illisible ({url}): {e}")
+            return None
+        sans_nouveau = 0
+        for _ in range(listes.MAX_DEFILEMENTS_LISTE):
+            if lue is None or lue.complete or sans_nouveau >= listes.DEFILEMENTS_SANS_NOUVEAU:
+                break
+            try:
+                # La souris au milieu de la fenêtre : la molette fait défiler la
+                # liste, pas un bandeau fixe.
+                taille = page.viewport_size or {}
+                await page.mouse.move(taille.get("width", 1200) / 2, taille.get("height", 800) / 2)
+                await self.human.human_scroll_down(page, total_px=1800, scroll_steps=6)
+                await self.human.human_delay(1200, 300)
+                suite = listes.lire_liste(await page.content(), url, motif_total)
+            except Exception as e:
+                logger.warning(f"  ⚠️ Défilement de la liste ({url}): {e}")
+                break
+            if suite is None:
+                break
+            avant = len(lue.slugs)
+            lue = lue.fusionner(suite)
+            sans_nouveau = 0 if len(lue.slugs) > avant else sans_nouveau + 1
+        return lue
+
+    async def _lire_listes(self, page, lues: dict, status_callback=None) -> None:
+        """Remplit `lues` (« envoyees », « relations » : ListeLue, ou None si
+        illisible), au plus MAX_PAGES_LISTES pages : les deux listes, puis
+        la page suivante de la première qui n'a pas été lue en entier.
+        Rempli au fil de l'eau : un arrêt en cours garde ce qui a été lu."""
+        a_lire = (
+            ("envoyees", listes.URL_INVITATIONS_ENVOYEES, listes.MOTIF_TOTAL_ENVOYEES,
+             "Lecture de vos invitations envoyées…"),
+            ("relations", listes.URL_RELATIONS, listes.MOTIF_TOTAL_RELATIONS,
+             "Lecture de vos relations les plus récentes…"),
+        )
+        pages = 0
+        for cle, url, motif, libelle in a_lire:
+            if status_callback:
+                status_callback(libelle)
+            pages += 1
+            lues[cle] = await self._lire_une_liste(page, url, motif)
+        if pages >= listes.MAX_PAGES_LISTES:
+            return
+        for cle, _url, motif, libelle in a_lire:
+            lue = lues.get(cle)
+            if lue is not None and not lue.complete and lue.suivante:
+                if status_callback:
+                    status_callback(libelle)
+                suite = await self._lire_une_liste(page, lue.suivante, motif)
+                if suite is not None:
+                    lues[cle] = lue.fusionner(suite)
+                return
+
+    def _appliquer_classement(self, classement, acceptees: list) -> None:
+        """Reporte le classement des listes dans `acceptees` et `self.verifiees`."""
+        for prof in classement.acceptees:
+            acceptees.append({"url": prof.get("url"), "nom": prof.get("nom", "")})
+            logger.info(f"  ✅ A accepté (liste des relations) : {prof.get('nom', '')}")
+        for prof in classement.absentes:
+            logger.info(f"  ↩️ Ni dans les invitations envoyées ni dans les relations : "
+                        f"{prof.get('nom', '')} (invitation retirée ou refusée, statut inchangé)")
+        self.verifiees.extend(classement.verifiees)
+
+    async def _verifier_profils(self, page, profils, acceptees: list,
+                                progress_callback=None, status_callback=None) -> int:
+        """Repli : ouvre chaque profil et lit son degré dans l'en-tête.
+        Rend le nombre de degrés illisibles."""
+        illisibles = 0
+        total = len(profils)
+        for i, prof in enumerate(profils):
+            url = prof.get("url"); nom = prof.get("nom", "")
+            if status_callback:
+                status_callback(f"Vérification {i+1} sur {total} : {nom}")
+            try:
+                clean_url = url.split('?')[0].rstrip('/') + '/'
+                # La porte attend la pause entre pages et arrête tout
+                # sur une page d'alerte ou de connexion.
+                if not await self._naviguer(page, clean_url):
+                    continue
+                await self.human.human_delay(1500, 400)
+                try:
+                    entete = await page.locator("main section").first.inner_text(timeout=5000)
+                except Exception as e:
+                    logger.warning(f"  ⚠️ En-tête illisible pour {nom}: {e}")
+                    entete = ""
+                degre = degre_depuis_entete(entete)
+                if not degre:
+                    illisibles += 1
+                    logger.info(f"  ⚠️ Degré illisible : {nom} reste en attente")
+                else:
+                    # Seul un degré lu fait de la page une page vérifiée.
+                    self.verifiees.append(url)
+                    if degre == "1er":
+                        acceptees.append({"url": url, "nom": nom})
+                        logger.info(f"  ✅ A accepté : {nom}")
+                    else:
+                        logger.info(f"  ⏳ Pas encore 1er degré : {nom} (degré lu : {degre})")
+            except ArretLinkedIn:
+                raise
+            except Exception as e:
+                logger.warning(f"  ⚠️ Vérif {nom}: {e}")
+            if progress_callback:
+                progress_callback(min(0.5 + 0.5 * (i + 1) / total, 1.0))
+        return illisibles
+
     async def verifier_acceptations_async(self, cookie: str, profils,
                                           max_check: int = ScraperConfig.MAX_VERIFICATIONS_PAR_PASSAGE,
                                           progress_callback=None, status_callback=None):
-        """Revisite les profils invités et détecte ceux devenus relation 1er degré.
+        """Détecte les invitations acceptées en lisant deux listes LinkedIn.
 
-        Une personne a accepté seulement si le degré lu dans l'en-tête de son
-        profil est « 1er » : le bouton « Message » existe aussi pour un 2e ou
-        un 3e degré. Un degré illisible ne vaut ni acceptation ni vérification :
-        la personne reste en attente et revient en tête la fois suivante.
-        Au plus MAX_VERIFICATIONS_PAR_PASSAGE profils par passage.
+        La liste des invitations envoyées et celle des relations (ajouts
+        récents d'abord), au plus MAX_PAGES_LISTES pages pour tout le monde :
+        dans les relations, la personne a accepté ; dans les envoyées, elle
+        attend encore ; dans aucune des deux alors que les envoyées ont été
+        lues en entier, l'invitation a été retirée ou refusée (statut
+        inchangé). Les autres — liste illisible, liste pas lue en entier,
+        adresse /in/ACoAA… — sont vérifiées sur leur profil (degré « 1er »
+        dans l'en-tête), au plus MAX_VERIFICATIONS_PAR_PASSAGE.
         Retourne la liste [{'url','nom'}] des profils ayant accepté ;
-        `self.verifiees` garde les URL dont le degré a bien été lu."""
+        `self.verifiees` garde les URL dont le statut a bien été établi."""
         self.errors = []
         self.verifiees = []
         self._deja_ouvertes = set()
         max_check = min(max_check, self.config.MAX_VERIFICATIONS_PAR_PASSAGE)
-        profils = list(profils)[:max_check]
+        profils = list(profils)
         acceptees = []
         illisibles = 0
         if not profils:
             return acceptees
+        lues = {}
+        classement = None
         async with async_playwright() as p:
             if status_callback:
                 status_callback("Ouverture du navigateur…")
@@ -1094,43 +1219,28 @@ class LinkedInScraperV2:
                 if page is None:
                     self.errors.append(SESSION_EXPIREE)
                     return acceptees
-                total = len(profils)
-                for i, prof in enumerate(profils):
-                    url = prof.get("url"); nom = prof.get("nom", "")
-                    if status_callback:
-                        status_callback(f"Vérification {i+1} sur {total} : {nom}")
-                    try:
-                        clean_url = url.split('?')[0].rstrip('/') + '/'
-                        # La porte attend la pause entre pages et arrête tout
-                        # sur une page d'alerte ou de connexion.
-                        if not await self._naviguer(page, clean_url):
-                            continue
-                        await self.human.human_delay(1500, 400)
-                        try:
-                            entete = await page.locator("main section").first.inner_text(timeout=5000)
-                        except Exception as e:
-                            logger.warning(f"  ⚠️ En-tête illisible pour {nom}: {e}")
-                            entete = ""
-                        degre = degre_depuis_entete(entete)
-                        if not degre:
-                            illisibles += 1
-                            logger.info(f"  ⚠️ Degré illisible : {nom} reste en attente")
-                        else:
-                            # Seul un degré lu fait de la page une page vérifiée.
-                            self.verifiees.append(url)
-                            if degre == "1er":
-                                acceptees.append({"url": url, "nom": nom})
-                                logger.info(f"  ✅ A accepté : {nom}")
-                            else:
-                                logger.info(f"  ⏳ Pas encore 1er degré : {nom} (degré lu : {degre})")
-                    except ArretLinkedIn:
-                        raise
-                    except Exception as e:
-                        logger.warning(f"  ⚠️ Vérif {nom}: {e}")
-                    if progress_callback:
-                        progress_callback(min((i + 1) / total, 1.0))
+                await self._lire_listes(page, lues, status_callback)
+                classement = listes.classer(profils, lues.get("envoyees"), lues.get("relations"))
+                self._appliquer_classement(classement, acceptees)
+                if progress_callback:
+                    progress_callback(0.5)
+                restants = classement.restants[:max_check]
+                if restants and (lues.get("envoyees") is None or lues.get("relations") is None):
+                    self.errors.append(listes.LIBELLE_LISTE_ILLISIBLE)
+                if restants:
+                    logger.info(f"🔎 {len(classement.restants)} invitation(s) sans statut "
+                                f"établi par les listes : vérification de {len(restants)} profil(s)")
+                    illisibles = await self._verifier_profils(
+                        page, restants, acceptees, progress_callback, status_callback)
+                if progress_callback:
+                    progress_callback(1.0)
             except ArretLinkedIn as arret:
                 self._noter_arret(arret)
+                if classement is None and lues:
+                    # Arrêt pendant les listes : ce qui a été lu reste acquis.
+                    self._appliquer_classement(
+                        listes.classer(profils, lues.get("envoyees"), lues.get("relations")),
+                        acceptees)
             finally:
                 if browser is not None:
                     await browser.close()

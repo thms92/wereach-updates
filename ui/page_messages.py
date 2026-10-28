@@ -124,8 +124,8 @@ def afficher_page_messages():
         cA, cB = st.columns([3, 1], vertical_alignment="center")
         cA.markdown(
             f"{pluriel(len(en_attente), 'invitation')} en attente de réponse. "
-            "We.Reach revisite les profils invités pour repérer ceux qui ont accepté "
-            f"({MAX_VERIFICATIONS} au plus par vérification)."
+            "We.Reach lit votre liste d'invitations envoyées et votre liste de relations "
+            "pour repérer les personnes qui ont accepté : quelques pages suffisent pour tout le monde."
         )
         lancer = cB.button(LIBELLE_VERIFIER, type="secondary" if deja_verifie else "primary",
                            width="stretch", disabled=deja_verifie is not None,
@@ -143,7 +143,7 @@ def afficher_page_messages():
                            icon=":material/how_to_reg:")
 
     if lancer:
-        with st.spinner("Vérification en cours : We.Reach revisite les profils invités…"):
+        with st.spinner("Vérification en cours : We.Reach lit vos invitations envoyées et vos relations…"):
             sc = _new_scraper()
             pb = st.progress(0); stt = st.empty()
             acceptees = sc.verifier_acceptations(

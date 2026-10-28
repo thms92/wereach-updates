@@ -237,7 +237,7 @@ class LinkedInScraperV2Sync:
                               progress_callback=None, status_callback=None):
         """Version synchrone : détecte les invitations acceptées (1er degré).
 
-        `self.verifiees` : URL dont la page a été lue ([] si session occupée ou erreur)."""
+        `self.verifiees` : URL dont le statut a été établi ([] si session occupée ou erreur)."""
         self.verifiees = []
         if self._refus_seance(verification=True):
             return []
