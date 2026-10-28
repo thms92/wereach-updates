@@ -34,8 +34,11 @@ def test_la_jauge_du_budget_est_sous_le_menu_sur_chaque_page(page):
     at = lancer_app(page)
     assert not at.exception, [str(e.value) for e in at.exception]
     jauges = [m for m in _markdown_lateral(at) if 'role="meter"' in m]
-    assert len(jauges) == 1
-    assert "wf-jauge--sombre" in jauges[0]
+    # Les invitations, puis dessous les pages LinkedIn du jour.
+    assert len(jauges) == 2
+    assert 'aria-label="Invitations du jour"' in jauges[0]
+    assert 'aria-label="Pages LinkedIn du jour"' in jauges[1]
+    assert all("wf-jauge--sombre" in j for j in jauges)
 
 
 def test_aucun_emoji_dans_les_libelles_de_la_barre_laterale(monkeypatch):

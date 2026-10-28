@@ -34,10 +34,10 @@ ETAPES = [
            "Tableau de bord.",
            cible=".st-key-nav_menu"),
     _etape("Vos invitations du jour",
-           "20 invitations par jour, c'est la limite conseillée pour protéger votre compte "
-           "LinkedIn. Elle n'est pas bloquante : vous pouvez en envoyer plus, mais le risque "
-           "de restriction augmente.",
-           cible='section[data-testid="stSidebar"] .wf-jauge'),
+           "20 invitations par jour au plus, pour protéger votre compte LinkedIn : une fois "
+           "atteintes, l'outil n'invite plus et vous pourrez reprendre demain. Juste dessous, "
+           "les pages LinkedIn du jour (60 au plus).",
+           cible='section[data-testid="stSidebar"] .wf-jauge--invitations'),
     _etape("Ce qui vous attend",
            "Chaque matin, ouvrez le Tableau de bord : il vous dit qui a accepté et ce qui "
            "attend une réponse.",

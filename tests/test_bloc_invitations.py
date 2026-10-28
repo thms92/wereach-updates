@@ -23,9 +23,9 @@ def test_profils_similaires_utilise_le_bloc_partage():
 
 def test_le_bloc_porte_les_garde_fous():
     source = Path("ui/invitations.py").read_text(encoding="utf-8")
-    # Limite conseillée, pas bloquante : le bloc avertit (message_depassement)
-    # et confirme avant tout envoi, il ne refuse plus.
-    assert "message_depassement" in source and "confirmation(prefixe" in source
+    # Plafond bloquant : le bloc refuse une sélection plus grande que le reste
+    # (refus_invitations) et confirme avant tout envoi.
+    assert "refus_invitations" in source and "confirmation(prefixe" in source
     assert 'setdefault(f"{prefixe}_inviter", False)' in source
 
 

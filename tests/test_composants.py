@@ -101,7 +101,7 @@ def test_bandeau_contexte_sous_titre_et_puces():
 # -------------------------------------------------------- jauge du budget
 
 @pytest.mark.parametrize("utilisees, ton", [
-    (0, "ok"), (15, "ok"), (16, "attention"), (19, "attention"), (20, "attention"), (21, "danger"), (25, "danger"),
+    (0, "ok"), (15, "ok"), (16, "attention"), (19, "attention"), (20, "attention"), (21, "attention"), (25, "attention"),
 ])
 def test_seuils_du_budget(utilisees, ton):
     assert ton_budget(utilisees, 20) == ton
@@ -113,15 +113,15 @@ def test_jauge_restantes_au_singulier_et_au_pluriel():
     assert "1 restante" in _texte(jauge_budget(19, 20))
     assert "0 restante" in _texte(jauge_budget(20, 20))
     assert "Invitations du jour" in _texte(jauge_budget(4, 20))
-    assert "sur 20 conseillées" in _texte(jauge_budget(4, 20))
+    assert "16 restantes sur 20" in _texte(jauge_budget(4, 20))
 
 
-def test_jauge_limite_atteinte_puis_depassee_sans_blocage():
-    assert "vous pouvez continuer" in jauge_budget(20, 20)
-    assert "continuer" not in jauge_budget(19, 20)
-    depasse = _texte(jauge_budget(23, 20))
-    assert "+3" in depasse and "au-delà" in depasse and "Rien n" in depasse
-    assert "épuisé" not in jauge_budget(20, 20) + jauge_budget(23, 20)
+def test_jauge_au_plafond_dit_quand_reprendre():
+    assert "vous pourrez reprendre demain" in jauge_budget(20, 20)
+    assert "reprendre" not in jauge_budget(19, 20)
+    # Un compteur au-delà du plafond (ancien) ne montre aucun dépassement.
+    assert _texte(jauge_budget(23, 20)) == _texte(jauge_budget(20, 20))
+    assert "épuisé" not in jauge_budget(20, 20)
 
 
 def test_jauge_dessine_un_cran_par_invitation():
@@ -137,7 +137,7 @@ def test_jauge_accessible_comme_meter():
     assert _attr(html, "aria-valuemax") == "20"
     assert _attr(html, "aria-valuenow") == "13"
     assert _attr(html, "aria-label")
-    assert "13 invitations restantes sur 20 conseillées" == _attr(html, "aria-valuetext")
+    assert "13 invitations restantes sur 20" == _attr(html, "aria-valuetext")
 
 
 def test_jauge_bornee_et_plafond_nul():

@@ -53,7 +53,7 @@ def test_le_plafond_d_invitations_n_est_pas_une_hausse():
     assert jauges, "la jauge du budget n'est pas dessinée à côté du tableau de bord"
     assert "Invitations du jour" in jauges[0] and " sur " in jauges[0]
     page = " ".join(m.value for m in at.main.markdown)
-    assert re.search(r"restantes? sur 20|\(20 conseillées\)", page)
+    assert re.search(r"restantes? sur 20", page)
     # Seul delta admis : le « X sur Y » du taux (bloc « Vos chiffres »),
     # sans flèche.
     from streamlit.proto.Metric_pb2 import Metric

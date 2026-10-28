@@ -60,6 +60,9 @@ def test_aucune_cible_n_est_un_bouton_d_envoi():
         assert not any(i in (e["cible"] or "") for i in interdits), e["titre"]
 
 
-def test_la_limite_est_dite_non_bloquante():
-    assert "pas bloquante" in ETAPES[2]["texte"]
+def test_la_limite_est_dite_bloquante():
+    texte = ETAPES[2]["texte"]
+    assert "20 invitations par jour au plus" in texte and "reprendre demain" in texte
+    assert "conseill" not in texte and "pas bloquante" not in texte
+    assert ETAPES[2]["cible"].endswith(".wf-jauge--invitations")
     assert not any("eille" in e["titre"] + e["texte"] for e in ETAPES)

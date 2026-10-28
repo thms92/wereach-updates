@@ -389,7 +389,11 @@ def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
     assert recolte_espionne["appels"][0]["inviter"] is False
 
 
-def test_au_dela_de_la_limite_conseillee_l_envoi_reste_possible(recolte_espionne):
+def test_confirmation_refuse_une_selection_trop_grande(recolte_espionne, monkeypatch):
+    import ui.invitations
+    from utils.budget import Budget
+    budget = {"b": Budget(utilisees=18, plafond=20)}
+    monkeypatch.setattr(ui.invitations, "budget_du_jour", lambda _d: budget["b"])
     recolte_espionne["reponse"] = (
         [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand"),
          voisin("Anne Petit", "anne-petit")],
@@ -398,16 +402,23 @@ def test_au_dela_de_la_limite_conseillee_l_envoi_reste_possible(recolte_espionne
     at = _trouver(_page_recherche())
     at.toggle(key="sim_inviter").set_value(True)
     at.run()
-    recolte_espionne["invitations_restantes"] = 2
     recolte_espionne["appels"].clear()
 
+    # 3 choisis, 2 restantes : refus en clair, aucun récapitulatif, rien ne part.
+    refus = "Il vous reste 2 invitations aujourd'hui : sélectionnez-en 2 au plus."
+    assert [e.value for e in at.error] == [refus]
+    assert at.button(key="sim_btn_recuperer").disabled
     at.button(key="sim_btn_recuperer").click()
     at.run()
-    # Limite conseillée : pas de refus, le récapitulatif habituel puis l'envoi.
-    assert not at.error, [e.value for e in at.error]
-    at.button(key="confirmer_sim_ok").click()
+    assert not [m for m in at.markdown if m.value.startswith("Jusqu'à")]
+    assert recolte_espionne["appels"] == []
+
+    # Plafond atteint : le refus dit quand reprendre.
+    budget["b"] = Budget(utilisees=20, plafond=20)
     at.run()
-    assert recolte_espionne["appels"]
+    assert [e.value for e in at.error] == [
+        "Limite du jour atteinte : 20 invitations envoyées. Vous pourrez reprendre demain."]
+    assert recolte_espionne["appels"] == []
 
 
 def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):

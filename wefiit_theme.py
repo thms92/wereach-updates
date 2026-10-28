@@ -457,8 +457,11 @@ __CODE__
 .wf-jauge__crans { display:grid; grid-template-columns:repeat(var(--wf-crans,20),minmax(0,1fr)); gap:3px; height:14px; }
 .wf-cran { display:block; border-radius:3px; background:var(--wf-j-reste); transform-origin:50% 100%; animation:wf-cran 220ms var(--wf-ease) backwards; animation-delay:calc(var(--i,0) * 10ms); }
 .wf-cran--utilise { background:var(--wf-j-utilise); }
+/* 60 crans pour les pages : plus serrés, pour tenir dans la barre latérale. */
+.wf-jauge--pages .wf-jauge__crans { gap:1px; }
+.wf-jauge--pages .wf-cran { border-radius:1px; animation-delay:calc(var(--i,0) * 4ms); }
 .wf-jauge__note { font-size:.8rem; font-weight:600; color:var(--wf-danger); }
-/* Limite conseillée atteinte, pas dépassée : une information, pas une alerte. */
+/* Plafond du jour atteint : une information (reprise demain), pas une alerte. */
 .wf-jauge--attention .wf-jauge__note { color:var(--wf-warn); }
 @keyframes wf-cran { from { transform:scaleY(.15); opacity:.25; } }
 

@@ -27,8 +27,8 @@ from utils.proxy_store import load_proxy, save_proxy
 from utils.app_auth import verify_access, access_configured, email_domain_ok, ALLOWED_DOMAIN
 from wefiit_theme import (FAVICON_SVG, declarer_langue_francaise, inject_theme,
                           wordmark)
-from ui.composants import afficher_jauge_budget
-from utils.budget import budget_du_jour
+from ui.composants import afficher_jauge_budget, afficher_jauge_pages
+from utils.budget import budget_du_jour, budget_pages_du_jour
 from version import get_version
 from utils.nouveautes import (charger_notes, doit_annoncer, usage_anterieur,
                               version_vue)
@@ -196,7 +196,8 @@ with st.sidebar.container(key="nav_menu"):
 page = st.session_state["page"]
 
 # Le geste signature (DESIGN.md) : le budget d'invitations du jour, sous le
-# menu, sur toutes les pages. Lu dans le compteur du moteur, celui qui bloque.
+# menu, sur toutes les pages, et sous lui les pages LinkedIn du jour. Lus
+# dans le compteur du moteur, celui qui bloque.
 # Réservée ici, redessinée en fin de script : la barre latérale est écrite
 # AVANT la page, et une recherche lancée depuis la page laissait la jauge sur
 # l'ancien compte. Un premier dessin tout de suite garde la jauge visible si
@@ -205,9 +206,12 @@ _jauge = st.sidebar.empty()
 
 
 def _dessiner_jauge() -> None:
-    _budget = budget_du_jour(st.session_state.user_paths.config_dir)
-    afficher_jauge_budget(_budget.utilisees, _budget.plafond, sur_fond_sombre=True,
-                          conteneur=_jauge)
+    _config_dir = st.session_state.user_paths.config_dir
+    _budget = budget_du_jour(_config_dir)
+    _pages = budget_pages_du_jour(_config_dir)
+    with _jauge.container():
+        afficher_jauge_budget(_budget.utilisees, _budget.plafond, sur_fond_sombre=True)
+        afficher_jauge_pages(_pages.utilisees, _pages.plafond, sur_fond_sombre=True)
 
 
 _dessiner_jauge()
@@ -250,10 +254,13 @@ if mode_admin():
         _ms = lambda v: f"{v / 1000:g} s".replace(".", ",")
         st.markdown(
             f"- Profils au plus par recherche : {ScraperConfig.MAX_PROFILES_PER_RUN}\n"
-            f"- Invitations conseillées par jour (non bloquant) : {ScraperConfig.MAX_INVITATIONS_PER_DAY}\n"
+            f"- Invitations au plus par jour : {ScraperConfig.MAX_INVITATIONS_PER_DAY}\n"
+            f"- Pages LinkedIn au plus par jour : {ScraperConfig.MAX_PAGES_PER_DAY}\n"
+            f"- Séances de {ScraperConfig.MAX_PAGES_PER_SEANCE} pages au plus, "
+            f"{ScraperConfig.PAUSE_ENTRE_SEANCES_MIN} minutes de pause entre deux séances\n"
+            f"- Pause entre deux pages : {ScraperConfig.DELAI_PAGE_MIN_S} s"
+            f" à {ScraperConfig.DELAI_PAGE_MAX_S} s\n"
             f"- Attente maximale d'une page : {_ms(ScraperConfig.TIMEOUT_PAGE)}\n"
-            f"- Pause entre deux profils : {_ms(ScraperConfig.DELAY_BETWEEN_PROFILES_MIN)}"
-            f" à {_ms(ScraperConfig.DELAY_BETWEEN_PROFILES_MAX)}\n"
             f"- Navigateur invisible : {'oui' if ScraperConfig.HEADLESS else 'non'}\n"
             f"- Nouvelles tentatives en cas d'échec : {ScraperConfig.MAX_RETRY_ATTEMPTS}"
         )

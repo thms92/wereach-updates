@@ -458,3 +458,160 @@ def test_deux_pages_de_resultats_ne_sont_pas_le_meme_profil(tmp_path, monkeypatc
     base = "https://www.linkedin.com/search/results/people/?keywords=pm"
     _naviguer(s, _FaussePage(), base + "&page=1", base + "&page=2")
     assert s.chargements == [base + "&page=1", base + "&page=2"]
+
+
+# --- 20 invitations par jour, bloquantes -----------------------------------
+
+LIMITE_INVITATIONS = ("Limite du jour atteinte : 20 invitations envoyées. "
+                      "Vous pourrez reprendre demain.")
+
+
+def test_invitation_refusee_au_dela_de_20(tmp_path, monkeypatch):
+    # 19 envoyées : une seule part, l'extraction des suivants continue.
+    s = _scraper(tmp_path, monkeypatch)
+    s.human.daily_limits.increment_invitations(19)
+    df, navigateur = _lancer_par_urls(s, monkeypatch, [PROFIL_A, PROFIL_B, PROFIL_C],
+                                      inviter=True)
+    assert list(df["Invitation"]) == ["Oui", "Non", "Non"]
+    assert s.human.daily_limits.invitations_today == 20
+    assert s.errors.count(LIMITE_INVITATIONS) == 1
+    assert s.chargements == [PROFIL_A, PROFIL_B, PROFIL_C]
+    assert navigateur.fermetures >= 1
+
+
+def test_limite_atteinte_avant_le_passage_n_ouvre_pas_chrome(tmp_path, monkeypatch):
+    s = _scraper(tmp_path, monkeypatch)
+    s.human.daily_limits.increment_invitations(20)
+    ouvertures = []
+
+    async def ouvrir(p, cookie, status_callback=None):
+        ouvertures.append(1)
+        return _FauxNavigateur(), _FaussePage()
+
+    monkeypatch.setattr("scraper_v2.async_playwright", lambda: _FauxPlaywright())
+    monkeypatch.setattr(s, "_open_linkedin_page", ouvrir)
+    df = asyncio.run(s.run_url_scraper_async("C", [PROFIL_A], inviter=True))
+    assert df.empty and s.errors == [LIMITE_INVITATIONS]
+
+    # La recherche repart d'un compteur relu sur disque : toujours 20.
+    df = asyncio.run(s.run_scraper_async("C", "pm", None, 3, [], inviter=True))
+    assert df.empty and s.errors == [LIMITE_INVITATIONS]
+    assert ouvertures == [] and s.chargements == []
+
+    # Sans invitation, rien n'est refusé.
+    df, navigateur = _lancer_par_urls(s, monkeypatch, [PROFIL_A], inviter=False)
+    assert len(df) == 1 and s.errors == [] and navigateur.fermetures >= 1
+
+
+def test_recherche_avec_invitations_s_arrete_a_20(tmp_path, monkeypatch):
+    from utils.human_behavior import HumanBehavior
+    s = _scraper(tmp_path, monkeypatch)
+    s.human.daily_limits.increment_invitations(18)
+    invites = []
+
+    def personne(n):
+        return {"nom": n, "url": f"https://www.linkedin.com/in/{n}/",
+                "poste": "PM", "entreprise": "X"}
+
+    async def profils(page):
+        return [personne(n) for n in ("a", "b", "c", "d")]
+
+    async def inviter(page, url, nom, message=""):
+        invites.append(nom)
+        return True
+
+    async def ouvrir(p, cookie, status_callback=None):
+        return _FauxNavigateur(), _FaussePage()
+
+    async def vrai(*a, **k):
+        return True
+
+    for nom in ("page_entry_behavior", "browse_page_naturally", "simulate_distraction",
+                "pause_entre_pages"):
+        monkeypatch.setattr(HumanBehavior, nom, _rien)
+    monkeypatch.setattr(HumanBehavior, "check_safety", vrai)
+    monkeypatch.setattr("scraper_v2.async_playwright", lambda: _FauxPlaywright())
+    monkeypatch.setattr(s, "_open_linkedin_page", ouvrir)
+    monkeypatch.setattr(s, "extraire_profils_page", profils)
+    monkeypatch.setattr(s, "envoyer_invitation", inviter)
+    monkeypatch.setattr(s, "_charger_urls_scrappees", lambda: set())
+
+    df = asyncio.run(s.run_scraper_async("C", "pm", None, 5, [], inviter=True))
+
+    assert invites == ["a", "b"] and len(df) == 2
+    assert s.human.daily_limits.invitations_today == 20
+    assert s.errors == [LIMITE_INVITATIONS]
+    # Pas de page de résultats de plus pour des invitations qui ne partiront pas.
+    assert len(s.chargements) == 1
+
+
+def test_envoyer_invitation_ne_tente_rien_a_la_limite(tmp_path, monkeypatch):
+    s = _scraper(tmp_path, monkeypatch)
+    s.human.daily_limits.increment_invitations(20)
+    gestes = []
+
+    async def lecture(*a, **k):
+        gestes.append("lecture")
+
+    monkeypatch.setattr(s.human, "reading_pause", lecture)
+    page = _FaussePage()
+    page.url = "https://www.linkedin.com/search/results/people/?keywords=pm"
+    assert asyncio.run(s.envoyer_invitation(page, PROFIL_A, "Alice")) is False
+    assert gestes == []
+
+
+def test_refus_d_une_selection_plus_grande_que_le_reste():
+    from utils.budget import refus_invitations
+    assert refus_invitations(3, 17, 20) is None
+    assert refus_invitations(4, 17, 20) == (
+        "Il vous reste 3 invitations aujourd'hui : sélectionnez-en 3 au plus.")
+    assert refus_invitations(2, 19, 20) == (
+        "Il vous reste 1 invitation aujourd'hui : sélectionnez-en 1 au plus.")
+    assert refus_invitations(1, 20, 20) == LIMITE_INVITATIONS
+    assert refus_invitations(0, 20, 20) is None
+
+
+# --- Jauges de la barre latérale ---------------------------------------------
+
+def _texte_html(html):
+    import re
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+
+
+def test_jauge_invitations_sans_conseillees():
+    from ui.composants import jauge_budget, texte_budget
+    for n in (0, 7, 19, 20, 23):
+        html = jauge_budget(n, 20)
+        assert "conseill" not in html and "au-delà" not in html
+        assert "continuer" not in html and "Rien n" not in html
+    assert "13 restantes sur 20" in _texte_html(jauge_budget(7, 20))
+    assert 'aria-valuetext="13 invitations restantes sur 20"' in jauge_budget(7, 20)
+    # Au plafond (ou au-delà, compteur ancien) : 0, et quand reprendre.
+    for n in (20, 23):
+        texte = _texte_html(jauge_budget(n, 20))
+        assert "0 restante sur 20" in texte and "+" not in texte
+        assert "reprendre demain" in texte
+    assert texte_budget(25, 20) == "0 invitation restante sur 20"
+
+
+def test_jauge_des_pages():
+    from ui.composants import jauge_budget, jauge_pages
+    html = jauge_pages(12, 60)
+    texte = _texte_html(html)
+    assert "Pages LinkedIn du jour" in texte and "48 restantes sur 60" in texte
+    assert 'role="meter"' in html and 'aria-label="Pages LinkedIn du jour"' in html
+    assert 'aria-valuemax="60"' in html and 'aria-valuenow="48"' in html
+    assert 'aria-valuetext="48 pages restantes sur 60"' in html
+    assert html.count('class="wf-cran') == 60 and html.count("wf-cran--utilise") == 12
+    assert "reprendre demain" in _texte_html(jauge_pages(60, 60))
+    assert "wf-jauge--sombre" in jauge_pages(1, 60, sur_fond_sombre=True)
+    # La cible du tutoriel reste la jauge des invitations.
+    assert "wf-jauge--invitations" in jauge_budget(1, 20)
+    assert "wf-jauge--invitations" not in html
+
+
+def test_budget_des_pages_du_jour(tmp_path):
+    from utils.budget import budget_pages_du_jour
+    DailyLimitsTracker(limits_file=str(tmp_path / "daily_limits.json")).increment_pages(7)
+    b = budget_pages_du_jour(str(tmp_path))
+    assert (b.utilisees, b.plafond, b.restantes) == (7, 60, 53)

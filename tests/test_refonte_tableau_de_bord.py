@@ -76,7 +76,7 @@ def test_actions_qui_s_appliquent():
     assert "3 personnes ont accepté votre invitation" in titres
     assert [a for a in actions if a[0].startswith("3 personnes")][0][4][2] == PAGE_MESSAGES
     assert "12 invitations en attente de réponse" in titres
-    assert "Limite conseillée de 20 invitations atteinte" in titres
+    assert "Limite du jour atteinte : 20 invitations envoyées" in titres
     assert not any("(s)" in t for t in titres)
 
 

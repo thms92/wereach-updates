@@ -42,7 +42,8 @@ class ScraperConfig:
     # le scraper via DailyLimitsTracker). Conservateurs pour limiter le risque
     # LinkedIn quand plusieurs comptes partagent l'IP du serveur (sans proxy).
     MAX_PROFILES_PER_RUN: int = 25
-    # Limite CONSEILLÉE, affichée mais non bloquante (utils/budget.py).
+    # Plafond BLOQUANT : au-delà, le moteur n'invite plus et la confirmation
+    # refuse (utils/budget.py). Reprise le lendemain.
     MAX_INVITATIONS_PER_DAY: int = 20
 
     # Rythme humain : on compte les pages LinkedIn chargées (une navigation

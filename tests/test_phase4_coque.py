@@ -75,20 +75,20 @@ def _texte(html: str) -> str:
 
 def test_la_jauge_dit_restantes_sur_le_plafond_du_jour_jamais_utilisees():
     texte = " ".join(_texte(jauge_budget(17, 20)).split())
-    assert "3 restantes" in texte
-    assert "sur 20 conseillées" in texte
+    assert "3 restantes sur 20" in texte
+    assert "conseill" not in texte
     assert "utilisée" not in texte
 
 
 def test_texte_court_du_budget():
     assert texte_budget(17, 20) == "3 invitations restantes sur 20"
     assert texte_budget(19, 20) == "1 invitation restante sur 20"
-    # Limite conseillée : au-delà, on montre le vrai nombre, pas « 0 ».
-    assert texte_budget(25, 20) == "25 invitations (20 conseillées)"
+    # Plafond bloquant : un compteur au-delà (ancien) se lit « 0 restante ».
+    assert texte_budget(25, 20) == "0 invitation restante sur 20"
 
 
 def test_le_sens_de_l_aria_ne_change_pas():
-    assert 'aria-valuetext="3 invitations restantes sur 20 conseillées"' in jauge_budget(17, 20)
+    assert 'aria-valuetext="3 invitations restantes sur 20"' in jauge_budget(17, 20)
 
 
 # --- composants ----------------------------------------------------------------
@@ -218,7 +218,9 @@ def _principal(at):
 
 
 def _jauges_laterales(at):
-    return [m.value for m in at.sidebar.markdown if 'role="meter"' in m.value]
+    """Les jauges d'invitations de la barre latérale (celle des pages est à part)."""
+    return [m.value for m in at.sidebar.markdown
+            if 'aria-label="Invitations du jour"' in m.value]
 
 
 def test_tableau_de_bord_rempli(donnees):
@@ -232,7 +234,7 @@ def test_tableau_de_bord_rempli(donnees):
     assert "3 invitations restantes sur 20" in html
     assert "utilisée" not in html
     # Alerte dès 80 % consommés, pas seulement à la limite.
-    assert "Plus que 3 invitations avant la limite conseillée" in html
+    assert "Plus que 3 invitations avant la limite du jour" in html
     # La réussite en tête, seule en vedette.
     cartes = re.findall(r'<div class="wf-action[^"]*">.*?wf-action__titre">([^<]+)', html)
     # 3 acceptés dont 1 déjà messagé : 2 à qui écrire.
@@ -267,13 +269,13 @@ def test_pas_d_alerte_de_budget_sous_80_pour_cent():
     from ui.page_tableau_de_bord import actions_du_jour
     assert actions_du_jour(0, 0, True, budget_utilisees=15, budget_plafond=20) == []
     alerte = actions_du_jour(0, 0, True, budget_utilisees=19, budget_plafond=20)
-    assert [a[0] for a in alerte] == ["Plus que 1 invitation avant la limite conseillée"]
+    assert [a[0] for a in alerte] == ["Plus que 1 invitation avant la limite du jour"]
     assert alerte[0][2] == "attention"
-    # À la limite et au-delà : une information, pas un blocage ni un danger.
+    # Au plafond (bloquant) : l'outil n'invite plus et dit quand reprendre.
     for n in (20, 27):
         atteinte = actions_du_jour(0, 0, True, budget_utilisees=n, budget_plafond=20)
-        assert [a[0] for a in atteinte] == ["Limite conseillée de 20 invitations atteinte"]
-        assert atteinte[0][2] == "attention" and "rien n'est bloqué" in atteinte[0][1]
+        assert [a[0] for a in atteinte] == ["Limite du jour atteinte : 20 invitations envoyées"]
+        assert atteinte[0][2] == "attention" and "reprendre demain" in atteinte[0][1]
 
 
 def test_la_jauge_suit_un_envoi_fait_par_la_page(donnees, monkeypatch):

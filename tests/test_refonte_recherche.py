@@ -145,8 +145,9 @@ def test_le_bloc_recuperer_montre_la_jauge_et_refuse_d_avance(budget_dicte, monk
 
     at.toggle(key="sim_inviter").set_value(True)
     at.run()
-    # 3 profils pour 2 restantes : un avertissement, pas de refus.
+    # 3 profils pour 2 restantes : refusé d'avance, le bouton est grisé.
     assert at.button(key="sim_btn_recuperer").label == "Inviter 3 profils choisis"
     assert [m for m in at.markdown if m.value.startswith('<div class="wf-jauge')]
-    assert not at.error
-    assert any("vous en serez à 21 invitations" in w.value for w in at.warning), [w.value for w in at.warning]
+    assert [e.value for e in at.error] == [
+        "Il vous reste 2 invitations aujourd'hui : sélectionnez-en 2 au plus."]
+    assert at.button(key="sim_btn_recuperer").disabled

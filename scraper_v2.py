@@ -34,6 +34,7 @@ from utils.stealth_profile import StealthProfileManager
 import utils.requete_linkedin as requete
 from utils.page_vide import diagnostiquer_page_vide
 from utils.alerte_linkedin import ArretLinkedIn, CHEMINS_TRAVAIL, nature_page
+from utils.budget import LIMITE_INVITATIONS_ATTEINTE
 
 
 
@@ -232,6 +233,15 @@ class LinkedInScraperV2:
         if arret.motif.startswith("budget"):
             logger.warning(f"🚫 {msg}")
         self.errors.append(msg)
+
+    def _noter_limite_invitations(self) -> None:
+        """Plafond d'invitations du jour atteint (bloquant) : dit une seule
+        fois dans self.errors, avec le moment où reprendre."""
+        msg = LIMITE_INVITATIONS_ATTEINTE.format(
+            plafond=self.human.daily_limits.max_invitations)
+        if msg not in self.errors:
+            logger.warning(f"🚫 {msg}")
+            self.errors.append(msg)
 
     def _context_kwargs(self, profile, viewport) -> dict:
         kwargs = {
@@ -648,6 +658,11 @@ class LinkedInScraperV2:
         Returns:
             True si l'invitation a été envoyée
         """
+        # Plafond du jour bloquant : aucun geste vers LinkedIn au-delà.
+        if not self.human.daily_limits.can_invite():
+            self._noter_limite_invitations()
+            return False
+
         try:
             logger.info(f"💌 Tentative invitation: {profile_name}")
 
@@ -1212,6 +1227,11 @@ class LinkedInScraperV2:
         # Réinitialiser la fatigue pour chaque nouvelle session
         self.human = self._nouvelle_session_humaine()
 
+        # Plafond d'invitations déjà atteint : refus sans ouvrir Chrome.
+        if inviter and not self.human.daily_limits.can_invite():
+            self._noter_limite_invitations()
+            return pd.DataFrame()
+
         # Les profils consultés restent une statistique : c'est le budget de
         # pages (porte _naviguer) qui bloque désormais.
         self.human.daily_limits.increment_sessions()
@@ -1372,6 +1392,12 @@ class LinkedInScraperV2:
                                 if invitations_envoyees >= nb_profils:
                                     logger.info(f"✋ Limite de {nb_profils} invitations atteinte")
                                     break
+                                # Plafond du jour bloquant : on s'arrête là. Les
+                                # profils non invités ne sont pas enregistrés en
+                                # mode invitation : ils resteront invitables.
+                                if not self.human.daily_limits.can_invite():
+                                    self._noter_limite_invitations()
+                                    break
                             else:
                                 if profils_scrapes >= nb_profils:
                                     logger.info(f"✋ Limite de {nb_profils} profils atteinte")
@@ -1486,6 +1512,14 @@ class LinkedInScraperV2:
                                     progress_callback(min(invitations_envoyees / nb_profils, 1.0))
                                 else:
                                     progress_callback(min(profils_scrapes / nb_profils, 1.0))
+
+                        # Plafond du jour atteint avant le nombre demandé : pas de
+                        # page de résultats de plus pour des invitations qui ne
+                        # partiront pas.
+                        if (inviter and invitations_envoyees < nb_profils
+                                and not self.human.daily_limits.can_invite()):
+                            self._noter_limite_invitations()
+                            break
 
                         # PAGE SUIVANTE
                         # Vérifier si on a atteint la limite selon le mode
@@ -2114,6 +2148,11 @@ class LinkedInScraperV2:
             self.errors.append("Aucune URL LinkedIn valide fournie")
             return pd.DataFrame()
 
+        # Plafond d'invitations déjà atteint : refus sans ouvrir Chrome.
+        if inviter and not self.human.daily_limits.can_invite():
+            self._noter_limite_invitations()
+            return pd.DataFrame()
+
         logger.info(f"🔗 Scraping de {total} URLs de profils LinkedIn")
 
         try:
@@ -2183,8 +2222,13 @@ class LinkedInScraperV2:
                                 'Date': datetime.now().strftime('%Y-%m-%d %H:%M'),
                             }
 
-                            # Invitation — INDÉPENDANTE de l'extraction du profil
-                            if inviter:
+                            # Invitation — INDÉPENDANTE de l'extraction du profil.
+                            # Plafond du jour atteint : plus d'invitation, mais
+                            # l'extraction (déjà faite) et le message continuent.
+                            if inviter and not self.human.daily_limits.can_invite():
+                                self._noter_limite_invitations()
+                                ligne['Invitation'] = 'Non'
+                            elif inviter:
                                 try:
                                     invited = await self.envoyer_invitation(page, url, nom, message_invitation)
                                     ligne['Invitation'] = 'Oui' if invited else 'Non'

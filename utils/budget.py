@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Invitations du jour, telles que le moteur les compte.
+"""Invitations et pages LinkedIn du jour, telles que le moteur les compte.
 
-La limite de 20 par jour est CONSEILLÉE, pas bloquante (décision du
-2026-10-20) : l'outil prévient quand un envoi la dépasse, il ne refuse
-jamais d'inviter.
+Les 20 invitations par jour sont BLOQUANTES (de nouveau depuis le
+2026-10-27) : la confirmation refuse une sélection plus grande que le
+reste, et le moteur n'invite plus une fois le plafond atteint. Les 60 pages
+LinkedIn par jour le sont aussi (porte de navigation du moteur).
 
-Le moteur compte les invitations avec `DailyLimitsTracker`, dans
-`<config_dir>/daily_limits.json` (un par personne). La base de données les
-compte aussi, mais c'est le compteur du moteur que l'interface lit, pour
-que la jauge affichée et le compte réel ne divergent jamais.
+Le moteur compte avec `DailyLimitsTracker`, dans
+`<config_dir>/daily_limits.json` (un par personne). La base de données
+compte aussi les invitations, mais c'est le compteur du moteur que
+l'interface lit, pour que la jauge affichée et le compte réel ne divergent
+jamais.
 """
 
 import os
@@ -32,23 +34,39 @@ class Budget:
         return self.restantes == 0
 
 
-def budget_du_jour(config_dir: str) -> Budget:
-    """Invitations envoyées aujourd'hui et plafond, pour cette personne."""
-    suivi = DailyLimitsTracker(
+LIMITE_INVITATIONS_ATTEINTE = ("Limite du jour atteinte : {plafond} invitations "
+                               "envoyées. Vous pourrez reprendre demain.")
+
+
+def _suivi(config_dir: str) -> DailyLimitsTracker:
+    return DailyLimitsTracker(
         max_invitations=ScraperConfig.MAX_INVITATIONS_PER_DAY,
+        max_pages=ScraperConfig.MAX_PAGES_PER_DAY,
         limits_file=os.path.join(str(config_dir), "daily_limits.json"),
     )
-    return Budget(utilisees=suivi.invitations_today,
+
+
+def budget_du_jour(config_dir: str) -> Budget:
+    """Invitations envoyées aujourd'hui et plafond, pour cette personne."""
+    return Budget(utilisees=_suivi(config_dir).invitations_today,
                   plafond=ScraperConfig.MAX_INVITATIONS_PER_DAY)
 
 
-def message_depassement(n_prevues: int, utilisees: int, plafond: int):
-    """Avertissement si `n_prevues` invitations font dépasser la limite
-    conseillée, sinon None. Le texte dit que rien n'est bloqué."""
-    total = max(int(utilisees), 0) + max(int(n_prevues), 0)
-    if plafond <= 0 or n_prevues <= 0 or total <= plafond:
-        return None
-    return (f"Avec cet envoi, vous en serez à {total} invitations aujourd'hui, "
-            f"au-delà de la limite conseillée de {plafond}. Rien n'est bloqué, "
-            "mais le risque de restriction de votre compte LinkedIn augmente.")
+def budget_pages_du_jour(config_dir: str) -> Budget:
+    """Pages LinkedIn consultées aujourd'hui et plafond, pour cette personne."""
+    return Budget(utilisees=_suivi(config_dir).pages_today,
+                  plafond=ScraperConfig.MAX_PAGES_PER_DAY)
 
+
+def refus_invitations(n_prevues: int, utilisees: int, plafond: int):
+    """Refus si `n_prevues` invitations dépassent le reste du jour, sinon
+    None. Le texte dit combien en choisir, ou quand reprendre."""
+    n_prevues = max(int(n_prevues), 0)
+    restantes = max(int(plafond) - max(int(utilisees), 0), 0)
+    if n_prevues <= restantes:
+        return None
+    if restantes == 0:
+        return LIMITE_INVITATIONS_ATTEINTE.format(plafond=plafond)
+    mot = "invitation" if restantes < 2 else "invitations"
+    return (f"Il vous reste {restantes} {mot} aujourd'hui : "
+            f"sélectionnez-en {restantes} au plus.")

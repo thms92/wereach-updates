@@ -100,15 +100,15 @@ def _recap(at):
 def test_recap_invitations_singulier_pluriel_et_message():
     assert recap_invitations(3, 17, 20) == (
         "Jusqu'à 3 invitations partiront depuis votre compte LinkedIn ; vous en "
-        "serez à 20 aujourd'hui (limite conseillée : 20). Sans message.")
+        "serez à 20 aujourd'hui (limite du jour : 20). Sans message.")
     assert recap_invitations(1, 5, 20, "Bonjour *toi*").startswith(
         "Jusqu'à 1 invitation partira depuis votre compte LinkedIn ; vous en serez à 6")
     assert recap_invitations(1, 5, 20, "Bonjour *toi*").endswith("Message joint : « Bonjour \\*toi\\* »")
 
 
-def test_recap_au_dela_de_la_limite_previent_sans_bloquer():
-    texte = recap_invitations(10, 17, 20)
-    assert "vous en serez à 27" in texte and "rien n'est bloqué" in texte
+def test_recap_ne_parle_plus_de_limite_conseillee():
+    texte = recap_invitations(3, 17, 20)
+    assert "conseill" not in texte and "bloqué" not in texte
 
 
 def test_le_bloc_recuperer_demande_confirmation(budget_dicte, espion):

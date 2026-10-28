@@ -92,15 +92,16 @@ def bandeau_contexte(sous_titre: str,
     return f'<div class="wf-bandeau">{texte}{bloc_puces}</div>'
 
 
-# ---------------------------------------------- jauge des invitations du jour
+# ------------------------------------- jauges des invitations et des pages
 
 def ton_budget(utilisees: int, plafond: int) -> str:
-    """« ok » sous 80 %, « attention » de 80 % à la limite, « danger » au-delà.
+    """« ok » sous 80 %, « attention » à partir de 80 % (plafond compris),
+    « danger » seulement sans plafond.
 
-    La limite est conseillée, pas bloquante : « danger » signale un risque
-    pour le compte LinkedIn, jamais un arrêt.
+    Le plafond est bloquant : l'atteindre n'est pas un danger, l'outil
+    s'arrête de lui-même et reprend demain.
     """
-    if plafond <= 0 or utilisees > plafond:
+    if plafond <= 0:
         return "danger"
     if utilisees * 100 >= plafond * 80:
         return "attention"
@@ -108,32 +109,25 @@ def ton_budget(utilisees: int, plafond: int) -> str:
 
 
 def texte_budget(utilisees: int, plafond: int) -> str:
-    """Formulation courte (puces) : « 3 invitations restantes sur 20 »,
-    ou « 23 invitations (20 conseillées) » au-delà de la limite."""
+    """Formulation courte (puces) : « 3 invitations restantes sur 20 »."""
     plafond = max(int(plafond), 0)
-    utilisees = max(int(utilisees), 0)
-    if utilisees > plafond:
-        return f"{pluriel(utilisees, 'invitation')} ({plafond} conseillées)"
-    restantes = plafond - utilisees
+    restantes = max(plafond - max(int(utilisees), 0), 0)
     return f"{pluriel(restantes, 'invitation restante', 'invitations restantes')} sur {plafond}"
 
 
-def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) -> str:
-    """Les invitations du jour, dessinées en `plafond` crans.
-
-    La limite (20) est CONSEILLÉE, pas bloquante. Crans consommés en orange,
-    restants en accent ; à 80 % le chiffre passe en attention ; à la limite,
-    une note dit qu'on peut continuer ; au-delà (danger), le chiffre montre
-    le dépassement. Exposé comme `role="meter"` (valeur : restantes).
-    """
+def _jauge(libelle: str, unite: tuple, utilisees: int, plafond: int,
+           modificateur: str, sur_fond_sombre: bool) -> str:
+    """Un compte du jour en `plafond` crans : consommés en orange, restants
+    en accent ; à 80 % le chiffre passe en attention ; au plafond, une note
+    dit quand reprendre. Exposé comme `role="meter"` (valeur : restantes).
+    `unite` : (singulier, pluriel) pour le texte lu, « invitation restante »."""
     plafond = max(int(plafond), 0)
     brut = max(int(utilisees), 0)
-    depasse = max(brut - plafond, 0)
     utilisees = min(brut, plafond)
     restantes = plafond - utilisees
     ton = ton_budget(brut, plafond)
 
-    classes = f"wf-jauge wf-jauge--{ton}"
+    classes = f"wf-jauge wf-jauge--{modificateur} wf-jauge--{ton}"
     if sur_fond_sombre:
         classes += " wf-jauge--sombre wf-sur-sombre"
 
@@ -141,29 +135,35 @@ def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) ->
         f'<span class="wf-cran{" wf-cran--utilise" if i < utilisees else ""}" style="--i:{i}"></span>'
         for i in range(plafond)
     )
-    if depasse:
-        valeur = (f'<span class="wf-jauge__nombre">+{depasse}</span> au-delà'
-                  f' <span class="wf-jauge__compte">des {plafond} conseillées</span>')
-        note = ('<div class="wf-jauge__note">Rien n\'est bloqué, mais le risque '
-                'de restriction augmente</div>')
-        texte_aria = f"{pluriel(brut, 'invitation envoyée', 'invitations envoyées')}, {plafond} conseillées"
-    else:
-        mot = "restante" if restantes < 2 else "restantes"
-        valeur = (f'<span class="wf-jauge__nombre">{restantes}</span> {mot}'
-                  f' <span class="wf-jauge__compte">sur {plafond} conseillées</span>')
-        note = ('<div class="wf-jauge__note">Limite conseillée atteinte : vous pouvez continuer</div>'
-                if restantes == 0 and plafond > 0 else "")
-        texte_aria = f"{pluriel(restantes, 'invitation restante', 'invitations restantes')} sur {plafond} conseillées"
-    aria = (f'role="meter" aria-label="Invitations du jour" '
+    mot = "restante" if restantes < 2 else "restantes"
+    valeur = (f'<span class="wf-jauge__nombre">{restantes}</span> {mot}'
+              f' <span class="wf-jauge__compte">sur {plafond}</span>')
+    note = ('<div class="wf-jauge__note">Limite du jour atteinte : vous pourrez reprendre demain</div>'
+            if restantes == 0 and plafond > 0 else "")
+    texte_aria = f"{pluriel(restantes, *unite)} sur {plafond}"
+    aria = (f'role="meter" aria-label="{escape(libelle)}" '
             f'aria-valuemin="0" aria-valuemax="{plafond}" aria-valuenow="{restantes}" '
             f'aria-valuetext="{escape(texte_aria)}"')
     return (
         f'<div class="{classes}" {aria}>'
-        '<div class="wf-jauge__tete"><span class="wf-jauge__libelle">Invitations du jour</span></div>'
+        f'<div class="wf-jauge__tete"><span class="wf-jauge__libelle">{escape(libelle)}</span></div>'
         f'<div class="wf-jauge__valeur">{valeur}</div>'
         f'<div class="wf-jauge__crans" style="--wf-crans:{max(plafond, 1)}" aria-hidden="true">{crans}</div>'
         f'{note}</div>'
     )
+
+
+def jauge_budget(utilisees: int, plafond: int, sur_fond_sombre: bool = False) -> str:
+    """Les invitations du jour (plafond bloquant de 20), un cran par
+    invitation. Classe `wf-jauge--invitations` : la cible du tutoriel."""
+    return _jauge("Invitations du jour", ("invitation restante", "invitations restantes"),
+                  utilisees, plafond, "invitations", sur_fond_sombre)
+
+
+def jauge_pages(utilisees: int, plafond: int, sur_fond_sombre: bool = False) -> str:
+    """Les pages LinkedIn du jour (plafond bloquant de 60), un cran par page."""
+    return _jauge("Pages LinkedIn du jour", ("page restante", "pages restantes"),
+                  utilisees, plafond, "pages", sur_fond_sombre)
 
 
 # --------------------------------------------------- cartes et état vide
@@ -218,6 +218,11 @@ def afficher_bandeau_contexte(sous_titre: str, puces: Iterable[Sequence] = (),
 def afficher_jauge_budget(utilisees: int, plafond: int,
                           sur_fond_sombre: bool = False, conteneur=None) -> None:
     _ecrire(jauge_budget(utilisees, plafond, sur_fond_sombre), conteneur)
+
+
+def afficher_jauge_pages(utilisees: int, plafond: int,
+                         sur_fond_sombre: bool = False, conteneur=None) -> None:
+    _ecrire(jauge_pages(utilisees, plafond, sur_fond_sombre), conteneur)
 
 
 def afficher_carte_action(titre: str, detail: str, ton: str = "neutre",

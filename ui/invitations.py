@@ -5,8 +5,8 @@ des résultats d'une recherche.
 
 Le bloc est utilisé par l'onglet Profils similaires. Les
 invitations sont rares et irréversibles : les garde-fous (interrupteur
-éteint par défaut, plafond du jour vérifié avant tout envoi, récapitulatif
-à confirmer) n'existent qu'ici, pour qu'aucun écran ne les oublie.
+éteint par défaut, plafond du jour bloquant vérifié avant tout envoi,
+récapitulatif à confirmer) n'existent qu'ici, pour qu'aucun écran ne les oublie.
 """
 
 import re
@@ -19,7 +19,7 @@ import streamlit as st
 # remplacement de scraper_v2_sync.LinkedInScraperV2Sync (tests) reste effectif.
 import scraper_v2_sync
 from ui.composants import afficher_carte_action, afficher_jauge_budget, pluriel
-from utils.budget import budget_du_jour, message_depassement
+from utils.budget import budget_du_jour, refus_invitations
 from utils.seances import message_refus
 
 MESSAGE_SESSION_MANQUANTE = (
@@ -56,17 +56,15 @@ def budget():
 
 def recap_invitations(n: int, utilisees: int, plafond: int, message: str = "") -> str:
     """Ce qui partira, en Markdown sûr : « Jusqu'à 3 invitations partiront
-    depuis votre compte LinkedIn ; vous en serez à 20 aujourd'hui (limite
-    conseillée : 20). … » La limite n'est pas bloquante."""
+    depuis votre compte LinkedIn ; vous en serez à 20 aujourd'hui (limite du
+    jour : 20). … » Une sélection au-delà du reste est refusée avant (voir
+    `refus_invitations`), le récapitulatif ne la montre donc jamais."""
     n = max(int(n), 0)
     total = max(int(utilisees), 0) + n
     verbe = "partira" if n < 2 else "partiront"
     texte = (f"Jusqu'à {pluriel(n, 'invitation')} {verbe} depuis votre compte "
-             f"LinkedIn ; vous en serez à {total} aujourd'hui (limite conseillée : "
+             f"LinkedIn ; vous en serez à {total} aujourd'hui (limite du jour : "
              f"{plafond}).")
-    if plafond > 0 and total > plafond:
-        texte += (" C'est au-delà de la limite conseillée : rien n'est bloqué, "
-                  "mais le risque de restriction de votre compte augmente.")
     message = (message or "").strip()
     if message:
         texte += f" Message joint : « {echapper_markdown(message)} »"
@@ -222,6 +220,7 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
     st.session_state.setdefault(f"{prefixe}_inviter", False)
     message = ""
     b = None
+    refus = None
     with st.container(border=True, key=f"bloc_{prefixe}_inviter"):
         st.markdown("**Invitations**")
         if inviter_seulement:
@@ -234,9 +233,9 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         if inviter:
             b = budget()
             afficher_jauge_budget(b.utilisees, b.plafond)
-            depassement = message_depassement(len(urls), b.utilisees, b.plafond)
-            if depassement:
-                st.warning(depassement)
+            refus = refus_invitations(len(urls), b.utilisees, b.plafond)
+            if refus:
+                st.error(refus)
             message = st.text_area(
                 "Message d'invitation",
                 placeholder="Bonjour, je serais ravi d'échanger avec vous…",
@@ -250,11 +249,15 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
     else:
         libelle = libelle_bouton or f"Enregistrer {pluriel(len(urls), 'profil choisi', 'profils choisis')}"
 
-    clic = st.button(libelle, type="primary",
+    clic = st.button(libelle, type="primary", disabled=refus is not None,
                      width="stretch", key=f"{prefixe}_btn_recuperer")
 
-    # La limite du jour est conseillée, pas bloquante : seul le récapitulatif
-    # dit où l'envoi vous mène par rapport à elle.
+    # Le plafond du jour est bloquant : une sélection plus grande que le reste
+    # ne se confirme pas (le refus est écrit au-dessus du bouton), et une
+    # confirmation déjà ouverte se referme.
+    if refus:
+        _annuler(f"confirmer_{prefixe}")
+        return
     if clic and not st.session_state.global_cookie:
         st.error(MESSAGE_SESSION_MANQUANTE)
         return

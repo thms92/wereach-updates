@@ -39,7 +39,7 @@ class DailyLimitsTracker:
 
     LIMITS_FILE = "config/daily_limits.json"
 
-    def __init__(self, max_profiles: int = 80, max_invitations: int = 20,
+    def __init__(self, max_profiles: int = 25, max_invitations: int = 20,
                  limits_file: str = None, max_pages: int = 60):
         self.max_profiles = max_profiles
         self.max_pages = max_pages

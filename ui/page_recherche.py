@@ -19,7 +19,6 @@ from ui.invitations import (AIDE_MESSAGE, MESSAGE_SESSION_MANQUANTE,
                             afficher_resultats, bloc_recuperer_inviter, budget,
                             confirmation, echapper_markdown, recap_invitations)
 from utils.browsemap import filtrer_suggestions, vanity_depuis_url
-from utils.budget import message_depassement
 from utils.seances import message_refus
 from ui.selection import choisir_profils, reinitialiser_choix
 from utils.search_filters import (criteres_suffisants,
@@ -205,7 +204,8 @@ def afficher_page_recherche():
     puce_session = (("Session LinkedIn active", "ok", True) if ck
                     else ("Session LinkedIn à renseigner", "attention"))
     afficher_bandeau_contexte(
-        "Trouvez des profils et invitez-les, en suivant la limite conseillée d'invitations du jour.",
+        "Trouvez des profils et invitez-les, dans la limite de "
+        f"{ScraperConfig.MAX_INVITATIONS_PER_DAY} invitations par jour.",
         puces=[puce_session],
     )
 

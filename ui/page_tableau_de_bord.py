@@ -72,17 +72,17 @@ def actions_du_jour(nb_a_messager: int, nb_en_attente: int,
             "neutre", "invitation", None,
         ))
     if budget_plafond > 0 and budget_utilisees >= budget_plafond:
-        # Limite conseillée, pas bloquante : on informe, on n'interdit pas.
+        # Plafond bloquant : l'outil n'invite plus aujourd'hui, il le dit et
+        # dit quand reprendre.
         actions.append((
-            f"Limite conseillée de {budget_plafond} invitations atteinte",
-            "Vous pouvez continuer à inviter : rien n'est bloqué, mais au-delà "
-            "le risque de restriction de votre compte LinkedIn augmente.",
+            f"Limite du jour atteinte : {budget_plafond} invitations envoyées",
+            "Vous pourrez reprendre demain : le compteur repart à zéro.",
             "attention", "alerte", None,
         ))
     elif budget_plafond > 0 and ton_budget(budget_utilisees, budget_plafond) == "attention":
         restantes = budget_plafond - budget_utilisees
         actions.append((
-            f"Plus que {pluriel(restantes, 'invitation')} avant la limite conseillée",
+            f"Plus que {pluriel(restantes, 'invitation')} avant la limite du jour",
             "Gardez-les pour les profils les plus prometteurs ; le compteur "
             "repart à zéro demain.",
             "attention", "invitation", None,
