@@ -48,8 +48,9 @@ personne et respecte un budget quotidien strict (20 invitations par jour,
 - Pages : Tableau de bord, Recherche (Candidats, Clients/Entreprises,
   Profils similaires), Messages, Historique, Journal. La Veille a été
   retirée le 2026-10-20.
-- Limite CONSEILLÉE de 20 invitations / jour (décision du 2026-10-20) :
-  affichée partout, jamais bloquante ; au-delà, l'outil prévient du risque.
+- Limites bloquantes : 20 invitations et 60 pages LinkedIn par jour,
+  affichées partout ; séances de 25 pages, 20 minutes de pause entre deux
+  séances.
 - Streamlit 1.58 : pas de composants JS sur mesure ; style par CSS injecté
   (`wefiit_theme.py`) et HTML statique.
 - Aucune donnée personnelle réelle dans le dépôt.
