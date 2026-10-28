@@ -192,8 +192,9 @@ class LinkedInScraperV2:
 
         Refuse avant tout chargement si le budget du jour ou de la séance est
         épuisé (ArretLinkedIn « budget_jour » / « budget_seance »). Sinon
-        attend une pause humaine, charge, compte 1 page (même si le chargement
-        échoue : la requête est partie), puis lève ArretLinkedIn « alerte » ou
+        attend une pause humaine, charge en une seule tentative (jamais
+        retentée), compte 1 page (même si le chargement échoue : la requête
+        est partie), puis lève ArretLinkedIn « alerte » ou
         « session » si LinkedIn a répondu par une page d'avertissement ou de
         connexion. Un profil déjà ouvert dans ce passage et toujours affiché
         n'est pas rechargé. Rend le booléen de safe_page_goto.

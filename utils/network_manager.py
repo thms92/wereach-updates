@@ -288,7 +288,11 @@ class NetworkManager:
 
     async def safe_page_goto(self, page, url: str, timeout: Optional[int] = None) -> bool:
         """
-        Navigate vers une URL avec gestion d'erreurs
+        Navigate vers une URL : une seule tentative, jamais retentée.
+
+        Chaque requête vers LinkedIn doit être comptée et contrôlée par la
+        porte (scraper_v2._naviguer) : une nouvelle tentative ici serait une
+        page chargée sans être comptée, peut-être après une page d'alerte.
 
         Args:
             page: Page Playwright
@@ -296,25 +300,18 @@ class NetworkManager:
             timeout: Timeout en ms (optionnel)
 
         Returns:
-            True si succès, False sinon
+            True si succès, False sinon (erreur classée dans last_error)
         """
         timeout = timeout or self.config.timeout
-
-        async def _goto():
-            try:
-                reponse = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
-                self.last_status = getattr(reponse, "status", None)
-                return True
-            except Exception as e:
-                raise self.classify_playwright_error(e)
-
+        self.last_error = None
+        self.last_status = None
         try:
-            self.last_error = None
-            self.last_status = None
-            return await self.retry_async(_goto, operation_name=f"goto {url[:50]}")
-        except NetworkError as e:
-            self.last_error = e
-            logger.error(f"❌ Impossible de charger {url}: {e}")
+            reponse = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+            self.last_status = getattr(reponse, "status", None)
+            return True
+        except Exception as e:
+            self.last_error = self.classify_playwright_error(e)
+            logger.error(f"❌ Impossible de charger {url}: {self.last_error}")
             return False
 
     async def safe_wait_for_selector(
