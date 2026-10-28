@@ -20,6 +20,7 @@ from ui.invitations import (AIDE_MESSAGE, MESSAGE_SESSION_MANQUANTE,
                             confirmation, echapper_markdown, recap_invitations)
 from utils.browsemap import filtrer_suggestions, vanity_depuis_url
 from utils.budget import message_depassement
+from utils.seances import message_refus
 from ui.selection import choisir_profils, reinitialiser_choix
 from utils.search_filters import (criteres_suffisants,
                                   ecoles_sans_identifiant,
@@ -300,13 +301,17 @@ def afficher_page_recherche():
                     inviter=False, message_invitation="", reinviter_profils_scrapes=False,
                     ile_de_france=ile_de_france,
                 )
-                st.session_state["crit_profils"] = [{
+                profils_trouves = [{
                     "url": r.get("URL du profil") or "",
                     "nom": r.get("Nom") or "",
                     "intitule": " · ".join(x for x in (r.get("Poste"), r.get("Entreprise")) if x),
                     "invitable": True,
                 } for r in (df.to_dict("records") if df is not None and not df.empty else [])
                     if r.get("URL du profil")]
+                # Refus de séance : pas de recherche, donc pas d'étape 2 ni
+                # de « aucun nouveau profil » ; le refus s'affiche en clair.
+                st.session_state["crit_profils"] = (
+                    None if message_refus(scraper.errors) else profils_trouves)
                 st.session_state["crit_erreurs"] = list(scraper.errors)
                 st.session_state["crit_ecartes"] = getattr(scraper, "ecartes_reseau", 0)
                 reinitialiser_choix("crit")
@@ -390,7 +395,8 @@ def afficher_page_recherche():
                         status_callback=lambda s: sim_statut.update(label=s),
                     )
                 sim_statut.update(
-                    label=pluriel(len(suggestions), "profil voisin lu", "profils voisins lus"),
+                    label=(message_refus(scraper.errors)
+                           or pluriel(len(suggestions), "profil voisin lu", "profils voisins lus")),
                     state="complete" if suggestions else "error",
                 )
                 # Lues une fois ici : les filtres sont rejoués à chaque
@@ -398,7 +404,9 @@ def afficher_page_recherche():
                 st.session_state["sim_urls_connues"] = list(
                     scraper.db.urls_connues() if scraper.use_database else ()
                 )
-                st.session_state["sim_suggestions"] = suggestions
+                # Refus de séance : pas de liste vide à filtrer, le refus seul.
+                st.session_state["sim_suggestions"] = (
+                    None if message_refus(scraper.errors) else suggestions)
                 st.session_state["sim_entreprise"] = entreprise
                 # Par défaut, on écarte ceux qui travaillent encore chez
                 # l'entreprise du profil de départ : on cherche le même profil

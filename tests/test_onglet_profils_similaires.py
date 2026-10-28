@@ -573,3 +573,12 @@ def test_aucun_widget_n_a_a_la_fois_une_valeur_par_defaut_et_une_valeur_en_sessi
         avertissements_streamlit
     )
     assert at.checkbox(key="sim_invitables").value is False
+
+
+def test_une_recolte_refusee_dit_le_refus_sans_liste_vide(recolte_espionne):
+    refus = "Vous avez fait 4 séances aujourd'hui. Vous pourrez reprendre demain."
+    recolte_espionne["erreurs"] = [refus]
+    at = _trouver(_page_recherche())
+    assert any(refus in w.value for w in at.warning)
+    assert at.session_state["sim_suggestions"] is None
+    assert "sim_retenues" not in at.session_state

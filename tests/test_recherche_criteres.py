@@ -29,10 +29,12 @@ def espion(monkeypatch):
 
         def run_scraper(self, **kwargs):
             etat["recherches"].append(kwargs)
+            self.errors = list(etat.get("erreurs_recherche", []))
             return etat["df"]
 
         def run_url_scraper(self, **kwargs):
             etat["invitations"].append(kwargs)
+            self.errors = list(etat.get("erreurs_invitation", []))
             return pd.DataFrame()
 
     monkeypatch.setattr(scraper_v2_sync, "LinkedInScraperV2Sync", FauxScraper)
@@ -100,3 +102,26 @@ def test_les_profils_deja_en_relation_ou_invites_sont_comptes(espion):
     at = _rechercher()
     assert any("4 profils déjà dans votre réseau ou déjà invités ont été écartés" in c.value
                for c in at.caption)
+
+
+# ── Refus de séance (pause, séances du jour) : dit en clair ──
+PAUSE = "Pause entre deux séances : prochaine action possible à 10:51."
+
+
+def test_une_recherche_refusee_dit_le_refus_et_pas_aucun_profil(espion):
+    espion["df"] = pd.DataFrame()
+    espion["erreurs_recherche"] = [PAUSE]
+    at = _rechercher()
+    assert any(PAUSE in w.value for w in at.warning)
+    assert not any("Aucun nouveau profil" in i.value for i in at.info)
+    assert at.session_state["crit_profils"] is None
+
+
+def test_une_invitation_refusee_dit_le_refus_et_pas_aucun_profil(espion):
+    espion["erreurs_invitation"] = [PAUSE]
+    at = _rechercher()
+    at.button(key="crit_btn_recuperer").click().run()
+    at.button(key="confirmer_crit_ok").click().run()
+    assert not at.exception
+    assert any(PAUSE in e.value for e in at.error)
+    assert not any("Aucun profil récupéré" in w.value for w in at.warning)

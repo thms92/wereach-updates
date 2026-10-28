@@ -6,6 +6,7 @@ Deux étapes : 1) vérifier qui a accepté ; 2) choisir des personnes et leur
 personnalisation : la page n'en promet donc aucune.
 """
 
+from datetime import datetime
 from html import escape
 
 import streamlit as st
@@ -17,6 +18,7 @@ from config import ScraperConfig
 from ui.composants import afficher_bandeau_contexte, afficher_etat_vide, pluriel
 from ui.invitations import confirmation, echapper_markdown  # noqa: F401 (réexporté)
 from scraper_v2 import SESSION_EXPIREE
+from utils.seances import message_refus, verification_permise
 from utils.verification import enregistrer_verification
 from utils.verrou_linkedin import message_occupe
 
@@ -114,6 +116,9 @@ def afficher_page_messages():
 
     # ── Étape 1 : détecter les acceptations ──
     st.header("1. Vérifier qui a accepté", anchor=False)
+    # Une vérification par jour : le bouton le dit avant le clic.
+    deja_verifie = verification_permise(str(st.session_state.user_paths.config_dir),
+                                        datetime.now())
     if en_attente:
         cA, cB = st.columns([3, 1], vertical_alignment="center")
         cA.markdown(
@@ -121,8 +126,11 @@ def afficher_page_messages():
             "We.Reach revisite les profils invités pour repérer ceux qui ont accepté "
             f"({MAX_VERIFICATIONS} au plus par vérification)."
         )
-        lancer = cB.button(LIBELLE_VERIFIER, type="primary", width="stretch",
+        lancer = cB.button(LIBELLE_VERIFIER, type="secondary" if deja_verifie else "primary",
+                           width="stretch", disabled=deja_verifie is not None,
                            icon=":material/how_to_reg:")
+        if deja_verifie:
+            st.caption(deja_verifie)
     else:
         afficher_etat_vide(
             "Aucune invitation en attente.",
@@ -147,8 +155,9 @@ def afficher_page_messages():
             # Seules les pages réellement lues sont datées ; une session
             # expirée en cours de route n'efface pas ce qui a été lu avant.
             db.marquer_verifiees(sc.verifiees)
-            # Session occupée : rien n'a été vérifié, ce n'est pas « aucune acceptation ».
-            occupe = message_occupe(sc.errors)
+            # Session occupée ou refus de séance : rien n'a été vérifié, ce
+            # n'est pas « aucune acceptation ».
+            occupe = message_occupe(sc.errors) or message_refus(sc.errors)
             # La date de dernière vérification ne s'écrit qu'après une vraie
             # vérification : au moins une page lue, sans interruption. Un degré
             # illisible sur quelques profils ne l'empêche pas.
@@ -248,9 +257,9 @@ def afficher_page_messages():
             )
             for e in envoyes:
                 db.marquer_messagee(e["url"])
-            # Session occupée : rien n'est parti ; le dire, et ne pas
-            # relancer la page, qui effacerait l'explication.
-            occupe = message_occupe(sc.errors)
+            # Session occupée ou refus de séance : rien n'est parti ; le
+            # dire, et ne pas relancer la page, qui effacerait l'explication.
+            occupe = message_occupe(sc.errors) or message_refus(sc.errors)
             if occupe:
                 st.error(occupe)
             else:

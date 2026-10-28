@@ -192,3 +192,59 @@ def test_degre_illisible_dit_dans_les_details_sans_bloquer_la_date(deux_invitati
     assert not at.error
     assert any("Aucune nouvelle acceptation" in i.value for i in at.info)
     assert any(ILLISIBLE in m.value for m in at.markdown)
+
+
+# ── Refus de séance : dit en clair, comme la session occupée ──
+
+PAUSE = "Pause entre deux séances : prochaine action possible à 10:51."
+
+
+class ScraperEnPause(ScraperOccupe):
+    def verifier_acceptations(self, **k):
+        self.errors = [PAUSE]
+        return []
+
+    def envoyer_messages(self, **k):
+        self.errors = [PAUSE]
+        return []
+
+
+def test_verification_refusee_par_la_pause_le_dit(invitation, monkeypatch):
+    monkeypatch.setattr(scraper_v2_sync, "LinkedInScraperV2Sync", ScraperEnPause)
+    at = _page()
+    [b for b in at.button if b.label == "Vérifier qui a accepté"][0].click()
+    at.run()
+    assert not at.exception
+    assert any(PAUSE in e.value for e in at.error)
+    assert not any("Aucune nouvelle acceptation" in i.value for i in at.info)
+
+
+def test_envoi_refuse_par_la_pause_le_dit_sans_relancer_la_page(invitation, monkeypatch):
+    monkeypatch.setattr(scraper_v2_sync, "LinkedInScraperV2Sync", ScraperEnPause)
+    invitation.marquer_acceptee(URL)
+    at = _page()
+    at.checkbox(key=f"msg_{URL}").check()
+    at.text_area[0].input("Bonjour !")
+    at.run()
+    at.button(key="msg_envoyer").click()
+    at.run()
+    at.button(key="confirmer_messages_ok").click()
+    at.run()
+    assert not at.exception
+    assert any(PAUSE in e.value for e in at.error)
+    assert not any("envoy" in s.value for s in at.success)
+
+
+def test_une_verification_deja_faite_aujourd_hui_rend_le_bouton_inactif(invitation):
+    from datetime import datetime
+    from utils.seances import REFUS_VERIFICATION, noter_verification
+    config_dir = str(chemins_de_test().config_dir)
+    noter_verification(config_dir, datetime.now())
+    try:
+        at = _page()
+        bouton = [b for b in at.button if b.label == "Vérifier qui a accepté"][0]
+        assert bouton.disabled
+        assert any(REFUS_VERIFICATION in c.value for c in at.caption)
+    finally:
+        import os
+        os.remove(os.path.join(config_dir, "seances.json"))

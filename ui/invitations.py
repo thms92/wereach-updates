@@ -20,6 +20,7 @@ import streamlit as st
 import scraper_v2_sync
 from ui.composants import afficher_carte_action, afficher_jauge_budget, pluriel
 from utils.budget import budget_du_jour, message_depassement
+from utils.seances import message_refus
 
 MESSAGE_SESSION_MANQUANTE = (
     "Session LinkedIn manquante : renseignez-la en haut de la page Recherche."
@@ -282,6 +283,11 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
             status_callback=lambda s: status_text.text(s),
         )
 
+    # Refus de séance : rien n'a été tenté, ce n'est pas « aucun profil ».
+    refus = message_refus(scraper.errors)
+    if refus:
+        st.error(refus)
+        return
     if df.empty:
         st.warning("Aucun profil récupéré.")
     afficher_resultats(df, inviter, nom_export, prefixe, scraper.errors)
