@@ -289,5 +289,11 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
         st.error(refus)
         return
     if df.empty:
+        # Rien de récupéré à cause d'un arrêt (session occupée, limite du
+        # jour, séance terminée…) : la cause en clair, pas « aucun profil ».
+        if scraper.errors:
+            for erreur in scraper.errors:
+                st.warning(erreur)
+            return
         st.warning("Aucun profil récupéré.")
     afficher_resultats(df, inviter, nom_export, prefixe, scraper.errors)

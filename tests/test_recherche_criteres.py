@@ -4,6 +4,8 @@
 import pandas as pd
 import pytest
 
+from utils.verrou_linkedin import VerrouOccupe
+
 import scraper_v2_sync
 import ui.invitations
 from tests.conftest import lancer_app, verifier_page_affichee
@@ -125,3 +127,20 @@ def test_une_invitation_refusee_dit_le_refus_et_pas_aucun_profil(espion):
     assert not at.exception
     assert any(PAUSE in e.value for e in at.error)
     assert not any("Aucun profil récupéré" in w.value for w in at.warning)
+
+
+# ── Arrêt sans résultat (session occupée, limite du jour) : la cause en clair ──
+
+@pytest.mark.parametrize("erreur", [
+    str(VerrouOccupe("veille")),
+    "Limite du jour atteinte : 60 pages LinkedIn consultées. Vous pourrez reprendre demain.",
+])
+def test_une_invitation_arretee_sans_resultat_dit_pourquoi(espion, erreur):
+    espion["erreurs_invitation"] = [erreur]
+    at = _rechercher()
+    at.button(key="crit_btn_recuperer").click().run()
+    at.button(key="confirmer_crit_ok").click().run()
+    assert not at.exception
+    assert any(erreur in w.value for w in at.warning)
+    assert not any("Aucun profil récupéré" in w.value for w in at.warning)
+    assert not any(e.label.startswith("Incidents") for e in at.expander)
