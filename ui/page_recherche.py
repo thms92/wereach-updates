@@ -17,7 +17,8 @@ from ui.composants import (afficher_bandeau_contexte, afficher_jauge_budget,
                            pluriel)
 from ui.invitations import (AIDE_MESSAGE, MESSAGE_SESSION_MANQUANTE,
                             afficher_resultats, bloc_recuperer_inviter, budget,
-                            confirmation, echapper_markdown, recap_invitations)
+                            confirmation, echapper_markdown, messages_d_arret,
+                            recap_invitations)
 from utils.browsemap import filtrer_suggestions, vanity_depuis_url
 from utils.seances import message_refus
 from ui.selection import choisir_profils, reinitialiser_choix
@@ -314,9 +315,11 @@ def afficher_page_recherche():
                 # Refus de séance : pas de recherche, donc pas d'étape 2 ni
                 # de « aucun nouveau profil » ; le refus s'affiche en clair.
                 # Une limite atteinte en cours de route garde les profils lus.
+                # Arrêt (limite, fin de séance, alerte, session) sans profil :
+                # pas « élargir les critères », l'arrêt est dit au-dessus.
+                arretee = message_refus(scraper.errors) or messages_d_arret(scraper.errors)
                 st.session_state["crit_profils"] = (
-                    None if message_refus(scraper.errors) and not profils_trouves
-                    else profils_trouves)
+                    None if arretee and not profils_trouves else profils_trouves)
                 st.session_state["crit_erreurs"] = list(scraper.errors)
                 st.session_state["crit_ecartes"] = getattr(scraper, "ecartes_reseau", 0)
                 reinitialiser_choix("crit")

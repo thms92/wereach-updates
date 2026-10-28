@@ -233,3 +233,17 @@ def test_une_selection_plus_grande_que_la_seance_est_refusee(espion, monkeypatch
     assert at.button(key="crit_btn_recuperer").disabled
     at.button(key="crit_btn_recuperer").click().run()
     assert espion["invitations"] == []
+
+
+# ── Recherche arrêtée (budget, alerte) sans profil : pas « élargir les critères » ──
+
+@pytest.mark.parametrize("arret", [
+    SEANCE_FINIE,
+    "Session LinkedIn expirée : mettez-la à jour dans la page Recherche.",
+])
+def test_une_recherche_arretee_ne_dit_pas_aucun_nouveau_profil(espion, arret):
+    espion["df"] = pd.DataFrame()
+    espion["erreurs_recherche"] = [arret]
+    at = _rechercher()
+    assert any(arret == w.value for w in at.warning)
+    assert not any("Aucun nouveau profil" in i.value for i in at.info)
