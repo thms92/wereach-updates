@@ -170,7 +170,7 @@ class Classement:
     """Le sort de chaque invitation en attente après lecture des listes."""
     acceptees: list = field(default_factory=list)     # dans les relations
     en_attente: list = field(default_factory=list)    # dans les envoyées
-    absentes: list = field(default_factory=list)      # retirée ou refusée
+    absentes: list = field(default_factory=list)      # retirée
     restants: list = field(default_factory=list)      # statut non établi
 
     @property
@@ -184,13 +184,15 @@ def classer(profils, envoyees: Optional[ListeLue],
     liste illisible).
 
     Dans les relations : acceptée. Dans les envoyées : toujours en attente.
-    Dans aucune des deux alors que les envoyées ont été lues en entier et
-    les relations lues : retirée ou refusée, pas acceptée. Sinon, ou pour
-    une adresse /in/ACoAA… : non établi, à vérifier sur le profil."""
+    Dans aucune des deux alors que les DEUX listes ont été lues en entier :
+    retirée, pas acceptée. Une liste de relations lue en partie ne suffit
+    pas : quelqu'un qui a accepté avant la partie lue n'y figure pas, et
+    serait classé non accepté à chaque passage. Sinon, ou pour une adresse
+    /in/ACoAA… : non établi, à vérifier sur le profil."""
     res = Classement()
     dans_relations = set(relations.slugs) if relations else set()
     dans_envoyees = set(envoyees.slugs) if envoyees else set()
-    toutes_envoyees_lues = bool(envoyees and envoyees.complete and relations)
+    deux_listes_lues = bool(envoyees and envoyees.complete and relations and relations.complete)
     for prof in profils:
         slug = slug_profil(prof.get("url"))
         if not slug or est_urn(slug):
@@ -199,7 +201,7 @@ def classer(profils, envoyees: Optional[ListeLue],
             res.acceptees.append(prof)
         elif slug in dans_envoyees:
             res.en_attente.append(prof)
-        elif toutes_envoyees_lues:
+        elif deux_listes_lues:
             res.absentes.append(prof)
         else:
             res.restants.append(prof)

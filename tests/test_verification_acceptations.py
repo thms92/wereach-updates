@@ -220,7 +220,7 @@ def test_dans_les_envoyees_verifiee_toujours_en_attente():
     assert c.verifiees == ["https://www.linkedin.com/in/en-attente-1/"]
 
 
-def test_dans_aucune_des_deux_envoyees_lues_en_entier_verifiee_non_acceptee():
+def test_dans_aucune_des_deux_listes_lues_en_entier_verifiee_non_acceptee():
     c = classer([_prof("disparue-1")], ENVOYEES, RELATIONS)
     assert c.acceptees == [] and len(c.absentes) == 1
     assert c.verifiees == ["https://www.linkedin.com/in/disparue-1/"]
@@ -228,6 +228,7 @@ def test_dans_aucune_des_deux_envoyees_lues_en_entier_verifiee_non_acceptee():
 
 @pytest.mark.parametrize("envoyees,relations", [
     (ListeLue(["en-attente-1"], annonce=5), RELATIONS),   # envoyées pas toutes lues
+    (ENVOYEES, ListeLue(["acceptee-1"], annonce=500)),     # relations pas toutes lues
     (None, RELATIONS),                                    # envoyées illisibles
     (ENVOYEES, None),                                     # relations illisibles
 ])
@@ -376,6 +377,20 @@ def test_envoyees_pas_toutes_lues_repli_sur_le_profil_des_restants(tmp_path, mon
                 [page_relations(RELATIONS_AVEC_A)]),
         {C["href"]: "Ana Test 3 · 2e\nPM"})
     assert acceptees == [A["href"]]
+    assert sorted(scraper.verifiees) == sorted(p["href"] for p in (A, B, C))
+    assert chargees == [URL_INVITATIONS_ENVOYEES, URL_RELATIONS, C["href"]]
+    assert scraper.errors == []
+
+
+def test_relations_pas_toutes_lues_absente_verifiee_sur_son_profil(tmp_path, monkeypatch):
+    # 500 relations annoncées, 6 montrées : C a pu accepter avant la partie
+    # lue. Rien n'est conclu sur la liste, son profil est ouvert.
+    scraper, acceptees, chargees = _verifier(
+        tmp_path, monkeypatch, EN_ATTENTE,
+        _listes([page_envoyees([B] + ENVOYEES_18[:3])],
+                [page_relations(RELATIONS_AVEC_A, total=500)]),
+        {C["href"]: "Ana Test 3 · 1er\nPM"})
+    assert acceptees == [A["href"], C["href"]]
     assert sorted(scraper.verifiees) == sorted(p["href"] for p in (A, B, C))
     assert chargees == [URL_INVITATIONS_ENVOYEES, URL_RELATIONS, C["href"]]
     assert scraper.errors == []

@@ -1138,8 +1138,8 @@ class LinkedInScraperV2:
             acceptees.append({"url": prof.get("url"), "nom": prof.get("nom", "")})
             logger.info(f"  ✅ A accepté (liste des relations) : {prof.get('nom', '')}")
         for prof in classement.absentes:
-            logger.info(f"  ↩️ Ni dans les invitations envoyées ni dans les relations : "
-                        f"{prof.get('nom', '')} (invitation retirée ou refusée, statut inchangé)")
+            logger.info(f"  ↩️ {prof.get('nom', '')} : invitation retirée (absente des deux "
+                        f"listes lues en entier), statut inchangé")
         self.verifiees.extend(classement.verifiees)
 
     async def _verifier_profils(self, page, profils, acceptees: list,
@@ -1192,9 +1192,9 @@ class LinkedInScraperV2:
         La liste des invitations envoyées et celle des relations (ajouts
         récents d'abord), au plus MAX_PAGES_LISTES pages pour tout le monde :
         dans les relations, la personne a accepté ; dans les envoyées, elle
-        attend encore ; dans aucune des deux alors que les envoyées ont été
-        lues en entier, l'invitation a été retirée ou refusée (statut
-        inchangé). Les autres — liste illisible, liste pas lue en entier,
+        attend encore ; dans aucune des deux alors que les deux listes ont
+        été lues en entier, l'invitation a été retirée (statut inchangé).
+        Les autres — liste illisible, liste pas lue en entier,
         adresse /in/ACoAA… — sont vérifiées sur leur profil (degré « 1er »
         dans l'en-tête), au plus MAX_VERIFICATIONS_PAR_PASSAGE.
         Retourne la liste [{'url','nom'}] des profils ayant accepté ;
