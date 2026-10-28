@@ -83,3 +83,40 @@ def test_goto_qui_echoue_sur_checkpoint_arrete_sans_nouvel_essai(tmp_path, monke
         asyncio.run(s._naviguer(page, PROFIL_A))
     assert arret.value.motif == "alerte"
     assert page.appels == [PROFIL_A]
+
+
+# --- 6. Typeahead entreprise : 429 ou 999 = page d'alerte ------------------
+
+class _Contexte:
+    async def cookies(self, url):
+        return [{"name": "JSESSIONID", "value": '"ajax:123"'}]
+
+
+class _PageTypeahead:
+    url = "https://www.linkedin.com/search/results/people/"
+
+    def __init__(self, reponse):
+        self.context = _Contexte()
+        self.reponse = reponse
+
+    async def evaluate(self, script, arg):
+        return self.reponse
+
+
+@pytest.mark.parametrize("statut", [429, 999])
+def test_typeahead_en_alerte_arrete_tout(tmp_path, monkeypatch, statut):
+    s = LinkedInScraperV2(use_database=False, config_dir=str(tmp_path))
+    monkeypatch.setattr(LinkedInScraperV2, "_resoudre_company_urn", staticmethod(lambda e: None))
+    page = _PageTypeahead({"ok": False, "status": statut})
+    with pytest.raises(ArretLinkedIn) as arret:
+        asyncio.run(s._resoudre_company_urn_via_typeahead("Société Démo", page))
+    assert arret.value.motif == "alerte"
+
+
+def test_typeahead_autre_echec_reste_un_echec_simple(tmp_path, monkeypatch):
+    s = LinkedInScraperV2(use_database=False, config_dir=str(tmp_path))
+    monkeypatch.setattr(LinkedInScraperV2, "_resoudre_company_urn", staticmethod(lambda e: None))
+    echecs = []
+    page = _PageTypeahead({"ok": False, "status": 500})
+    assert asyncio.run(s._resoudre_company_urn_via_typeahead("Société Démo", page, echecs)) is None
+    assert echecs == ["réponse HTTP 500"]

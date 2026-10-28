@@ -33,7 +33,7 @@ from utils.human_behavior import HumanBehavior
 from utils.stealth_profile import StealthProfileManager
 import utils.requete_linkedin as requete
 from utils.page_vide import diagnostiquer_page_vide
-from utils.alerte_linkedin import ArretLinkedIn, CHEMINS_TRAVAIL, nature_page
+from utils.alerte_linkedin import ArretLinkedIn, CHEMINS_TRAVAIL, STATUTS_ALERTE, nature_page
 from utils.budget import LIMITE_INVITATIONS_ATTEINTE, LIMITE_PAGES_ATTEINTE
 
 
@@ -441,6 +441,10 @@ class LinkedInScraperV2:
 
             if not result.get("ok"):
                 logger.warning(f"⚠️ Typeahead URN '{entreprise}' échoué: {result} (page: {page.url})")
+                # 429 ou 999 : LinkedIn freine ce compte, comme une page
+                # d'alerte. Arrêt immédiat, pas de repli par navigation.
+                if result.get("status") in STATUTS_ALERTE:
+                    raise ArretLinkedIn("alerte", api_url)
                 if result.get("status"):
                     return _echec(f"réponse HTTP {result['status']}")
                 return _echec(f"appel impossible ({result.get('error') or 'raison inconnue'})")
@@ -470,6 +474,8 @@ class LinkedInScraperV2:
             logger.warning(f"⚠️ Aucune correspondance URN trouvée pour '{entreprise}' (typeahead)")
             return None
 
+        except ArretLinkedIn:
+            raise
         except Exception as e:
             logger.warning(f"⚠️ Erreur résolution URN '{entreprise}' via typeahead: {e}")
             return _echec(f"{type(e).__name__}")
