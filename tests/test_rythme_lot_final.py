@@ -120,3 +120,49 @@ def test_typeahead_autre_echec_reste_un_echec_simple(tmp_path, monkeypatch):
     page = _PageTypeahead({"ok": False, "status": 500})
     assert asyncio.run(s._resoudre_company_urn_via_typeahead("Société Démo", page, echecs)) is None
     assert echecs == ["réponse HTTP 500"]
+
+
+# --- 8. La porte unique, verrouillée par la lecture des sources -----------
+
+import ast
+from pathlib import Path
+
+SOURCES_NAVIGATION = ("scraper_v2.py", "utils/human_behavior.py", "utils/network_manager.py")
+
+
+def _appels(fichier, nom):
+    """(fonction englobante, ligne) de chaque appel `….nom(` dans `fichier`."""
+    arbre = ast.parse(Path(fichier).read_text(encoding="utf-8"))
+    trouves = []
+
+    def parcourir(noeud, fonction):
+        if isinstance(noeud, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fonction = noeud.name
+        if (isinstance(noeud, ast.Call) and isinstance(noeud.func, ast.Attribute)
+                and noeud.func.attr == nom):
+            trouves.append((fonction, noeud.lineno))
+        for enfant in ast.iter_child_nodes(noeud):
+            parcourir(enfant, fonction)
+
+    parcourir(arbre, None)
+    return trouves
+
+
+def test_goto_seulement_dans_safe_page_goto():
+    for fichier in SOURCES_NAVIGATION:
+        for fonction, ligne in _appels(fichier, "goto"):
+            assert (fichier, fonction) == ("utils/network_manager.py", "safe_page_goto"), (
+                f"page.goto hors de la porte : {fichier}:{ligne}")
+    assert _appels("utils/network_manager.py", "goto")
+
+
+def test_safe_page_goto_seulement_dans_naviguer():
+    appels = [(f, fonction) for f in SOURCES_NAVIGATION
+              for fonction, _ in _appels(f, "safe_page_goto")]
+    assert appels == [("scraper_v2.py", "_naviguer")]
+
+
+@pytest.mark.parametrize("nom", ["reload", "go_back", "go_forward"])
+def test_aucune_navigation_detournee(nom):
+    for fichier in SOURCES_NAVIGATION:
+        assert _appels(fichier, nom) == [], f"{nom} dans {fichier}"
