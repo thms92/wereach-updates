@@ -113,6 +113,18 @@ def debut_action(config_dir: str, maintenant: datetime) -> Tuple[Optional[str], 
     return None, plafond
 
 
+def numero_seance(config_dir: str, maintenant: datetime) -> int:
+    """Rang dans la journée de la séance d'une action qui commence à
+    `maintenant` (permise) : celle encore ouverte, sinon la suivante."""
+    if config_dir is None:
+        return 1
+    seances = _lire(config_dir)["seances"]
+    du_jour = [s for s in seances if s["debut"].date() == maintenant.date()]
+    if _ouverte(seances[-1] if seances else None, maintenant):
+        return max(len(du_jour), 1)
+    return len(du_jour) + 1
+
+
 def fin_action(config_dir: str, maintenant: datetime, pages: int,
                debut: Optional[datetime] = None) -> None:
     """Ajoute les `pages` de l'action finie à sa séance et note l'heure de fin.

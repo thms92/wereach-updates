@@ -14,7 +14,8 @@ from config import ScraperConfig
 from scraper_v2 import LinkedInScraperV2
 from utils.budget import LIMITE_PAGES_ATTEINTE
 from logger import logger
-from utils.seances import debut_action, fin_action, noter_verification, verification_permise
+from utils.seances import (debut_action, fin_action, noter_verification, numero_seance,
+                           verification_permise)
 from utils.verrou_linkedin import VerrouOccupe, session_linkedin
 
 
@@ -59,6 +60,10 @@ class LinkedInScraperV2Sync:
             return refus
         self.scraper.limite_pages_seance = restantes
         self.scraper.pages_cette_seance = 0
+        # Dernière séance du jour : sa fin dira « demain », pas « dans 20 minutes ».
+        self.scraper.derniere_seance_du_jour = (
+            numero_seance(self.config_dir, self._debut_seance)
+            >= ScraperConfig.MAX_SEANCES_PER_DAY)
         return None
 
     @contextmanager

@@ -127,6 +127,8 @@ class LinkedInScraperV2:
         # point d'entrée) pour ne pas recharger un profil déjà ouvert.
         self.limite_pages_seance: Optional[int] = None
         self.pages_cette_seance = 0
+        # Posé par l'enveloppe : la séance en cours est la dernière du jour.
+        self.derniere_seance_du_jour = False
         self._deja_ouvertes: set = set()
 
         # Initialiser le gestionnaire réseau avec retry
@@ -223,9 +225,16 @@ class LinkedInScraperV2:
         if arret.motif == "budget_jour":
             msg = LIMITE_PAGES_ATTEINTE.format(n=self.human.daily_limits.pages_today)
         elif arret.motif == "budget_seance":
-            msg = (f"Séance terminée : {self.pages_cette_seance} pages consultées. "
-                   f"Prochaine séance possible dans "
-                   f"{self.config.PAUSE_ENTRE_SEANCES_MIN} minutes.")
+            # Total de la séance : pages déjà lues avant cette action, plus
+            # celles de l'action.
+            avant = (self.config.MAX_PAGES_PER_SEANCE - self.limite_pages_seance
+                     if self.limite_pages_seance is not None else 0)
+            msg = f"Séance terminée : {avant + self.pages_cette_seance} pages consultées. "
+            if self.derniere_seance_du_jour:
+                msg += "Vous pourrez reprendre demain."
+            else:
+                msg += (f"Prochaine séance possible dans "
+                        f"{self.config.PAUSE_ENTRE_SEANCES_MIN} minutes.")
         else:
             # Alerte comme session : la personne voit la page de LinkedIn,
             # l'outil n'ajoute aucun texte (décision de Thomas, 2026-10-27).

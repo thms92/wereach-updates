@@ -262,8 +262,18 @@ def test_budget_seance_atteint_le_dit(tmp_path, monkeypatch):
     s.limite_pages_seance = 1
     df, _ = _lancer_par_urls(s, monkeypatch, [PROFIL_A, PROFIL_B])
     assert len(df) == 1
-    assert s.errors == ["Séance terminée : 1 pages consultées. "
+    # Total de la séance : 24 pages avant l'action, 1 pendant.
+    assert s.errors == ["Séance terminée : 25 pages consultées. "
                         "Prochaine séance possible dans 20 minutes."]
+
+
+def test_fin_de_la_derniere_seance_du_jour_dit_demain(tmp_path, monkeypatch):
+    s = _scraper(tmp_path, monkeypatch)
+    s.limite_pages_seance = 1
+    s.derniere_seance_du_jour = True
+    _lancer_par_urls(s, monkeypatch, [PROFIL_A, PROFIL_B])
+    assert s.errors == ["Séance terminée : 25 pages consultées. "
+                        "Vous pourrez reprendre demain."]
 
 
 def test_pause_entre_pages_respecte_les_bornes(monkeypatch):

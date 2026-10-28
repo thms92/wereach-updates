@@ -12,7 +12,7 @@ import pytest
 
 import scraper_v2
 from scraper_v2_sync import LinkedInScraperV2Sync
-from utils.seances import (debut_action, fin_action, message_refus,
+from utils.seances import (debut_action, fin_action, message_refus, numero_seance,
                            noter_verification, verification_permise)
 from utils.verrou_linkedin import MESSAGE_OCCUPE, session_linkedin
 
@@ -294,3 +294,39 @@ def test_pages_du_jour_epuisees_refus_sans_chrome(tmp_path, chrome_espion, metho
 
 def test_message_refus_reconnait_la_limite_de_pages():
     assert message_refus(["autre", LIMITE_60_PAGES]) == LIMITE_60_PAGES
+
+
+# ── Numéro de la séance : la 4e du jour dit « demain » à sa fin ──────────
+
+def test_numero_de_la_seance_de_l_action(tmp_path):
+    d = str(tmp_path)
+    assert numero_seance(d, h("09:00")) == 1
+    _seance(d, "09:00", "09:10", 25)
+    _seance(d, "09:40", "09:50", 25)
+    _seance(d, "10:20", "10:30", 5)
+    # Dans la 3e séance, encore ouverte.
+    assert numero_seance(d, h("10:35")) == 3
+    # Après la pause : la 4e.
+    assert numero_seance(d, h("11:10")) == 4
+
+
+def test_l_enveloppe_signale_la_derniere_seance_du_jour(tmp_path, monkeypatch):
+    d = str(tmp_path)
+    for debut, fin in (("08:00", "08:10"), ("08:40", "08:50"), ("09:20", "09:30")):
+        _seance(d, debut, fin, 25)
+    wrapper = LinkedInScraperV2Sync(use_database=False, config_dir=d)
+    action, _ = _fausse_action(wrapper, "run_url_scraper_async", 1)
+    monkeypatch.setattr(wrapper.scraper, "run_url_scraper_async", action)
+
+    wrapper._horloge = lambda: h("10:00")
+    wrapper.run_url_scraper(cookie="c", urls=["https://www.linkedin.com/in/a/"])
+    assert wrapper.scraper.derniere_seance_du_jour is True
+
+
+def test_une_seance_qui_n_est_pas_la_derniere(tmp_path, monkeypatch):
+    wrapper = LinkedInScraperV2Sync(use_database=False, config_dir=str(tmp_path))
+    action, _ = _fausse_action(wrapper, "run_url_scraper_async", 1)
+    monkeypatch.setattr(wrapper.scraper, "run_url_scraper_async", action)
+    wrapper._horloge = lambda: h("10:00")
+    wrapper.run_url_scraper(cookie="c", urls=["https://www.linkedin.com/in/a/"])
+    assert wrapper.scraper.derniere_seance_du_jour is False
