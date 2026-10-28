@@ -217,11 +217,30 @@ def test_l_etape_2_n_apparait_pas_avant_d_avoir_trouve():
     )
 
 
-def test_les_urls_retenues_partent_dans_la_chaine_existante(recolte_espionne):
-    recolte_espionne["reponse"] = (
-        [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand")],
-        None,
-    )
+@pytest.fixture
+def profils_en_base():
+    """Les profils enregistrés par un test, retirés de la base de test ensuite."""
+    import sqlite3
+    from tests.conftest import chemins_de_test
+    urls = []
+    yield urls
+    con = sqlite3.connect(str(chemins_de_test().db_file))
+    con.executemany("DELETE FROM profiles WHERE url = ?", [(u,) for u in urls])
+    con.commit()
+    con.close()
+
+
+def _profil_en_base(at, url):
+    return next((p for p in at.session_state.db.get_tous_profils() if p["url"] == url), None)
+
+
+def test_enregistrer_sans_inviter_n_ouvre_aucun_profil(recolte_espionne, profils_en_base):
+    # Le panneau a déjà donné nom et intitulé : enregistrer ne rouvre pas
+    # LinkedIn (aucun moteur, aucune séance), les lignes lues vont en base.
+    marie = voisin("Marie Martin", "marie-martin-sim-test", intitule="Product Manager, Kering")
+    paul = voisin("Paul Durand", "paul-durand-sim-test", intitule="Lead Dev, Orbique")
+    profils_en_base.extend([marie["url"], paul["url"]])
+    recolte_espionne["reponse"] = ([marie, paul], None)
     at = _trouver(_page_recherche())
     recolte_espionne["appels"].clear()
 
@@ -229,23 +248,28 @@ def test_les_urls_retenues_partent_dans_la_chaine_existante(recolte_espionne):
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
 
-    assert recolte_espionne["appels"][0]["urls"] == [
-        "https://www.linkedin.com/in/marie-martin/",
-        "https://www.linkedin.com/in/paul-durand/",
-    ]
+    assert recolte_espionne["appels"] == []
+    enregistre = _profil_en_base(at, marie["url"])
+    assert enregistre is not None
+    assert (enregistre["nom"], enregistre["poste"], enregistre["entreprise"]) == (
+        "Marie Martin", "Product Manager, Kering", "")
+    assert _profil_en_base(at, paul["url"]) is not None
+    assert any("2 profils enregistrés" in s.value for s in at.success)
 
 
-def test_les_invitations_ne_partent_pas_sans_l_avoir_demande(recolte_espionne):
+def test_les_invitations_ne_partent_pas_sans_l_avoir_demande(recolte_espionne, profils_en_base):
     # Le quota d'invitations est rare et l'envoi irréversible : la case doit
     # être décochée par défaut.
-    recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
+    marie = voisin("Marie Martin", "marie-martin-sim-test")
+    profils_en_base.append(marie["url"])
+    recolte_espionne["reponse"] = ([marie], None)
     at = _trouver(_page_recherche())
     recolte_espionne["appels"].clear()
 
     at.button(key="sim_btn_recuperer").click()
     at.run()
 
-    assert recolte_espionne["appels"][0]["inviter"] is False
+    assert recolte_espionne["appels"] == []
 
 
 def test_la_case_cochee_fait_partir_les_invitations(recolte_espionne):
@@ -265,9 +289,10 @@ def test_la_case_cochee_fait_partir_les_invitations(recolte_espionne):
     assert recolte_espionne["appels"][0]["inviter"] is True
 
 
-def test_la_liste_trouvee_survit_au_rerun_de_l_etape_2(recolte_espionne):
+def test_la_liste_trouvee_survit_au_rerun_de_l_etape_2(recolte_espionne, profils_en_base):
     # Elle vit dans session_state justement pour ça : un clic sur l'étape 2
     # relance le script, et la liste ne doit pas disparaître de l'écran.
+    profils_en_base.append(voisin("Marie Martin", "marie-martin")["url"])
     recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
     at = _trouver(_page_recherche())
 
@@ -373,7 +398,8 @@ def test_changer_le_mot_apres_trouver_refiltre_sans_nouvelle_recolte(recolte_esp
 # --- Invitations : jamais cochées d'office, jamais au-delà du plafond ------
 
 
-def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
+def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne, profils_en_base):
+    profils_en_base.append(voisin("Marie Martin", "marie-martin")["url"])
     recolte_espionne["reponse"] = ([voisin("Marie Martin", "marie-martin")], None)
     at = _trouver(_page_recherche())
     at.toggle(key="sim_inviter").set_value(True)
@@ -386,7 +412,8 @@ def test_une_nouvelle_liste_decoche_les_invitations(recolte_espionne):
     recolte_espionne["appels"].clear()
     at.button(key="sim_btn_recuperer").click()
     at.run()
-    assert recolte_espionne["appels"][0]["inviter"] is False
+    # Décochée : on enregistre sans rien ouvrir, rien n'est envoyé.
+    assert recolte_espionne["appels"] == []
 
 
 def test_confirmation_refuse_une_selection_trop_grande(recolte_espionne, monkeypatch):
@@ -421,7 +448,8 @@ def test_confirmation_refuse_une_selection_trop_grande(recolte_espionne, monkeyp
     assert recolte_espionne["appels"] == []
 
 
-def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
+def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne, profils_en_base):
+    profils_en_base.extend(voisin("", v)["url"] for v in ("marie-martin", "paul-durand"))
     recolte_espionne["reponse"] = (
         [voisin("Marie Martin", "marie-martin"), voisin("Paul Durand", "paul-durand")],
         None,
@@ -430,10 +458,12 @@ def test_dans_le_plafond_ou_sans_invitation_la_chaine_part(recolte_espionne):
     recolte_espionne["invitations_restantes"] = 0
     recolte_espionne["appels"].clear()
 
-    # Plafond atteint mais pas d'invitation demandée : le scrape part.
+    # Plafond atteint mais pas d'invitation demandée : l'enregistrement se
+    # fait, sans moteur.
     at.button(key="sim_btn_recuperer").click()
     at.run()
-    assert len(recolte_espionne["appels"]) == 1
+    assert recolte_espionne["appels"] == []
+    assert any("enregistrés" in s.value for s in at.success)
 
     recolte_espionne["invitations_restantes"] = 2
     at.toggle(key="sim_inviter").set_value(True)

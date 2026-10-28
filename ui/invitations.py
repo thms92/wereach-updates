@@ -251,13 +251,32 @@ def _nouveau_scraper():
     return scraper_v2_sync.LinkedInScraperV2Sync(use_database=True, proxy=st.session_state.get('user_proxy'), db_file=str(st.session_state.user_paths.db_file), profiles_csv=str(st.session_state.user_paths.profiles_csv), config_dir=str(st.session_state.user_paths.config_dir))
 
 
+def enregistrer_profils_lus(profils) -> int:
+    """Enregistre dans l'Historique des profils déjà lus sur une page de
+    LinkedIn (nom, intitulé, URL), sans rien ouvrir. Rend le nombre
+    enregistré. L'entreprise n'est pas connue : elle reste vide."""
+    db = st.session_state.db
+    n = 0
+    for p in profils:
+        url = p.get("url")
+        if not url:
+            continue
+        db.ajouter_profil(p.get("nom") or "", p.get("intitule") or "", "", "", url)
+        n += 1
+    return n
+
+
 def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
                           nom_export: str = "profils_similaires",
-                          inviter_seulement: bool = False) -> None:
+                          inviter_seulement: bool = False,
+                          profils_lus=None) -> None:
     """Étape d'envoi sur une liste d'URLs choisies.
 
     `inviter_seulement` : pas d'interrupteur, le bloc invite toujours (onglet
     « Par critères », dont la recherche a déjà enregistré les profils).
+    `profils_lus` : lignes déjà lues sur LinkedIn (nom, intitulé, URL). Sans
+    invitation, elles sont enregistrées telles quelles : aucun profil n'est
+    ouvert, aucune page de la séance n'est prise.
     """
     st.session_state.setdefault(f"{prefixe}_inviter", False)
     message = ""
@@ -302,6 +321,11 @@ def bloc_recuperer_inviter(urls, prefixe: str, libelle_bouton: str = None,
     # écrit au-dessus du bouton), et une confirmation déjà ouverte se referme.
     if refus:
         _annuler(f"confirmer_{prefixe}")
+        return
+    if clic and not inviter and profils_lus is not None:
+        n = enregistrer_profils_lus(profils_lus)
+        st.success(f"{pluriel(n, 'profil enregistré', 'profils enregistrés')} "
+                   "dans l'Historique.")
         return
     if clic and not st.session_state.global_cookie:
         st.error(MESSAGE_SESSION_MANQUANTE)

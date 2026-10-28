@@ -141,13 +141,24 @@ def test_le_bloc_recuperer_demande_confirmation(budget_dicte, espion):
 
 
 def test_recuperer_sans_inviter_part_tout_de_suite(budget_dicte, espion):
+    # Sans invitation : enregistré tout de suite, sans confirmation et sans
+    # rouvrir LinkedIn (les lignes du panneau suffisent).
+    import sqlite3
     at = _recherche()
     at.text_input(key="sim_url").set_value("https://www.linkedin.com/in/reference/")
     at.button(key="sim_btn_trouver").click()
     at.run()
-    at.button(key="sim_btn_recuperer").click()
-    at.run()
-    assert len(espion["recuperations"]) == 1
+    try:
+        at.button(key="sim_btn_recuperer").click()
+        at.run()
+        assert espion["recuperations"] == []
+        assert any("2 profils enregistrés" in s.value for s in at.success)
+    finally:
+        con = sqlite3.connect(str(chemins_de_test().db_file))
+        con.executemany("DELETE FROM profiles WHERE url = ?",
+                        [(f"https://www.linkedin.com/in/p-{i}/",) for i in range(2)])
+        con.commit()
+        con.close()
 
 
 # --- 3. Une seule façon de dire le budget ---------------------------------

@@ -495,9 +495,11 @@ def afficher_page_recherche():
                     st.caption("Cochez au moins un profil dans le tableau ci-dessus.")
                 else:
                     st.caption(
-                        "Chaque profil choisi est ouvert sur LinkedIn pour enregistrer "
-                        "son poste et sa société dans l'Historique. Activez les "
-                        "invitations pour leur en envoyer une en même temps."
+                        "Enregistrer garde les profils choisis dans l'Historique, "
+                        "avec le nom et l'intitulé lus ici, sans les ouvrir sur "
+                        "LinkedIn. Activez les invitations pour leur en envoyer une : "
+                        "chaque profil invité est alors ouvert sur LinkedIn."
                     )
                     bloc_recuperer_inviter([p["url"] for p in choisis], "sim",
-                                           nom_export="profils_similaires")
+                                           nom_export="profils_similaires",
+                                           profils_lus=choisis)
