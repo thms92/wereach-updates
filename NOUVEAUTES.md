@@ -11,9 +11,6 @@ ce qui change dans le code.
 We.Reach charge au plus 60 pages LinkedIn par jour, par séances courtes avec
 une pause de 20 minutes entre deux séances, et 20 invitations par jour au plus.
 
-**Arrêt immédiat si LinkedIn intervient.**
-Si LinkedIn affiche une page de vérification, We.Reach s'arrête aussitôt.
-
 **Vos chiffres sur le Tableau de bord.**
 Invitations, acceptations et messages, à suivre par période, école,
 entreprise et poste.
