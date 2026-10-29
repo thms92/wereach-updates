@@ -19,8 +19,9 @@ Invitations, acceptations et messages, à suivre par période, école,
 entreprise et poste.
 
 **Des acceptations plus justes.**
-Seules vos vraies relations comptent, et chaque vérification passe en revue
-les invitations pas encore vérifiées.
+Seules vos vraies relations comptent. Pour vérifier, We.Reach lit votre liste
+d'invitations envoyées et celle de vos relations, au lieu d'ouvrir chaque
+profil : toutes vos invitations en attente sont vérifiées en quelques pages.
 
 Les invitations envoyées avant cette version depuis « Par critères » ou
 « Profils similaires » n'apparaissent pas dans les chiffres.
